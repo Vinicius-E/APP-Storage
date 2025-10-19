@@ -1,0 +1,41 @@
+{
+  // 🧹 Auto format and indentation
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "editor.autoIndent": "full",
+  "editor.insertSpaces": true,
+  "editor.tabSize": 2,
+
+  // 🧠 Use Prettier for all languages
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // 💅 Prettier style rules
+  "prettier.singleQuote": true,
+  "prettier.trailingComma": "es5",
+  "prettier.printWidth": 100,
+  "prettier.semi": true,
+
+  // 🚫 Prevent ESLint or other formatters from overriding Prettier
+  "eslint.format.enable": false,
+  "prettier.requireConfig": false,
+  "editor.formatOnSaveMode": "file"
+}

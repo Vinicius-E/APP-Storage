@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Expo / React Native
+.expo/
+.expo-shared/
+.cache/
+dist/
+web-build/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
