@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import AlertDialog from '../../components/AlertDialog';
 import { loginUsuario } from '../../services/authService';
+import { useThemeContext } from '../../theme/ThemeContext';
 
 export default function LoginScreen() {
   const [login, setLogin] = useState('');
@@ -14,6 +15,7 @@ export default function LoginScreen() {
   const [dialogType, setDialogType] = useState<'success' | 'error' | 'warning'>('success');
 
   const navigation = useNavigation<any>();
+  const { theme } = useThemeContext();
 
   const handleLogin = async () => {
     try {
@@ -39,11 +41,16 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.card}>
-        <Text style={styles.title}>Armazém - Login</Text>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
+        ]}
+      >
+        <Text style={[styles.title, { color: theme.colors.primary }]}>Armazém - Login</Text>
 
         <TextInput
           label="Email"
@@ -52,14 +59,14 @@ export default function LoginScreen() {
           mode="flat"
           underlineColor="transparent"
           style={styles.input}
-          activeUnderlineColor="#a98400"
-          textColor="#000"
-          selectionColor="#a98400"
+          activeUnderlineColor={theme.colors.primary}
+          textColor={theme.colors.text}
+          selectionColor={theme.colors.primary}
           outlineColor="transparent"
           theme={{
             colors: {
-              primary: '#a98400',
-              onSurfaceVariant: '#a98400',
+              primary: theme.colors.primary,
+              onSurfaceVariant: theme.colors.primary,
               background: '#e8f0ff',
             },
           }}
@@ -73,25 +80,30 @@ export default function LoginScreen() {
           underlineColor="transparent"
           secureTextEntry
           style={styles.input}
-          activeUnderlineColor="#a98400"
-          textColor="#000"
-          selectionColor="#a98400"
+          activeUnderlineColor={theme.colors.primary}
+          textColor={theme.colors.text}
+          selectionColor={theme.colors.primary}
           theme={{
             colors: {
-              primary: '#a98400',
-              onSurfaceVariant: '#a98400',
+              primary: theme.colors.primary,
+              onSurfaceVariant: theme.colors.primary,
               background: '#e8f0ff',
             },
           }}
         />
 
-        <Button mode="contained" onPress={handleLogin} style={styles.button} textColor="#fff">
+        <Button
+          mode="contained"
+          onPress={handleLogin}
+          style={[styles.button, { backgroundColor: theme.colors.primary }]}
+          textColor={theme.colors.onPrimary}
+        >
           Entrar
         </Button>
 
         {/* LINK PARA LOGIN */}
         <Pressable onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.link}>Não tem conta? Criar</Text>
+          <Text style={[styles.link, { color: theme.colors.primary }]}>Não tem conta? Criar</Text>
         </Pressable>
       </View>
 
@@ -108,7 +120,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fafafa',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
@@ -117,11 +128,9 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: '#fff',
     padding: 28,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#dbdbdb',
   },
 
   title: {
@@ -129,13 +138,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: 25,
-    color: '#a98400',
   },
 
   input: {
     marginBottom: 16,
     borderRadius: 8,
-    backgroundColor: '#e8f0ff', // o azul clarinho igual ao print
+    backgroundColor: '#e8f0ff',
   },
 
   button: {
@@ -143,13 +151,11 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 12,
     justifyContent: 'center',
-    backgroundColor: '#a98400',
   },
 
   link: {
     marginTop: 16,
     textAlign: 'center',
-    color: '#a98400',
     fontWeight: '600',
   },
 });
