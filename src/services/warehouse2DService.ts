@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios from 'axios';
 
 export interface Nivel {
   id: number;
@@ -21,7 +21,7 @@ export interface Fileira {
 
 const API = axios.create({
   //baseURL: "http://189.114.218.34/api", // ou IP local no celular
-  baseURL: "http://localhost:8080/api",
+  baseURL: 'http://localhost:8080/api',
 });
 
 /**
@@ -49,7 +49,7 @@ export async function listarFileirasPorArea(idArea: number): Promise<Fileira[]> 
 
     return fileirasCompletas;
   } catch (error: any) {
-    console.error("Erro ao buscar estrutura do estoque:", error?.response?.data || error.message);
+    console.error('Erro ao buscar estrutura do estoque:', error?.response?.data || error.message);
     return [];
   }
 }
