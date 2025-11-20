@@ -50,7 +50,12 @@ export default function RegisterScreen() {
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
+        ]}
+      >
         <Text style={[styles.title, { color: theme.colors.primary }]}>Criar Conta</Text>
 
         <TextInput
@@ -144,7 +149,6 @@ const styles = StyleSheet.create({
     padding: 28,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#dbdbdb',
   },
 
   title: {

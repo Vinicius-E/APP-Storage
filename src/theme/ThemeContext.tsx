@@ -6,7 +6,7 @@ const warehouseThemes = {
     ...MD3LightTheme,
     colors: {
       ...MD3LightTheme.colors,
-      background: '#fafafa',
+      background: '#fff7e6',
       surface: '#ffffff',
       primary: '#a98400',
       onPrimary: '#ffffff',
@@ -32,7 +32,7 @@ const warehouseThemes = {
     ...MD3LightTheme,
     colors: {
       ...MD3LightTheme.colors,
-      background: '#fafafa',
+      background: '#e9fff4',
       surface: '#ffffff',
       primary: '#99ff14',
       onPrimary: '#000000',
