@@ -12,8 +12,6 @@ export default function WarehouseScreen() {
 
   const navigation = useNavigation<any>();
 
-
-
   useFocusEffect(
     useCallback(() => {
       const checkAuth = async () => {
@@ -29,7 +27,7 @@ export default function WarehouseScreen() {
   return (
     <View style={{ padding: 20 }}>
       <Text>Bem-vindo ao Armazém!</Text>
-      <Warehouse2DView/>
+      <Warehouse2DView />
     </View>
   );
 }

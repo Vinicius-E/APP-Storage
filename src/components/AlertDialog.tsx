@@ -1,41 +1,97 @@
 import React from 'react';
-import { Dialog, Portal, Button, Text } from 'react-native-paper';
+import { Modal, View, StyleSheet, Text, Pressable } from 'react-native';
 
-interface AlertDialogProps {
+interface Props {
   visible: boolean;
-  onDismiss: () => void;
-  title?: string;
   message: string;
-  type?: 'success' | 'error' | 'warning';
+  type: 'success' | 'error' | 'warning';
+  onDismiss: () => void;
 }
 
-export default function AlertDialog({
-  visible,
-  onDismiss,
-  title = 'Aviso',
-  message,
-  type = 'success',
-}: AlertDialogProps) {
-  const getColor = () => {
+export default function AlertDialog({ visible, message, type, onDismiss }: Props) {
+  if (!visible) return null;
+
+  const getTitle = () => {
     switch (type) {
-      case 'error': return '#D32F2F';
-      case 'warning': return '#FFA000';
       case 'success':
-      default: return '#388E3C';
+        return 'Sucesso';
+      case 'error':
+        return 'Erro';
+      case 'warning':
+        return 'Aviso';
+      default:
+        return 'Aviso';
     }
   };
 
   return (
-    <Portal>
-      <Dialog visible={visible} onDismiss={onDismiss}>
-        <Dialog.Title style={{ color: getColor() }}>{title}</Dialog.Title>
-        <Dialog.Content>
-          <Text>{message}</Text>
-        </Dialog.Content>
-        <Dialog.Actions>
-          <Button onPress={onDismiss}>OK</Button>
-        </Dialog.Actions>
-      </Dialog>
-    </Portal>
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.overlay}>
+        <View style={styles.modalContainer}>
+          <Text style={styles.title}>{getTitle()}</Text>
+          <Text style={styles.message}>{message}</Text>
+
+          <Pressable style={styles.button} onPress={onDismiss}>
+            <Text style={styles.buttonText}>OK</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+
+  modalContainer: {
+    width: '92%',
+    maxWidth: 520, // melhor proporcional com sua UI
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 12,
+    color: '#a98400', // seu gold padrão
+    textAlign: 'left',
+  },
+
+  message: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: '#1a1a1a',
+    marginBottom: 28,
+  },
+
+  button: {
+    backgroundColor: '#a98400',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignSelf: 'flex-end', // mantém alinhamento elegante
+    minWidth: 100,
+    alignItems: 'center',
+  },
+
+  buttonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+});
