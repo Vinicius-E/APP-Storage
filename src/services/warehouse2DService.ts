@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { API } from '../../axios';
 
 export interface Nivel {
   id: number;
@@ -18,11 +18,6 @@ export interface Fileira {
   identificador: string;
   grades: Grade[];
 }
-
-export const API = axios.create({
-  //baseURL: "http://189.114.218.34/api", // ou IP local no celular
-  baseURL: 'http://localhost:8080/api',
-});
 
 /**
  * Busca todas as fileiras de uma área

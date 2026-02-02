@@ -14,12 +14,12 @@ import {
   TextInput,
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
-import axios from 'axios';
 import { useThemeContext } from '../theme/ThemeContext';
 import QuantityStepper from './QuantityStepper';
 import { AddGradeNivelButton } from './AddGradeNivelButton';
 import { AddFileiraButton } from './AddFileiraButton';
 import { ActionIconButton } from './IconActionButton';
+import { API } from '../../axios';
 
 interface Produto {
   id: number;
@@ -99,10 +99,6 @@ type CreatedNivel = { id: number; identificador: string; ordem?: number };
 type CreatedGrade = { id: number; identificador: string; ordem?: number };
 
 const IS_WEB = Platform.OS === 'web';
-
-const API = axios.create({
-  baseURL: 'http://localhost:8080/api',
-});
 
 type SelectedGradeCtx = {
   fileiraId: number;
