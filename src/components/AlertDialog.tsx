@@ -11,6 +11,13 @@ interface Props {
 export default function AlertDialog({ visible, message, type, onDismiss }: Props) {
   if (!visible) return null;
 
+  const tone =
+    {
+      success: { accent: '#2e7d32', subtle: '#e8f5e9' },
+      error: { accent: '#d32f2f', subtle: '#fdecea' },
+      warning: { accent: '#edb100', subtle: '#fff7e0' },
+    }[type] ?? { accent: '#edb100', subtle: '#fff7e0' };
+
   const getTitle = () => {
     switch (type) {
       case 'success':
@@ -27,11 +34,20 @@ export default function AlertDialog({ visible, message, type, onDismiss }: Props
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
-          <Text style={styles.title}>{getTitle()}</Text>
+        <View
+          style={[
+            styles.modalContainer,
+            { borderColor: tone.accent, shadowColor: tone.accent, backgroundColor: '#fff' },
+          ]}
+        >
+          <Text style={[styles.title, { color: tone.accent }]}>{getTitle()}</Text>
           <Text style={styles.message}>{message}</Text>
 
-          <Pressable style={styles.button} onPress={onDismiss}>
+          <Pressable
+            style={[styles.button, { backgroundColor: tone.accent }]}
+            android_ripple={{ color: tone.subtle }}
+            onPress={onDismiss}
+          >
             <Text style={styles.buttonText}>OK</Text>
           </Pressable>
         </View>

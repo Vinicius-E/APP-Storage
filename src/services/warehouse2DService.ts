@@ -19,7 +19,7 @@ export interface Fileira {
   grades: Grade[];
 }
 
-const API = axios.create({
+export const API = axios.create({
   //baseURL: "http://189.114.218.34/api", // ou IP local no celular
   baseURL: 'http://localhost:8080/api',
 });

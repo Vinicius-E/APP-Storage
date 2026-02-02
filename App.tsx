@@ -1,4 +1,3 @@
-// App.tsx
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
 enableScreens();
@@ -11,12 +10,13 @@ import store from './src/store';
 
 import { PaperProvider } from 'react-native-paper';
 import { ThemeProvider, useThemeContext } from './src/theme/ThemeContext';
+import { PaperIcon } from './src/PaperIcon';
 
-// Wrap Navigation inside a provider that has access to the theme
 function AppWithTheme() {
   const { theme } = useThemeContext();
+
   return (
-    <PaperProvider theme={theme}>
+    <PaperProvider theme={theme} settings={{ icon: PaperIcon }}>
       <NavigationContainer>
         <DrawerNavigator />
       </NavigationContainer>

@@ -68,11 +68,17 @@ export default function RegisterScreen() {
           autoComplete="off"
           autoCorrect={false}
           autoCapitalize="none"
-          style={[styles.input]}
+          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
-          theme={{ colors: { background: '#e8f0ff', primary: theme.colors.primary } }}
+          theme={{
+            colors: {
+              background: theme.colors.surfaceVariant,
+              primary: theme.colors.primary,
+              onSurfaceVariant: theme.colors.primary,
+            },
+          }}
         />
 
         <TextInput
@@ -85,11 +91,17 @@ export default function RegisterScreen() {
           autoComplete="off"
           autoCorrect={false}
           autoCapitalize="none"
-          style={[styles.input]}
+          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
-          theme={{ colors: { background: '#e8f0ff', primary: theme.colors.primary } }}
+          theme={{
+            colors: {
+              background: theme.colors.surfaceVariant,
+              primary: theme.colors.primary,
+              onSurfaceVariant: theme.colors.primary,
+            },
+          }}
         />
 
         <TextInput
@@ -103,11 +115,17 @@ export default function RegisterScreen() {
           autoComplete="off"
           autoCorrect={false}
           autoCapitalize="none"
-          style={[styles.input]}
+          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
-          theme={{ colors: { background: '#e8f0ff', primary: theme.colors.primary } }}
+          theme={{
+            colors: {
+              background: theme.colors.surfaceVariant,
+              primary: theme.colors.primary,
+              onSurfaceVariant: theme.colors.primary,
+            },
+          }}
         />
 
         <Button
@@ -161,7 +179,6 @@ const styles = StyleSheet.create({
   input: {
     marginBottom: 16,
     borderRadius: 8,
-    backgroundColor: '#e8f0ff',
   },
 
   button: {

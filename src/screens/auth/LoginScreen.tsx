@@ -58,7 +58,7 @@ export default function LoginScreen() {
           onChangeText={setLogin}
           mode="flat"
           underlineColor="transparent"
-          style={styles.input}
+          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
@@ -67,7 +67,7 @@ export default function LoginScreen() {
             colors: {
               primary: theme.colors.primary,
               onSurfaceVariant: theme.colors.primary,
-              background: '#e8f0ff',
+              background: theme.colors.surfaceVariant,
             },
           }}
         />
@@ -79,7 +79,7 @@ export default function LoginScreen() {
           mode="flat"
           underlineColor="transparent"
           secureTextEntry
-          style={styles.input}
+          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
@@ -87,7 +87,7 @@ export default function LoginScreen() {
             colors: {
               primary: theme.colors.primary,
               onSurfaceVariant: theme.colors.primary,
-              background: '#e8f0ff',
+              background: theme.colors.surfaceVariant,
             },
           }}
         />
@@ -143,7 +143,6 @@ const styles = StyleSheet.create({
   input: {
     marginBottom: 16,
     borderRadius: 8,
-    backgroundColor: '#e8f0ff',
   },
 
   button: {
