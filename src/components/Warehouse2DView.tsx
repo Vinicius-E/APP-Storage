@@ -12,6 +12,7 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
+  useWindowDimensions,
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -133,6 +134,7 @@ type SearchResult = {
 };
 
 export default function Warehouse2DView() {
+  const { width: screenWidth } = useWindowDimensions();
   const [fileiras, setFileiras] = useState<Fileira[]>([]);
   const [creatingFileira, setCreatingFileira] = useState(false);
   const [expandedGrades, setExpandedGrades] = useState<number[]>([]);
@@ -205,7 +207,7 @@ export default function Warehouse2DView() {
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   // ✅ SEARCH (HEADER)
-  const { searchText } = useWarehouseSearch();
+  const { searchText, setSearchText } = useWarehouseSearch();
   const [searchOpen, setSearchOpen] = useState(false);
   //const [searchText, setSearchText] = useState('');
   const [debouncedSearchText, setDebouncedSearchText] = useState('');
@@ -236,6 +238,8 @@ export default function Warehouse2DView() {
 
   const { theme } = useThemeContext();
   const colors = theme.colors;
+  const successColor = '#2E7D32';
+  const errorColor = '#C62828';
 
   const baseGradeWidth = 110;
   const perNivelWidth = 96;
@@ -1369,6 +1373,54 @@ export default function Warehouse2DView() {
     [debouncedSearchText]
   );
   const searchEnabled = normalizedQuery.length >= 3;
+  const HEADER_SEARCH_BREAKPOINT = 900;
+  const showInlineSearchHelper = IS_WEB && screenWidth < HEADER_SEARCH_BREAKPOINT;
+
+  useEffect(() => {
+    if (
+      !IS_WEB ||
+      typeof document === 'undefined' ||
+      screenWidth < HEADER_SEARCH_BREAKPOINT
+    ) {
+      return;
+    }
+
+    const applyTopSearchMaxWidth = () => {
+      const input = document.querySelector(
+        'input[placeholder*="Buscar produto"], input[placeholder*="Pesquisar produto"]'
+      ) as HTMLInputElement | null;
+
+      if (!input) {
+        return;
+      }
+
+      const container = input.parentElement as HTMLElement | null;
+      if (!container) {
+        return;
+      }
+
+      container.style.maxWidth = '40%';
+      container.style.width = '40%';
+      container.style.flex = '0 1 40%';
+
+      const parent = container.parentElement as HTMLElement | null;
+      if (parent) {
+        parent.style.justifyContent = 'flex-end';
+      }
+
+      input.style.width = '100%';
+      input.style.minWidth = '0';
+    };
+
+    applyTopSearchMaxWidth();
+    const t1 = setTimeout(applyTopSearchMaxWidth, 90);
+    const t2 = setTimeout(applyTopSearchMaxWidth, 260);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [screenWidth, searchText]);
 
   const matchedNivelIds = useMemo(() => {
     const ids = new Set<number>();
@@ -1477,61 +1529,6 @@ export default function Warehouse2DView() {
       return;
     }
     setSearchResultsVisible(true);
-  };
-
-  const focusGlobalTopSearchInput = () => {
-    if (!IS_WEB || typeof document === 'undefined') {
-      return;
-    }
-
-    const focusExistingInput = () => {
-      const input = document.querySelector(
-        'input[placeholder*="Buscar"], input[placeholder*="Pesquisar"], input[placeholder*="search"], input[placeholder*="Search"]'
-      ) as HTMLInputElement | null;
-
-      if (!input) {
-        return false;
-      }
-
-      try {
-        input.focus();
-        input.select?.();
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    if (focusExistingInput()) {
-      return;
-    }
-
-    const candidates = Array.from(
-      document.querySelectorAll('button, [role="button"]')
-    ) as HTMLElement[];
-
-    const topRightButtons = candidates
-      .map((el) => ({ el, rect: el.getBoundingClientRect() }))
-      .filter(
-        ({ rect }) =>
-          rect.top >= 0 &&
-          rect.top <= 120 &&
-          rect.left >= window.innerWidth * 0.7 &&
-          rect.width <= 56 &&
-          rect.height <= 56
-      )
-      .sort((a, b) => b.rect.left - a.rect.left);
-
-    const trigger = topRightButtons[0]?.el;
-    trigger?.click?.();
-
-    setTimeout(() => {
-      void focusExistingInput();
-    }, 80);
-
-    setTimeout(() => {
-      void focusExistingInput();
-    }, 220);
   };
 
   const focusOnResult = (r: SearchResult) => {
@@ -1663,34 +1660,74 @@ export default function Warehouse2DView() {
       <View style={[styles.root, { backgroundColor: colors.background }, styles.hoverFileira]}>
         {/*  {HeaderBar}
          */}
-        {IS_WEB ? (
+        {showInlineSearchHelper ? (
           <View
             style={[
               styles.webSearchBar,
+              styles.webSearchBarCompact,
               { backgroundColor: colors.surface, borderColor: colors.outline },
             ]}
           >
-            <Pressable
-              onPress={() => {
-                focusGlobalTopSearchInput();
-                if (searchEnabled) {
-                  submitSearch();
-                }
-              }}
-              style={({ pressed }) => [
-                styles.webSearchButton,
-                { borderColor: colors.primary },
-                pressed && { opacity: 0.75 },
-              ]}
-            >
-              <MaterialCommunityIcons name="magnify" size={18} color={colors.primary} />
-              <Text style={[styles.webSearchButtonText, { color: colors.primary }]}>Buscar</Text>
-            </Pressable>
+            <View style={styles.webSearchRowCompact}>
+              <View
+                style={[
+                  styles.searchBox,
+                  styles.searchBoxCompact,
+                  { borderColor: colors.outline, backgroundColor: colors.surface },
+                ]}
+              >
+                <MaterialCommunityIcons name="magnify" size={17} color={colors.primary} />
+                <TextInput
+                  ref={(r) => {
+                    searchInputRef.current = r;
+                  }}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  placeholder="Buscar (min. 3 chars): nome, código, cor, descrição"
+                  placeholderTextColor={`${colors.primary}88`}
+                  style={[styles.searchInput, { color: colors.text }]}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  onSubmitEditing={submitSearch}
+                  returnKeyType="search"
+                />
+                {searchText.trim() !== '' ? (
+                  <Pressable
+                    onPress={() => {
+                      setSearchText('');
+                      setDebouncedSearchText('');
+                      setHoverNivel({});
+                      setFocusedNivelId(null);
+                      setSearchResultsVisible(false);
+                    }}
+                    style={({ pressed, hovered }) => [
+                      styles.searchIconBtn,
+                      hovered && { backgroundColor: colors.surfaceVariant },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <AntDesign name="close" size={16} color={colors.primary} />
+                  </Pressable>
+                ) : null}
+              </View>
 
-            <Text style={[styles.webSearchHint, { color: colors.text }]}>
+              <Pressable
+                onPress={submitSearch}
+                style={({ pressed, hovered }) => [
+                  styles.webSearchIconButtonCompact,
+                  { borderColor: colors.primary },
+                  hovered && { backgroundColor: colors.surfaceVariant },
+                  pressed && { opacity: 0.75 },
+                ]}
+              >
+                <MaterialCommunityIcons name="magnify" size={20} color={colors.primary} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.webSearchHintCompact, { color: colors.primary }]}>
               {searchEnabled
-                ? `${searchResults.length} resultado(s) para "${debouncedSearchText.trim()}"`
-                : 'Digite ao menos 3 caracteres para pesquisar'}
+                ? `${searchResults.length} resultado(s)`
+                : 'Digite ao menos 3 caracteres'}
             </Text>
           </View>
         ) : null}
@@ -2372,16 +2409,18 @@ export default function Warehouse2DView() {
               ]}
             >
               <View style={styles.searchResultsHeader}>
-                <Text style={[styles.searchResultsTitle, { color: colors.text }]}>Resultados</Text>
+                <Text style={[styles.searchResultsTitle, { color: colors.primary }]}>
+                  Resultados
+                </Text>
                 <Pressable
                   onPress={() => setSearchResultsVisible(false)}
                   style={({ pressed }) => [styles.searchIconBtn, pressed && { opacity: 0.7 }]}
                 >
-                  <AntDesign name="close" size={18} color={colors.text} />
+                  <AntDesign name="close" size={18} color={colors.primary} />
                 </Pressable>
               </View>
 
-              <Text style={[styles.searchResultsSubtitle, { color: colors.text }]}>
+              <Text style={[styles.searchResultsSubtitle, { color: colors.primary }]}>
                 {searchEnabled
                   ? `${searchResults.length} encontrado(s) para "${debouncedSearchText.trim()}"`
                   : 'Digite ao menos 3 caracteres'}
@@ -2390,7 +2429,7 @@ export default function Warehouse2DView() {
               <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
                 {searchResults.length === 0 ? (
                   <View style={{ paddingVertical: 18 }}>
-                    <Text style={[styles.searchEmpty, { color: colors.text }]}>
+                    <Text style={[styles.searchEmpty, { color: colors.primary }]}>
                       Nenhum resultado.
                     </Text>
                   </View>
@@ -2873,21 +2912,27 @@ export default function Warehouse2DView() {
             <View
               style={[
                 styles.confirmContainer,
-                { backgroundColor: colors.surface, borderColor: colors.outline },
+                styles.feedbackContainer,
+                { backgroundColor: colors.surface, borderColor: successColor },
               ]}
             >
-              <Text style={[styles.confirmTitle, { color: colors.text }]}>Sucesso</Text>
-              <Text style={[styles.confirmMessage, { color: colors.text }]}>{successMessage}</Text>
+              <Text style={[styles.confirmTitle, styles.feedbackTitle, { color: successColor }]}>
+                Sucesso
+              </Text>
+              <Text style={[styles.confirmMessage, styles.feedbackMessage, { color: colors.text }]}>
+                {successMessage}
+              </Text>
 
               <View style={styles.confirmActions}>
                 <Pressable
                   onPress={() => setSuccessVisible(false)}
                   style={[
                     styles.confirmButton,
-                    { backgroundColor: colors.primary, borderColor: colors.primary },
+                    styles.feedbackButton,
+                    { backgroundColor: successColor, borderColor: successColor },
                   ]}
                 >
-                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Ok</Text>
+                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>OK</Text>
                 </Pressable>
               </View>
             </View>
@@ -2900,22 +2945,28 @@ export default function Warehouse2DView() {
             <View
               style={[
                 styles.confirmContainer,
-                { backgroundColor: colors.surface, borderColor: colors.outline },
+                styles.feedbackContainer,
+                { backgroundColor: colors.surface, borderColor: errorColor },
               ]}
             >
-              <Text style={[styles.confirmTitle, { color: colors.text }]}>Erro</Text>
+              <Text style={[styles.confirmTitle, styles.feedbackTitle, { color: errorColor }]}>
+                Erro
+              </Text>
 
-              <Text style={[styles.confirmMessage, { color: colors.text }]}>{errorMessage}</Text>
+              <Text style={[styles.confirmMessage, styles.feedbackMessage, { color: colors.text }]}>
+                {errorMessage}
+              </Text>
 
               <View style={styles.confirmActions}>
                 <Pressable
                   onPress={() => setErrorVisible(false)}
                   style={[
                     styles.confirmButton,
-                    { backgroundColor: colors.primary, borderColor: colors.primary },
+                    styles.feedbackButton,
+                    { backgroundColor: errorColor, borderColor: errorColor },
                   ]}
                 >
-                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Ok</Text>
+                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>OK</Text>
                 </Pressable>
               </View>
             </View>
@@ -3025,19 +3076,45 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  webSearchButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
+  webSearchBarCompact: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 8,
+  },
+
+  searchBoxCompact: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '100%',
+    minHeight: 38,
     paddingVertical: 7,
+  },
+
+  webSearchRowCompact: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
 
+  webSearchIconButtonCompact: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   webSearchButtonText: {
     fontWeight: '900',
     fontSize: 13,
+  },
+
+  webSearchHintCompact: {
+    fontSize: 11,
+    fontWeight: '700',
+    opacity: 0.78,
+    paddingHorizontal: 2,
   },
 
   webSearchHint: {
@@ -3261,6 +3338,27 @@ const styles = StyleSheet.create({
   confirmTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10 },
   confirmMessage: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   confirmWarn: { fontSize: 13, opacity: 0.85, marginBottom: 14 },
+
+  feedbackContainer: {
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 20,
+  },
+
+  feedbackTitle: {
+    marginBottom: 12,
+  },
+
+  feedbackMessage: {
+    fontWeight: '500',
+    marginBottom: 12,
+  },
+
+  feedbackButton: {
+    minWidth: 92,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
 
   confirmActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
 

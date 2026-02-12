@@ -5,7 +5,7 @@ import {
   DrawerContentScrollView,
   DrawerItem,
 } from '@react-navigation/drawer';
-import { View, Pressable, TextInput, StyleSheet, Platform } from 'react-native';
+import { View, Pressable, TextInput, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import AntDesignBase from '@expo/vector-icons/AntDesign';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
@@ -138,6 +138,8 @@ const AntDesign = (props: any) => {
 export default function DrawerNavigator() {
   const { theme } = useThemeContext();
   const { isAuthenticated } = useAuth();
+  const { width: screenWidth } = useWindowDimensions();
+  const showHeaderSearch = IS_WEB && screenWidth >= 900;
 
   return (
     <WarehouseSearchProvider>
@@ -187,7 +189,7 @@ export default function DrawerNavigator() {
             component={Warehouse2DView}
             options={{
               title: 'Armazém',
-              headerRight: () => (IS_WEB ? <WarehouseHeaderRight /> : null),
+              headerRight: () => (showHeaderSearch ? <WarehouseHeaderRight /> : null),
             }}
           />
         ) : (
@@ -201,7 +203,7 @@ export default function DrawerNavigator() {
             options={{
               title: 'Armazém',
               drawerItemStyle: { display: 'none' },
-              headerRight: () => (IS_WEB ? <WarehouseHeaderRight /> : null),
+              headerRight: () => (showHeaderSearch ? <WarehouseHeaderRight /> : null),
             }}
           />
         )}
