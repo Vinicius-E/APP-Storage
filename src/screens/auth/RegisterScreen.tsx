@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
 import { TextInput, Button, Text } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
@@ -10,7 +10,14 @@ export default function RegisterScreen() {
   const [login, setLogin] = useState('');
   const [nome, setNome] = useState('');
   const [senha, setSenha] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const [touched, setTouched] = useState<{ login: boolean; nome: boolean; senha: boolean }>({
+    login: false,
+    nome: false,
+    senha: false,
+  });
 
   const [dialogVisible, setDialogVisible] = useState(false);
   const [dialogMsg, setDialogMsg] = useState('');
@@ -19,17 +26,46 @@ export default function RegisterScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useThemeContext();
 
+  const emailValid = useMemo(() => {
+    const value = login.trim();
+    if (!value) {
+      return false;
+    }
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }, [login]);
+
+  const nomeValid = useMemo(() => nome.trim().length >= 2, [nome]);
+  const senhaValid = useMemo(() => senha.trim().length >= 6, [senha]);
+  const canSubmit = emailValid && nomeValid && senhaValid && !loading;
+
   const handleRegister = async () => {
-    if (!login || !nome || !senha) {
-      setDialogMsg('Preencha todos os campos.');
-      setDialogType('warning');
-      setDialogVisible(true);
+    setTouched({ login: true, nome: true, senha: true });
+
+    if (!canSubmit) {
+      if (!emailValid) {
+        setDialogMsg('Informe um email válido.');
+        setDialogType('warning');
+        setDialogVisible(true);
+        return;
+      }
+      if (!nomeValid) {
+        setDialogMsg('Informe seu nome.');
+        setDialogType('warning');
+        setDialogVisible(true);
+        return;
+      }
+      if (!senhaValid) {
+        setDialogMsg('A senha deve ter pelo menos 6 caracteres.');
+        setDialogType('warning');
+        setDialogVisible(true);
+        return;
+      }
       return;
     }
 
     try {
       setLoading(true);
-      await registerUser({ login, nome, senha });
+      await registerUser({ login: login.trim(), nome: nome.trim(), senha });
 
       setDialogMsg('Conta criada com sucesso!');
       setDialogType('success');
@@ -57,82 +93,105 @@ export default function RegisterScreen() {
         ]}
       >
         <Text style={[styles.title, { color: theme.colors.primary }]}>Criar Conta</Text>
+        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+          Preencha seus dados para continuar
+        </Text>
 
         <TextInput
-          label="Login"
+          label="Email"
           value={login}
           onChangeText={setLogin}
+          onBlur={() => setTouched((p) => ({ ...p, login: true }))}
           mode="flat"
-          placeholder=" "
           underlineColor="transparent"
-          autoComplete="off"
+          autoComplete="email"
           autoCorrect={false}
           autoCapitalize="none"
           style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
+          keyboardType="email-address"
+          returnKeyType="next"
+          left={<TextInput.Icon icon="email-outline" />}
           theme={{
             colors: {
               background: theme.colors.surfaceVariant,
               primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.primary,
+              onSurfaceVariant: theme.colors.textSecondary,
             },
           }}
+          error={touched.login && !emailValid}
         />
 
         <TextInput
           label="Nome"
           value={nome}
           onChangeText={setNome}
+          onBlur={() => setTouched((p) => ({ ...p, nome: true }))}
           mode="flat"
-          placeholder=" "
           underlineColor="transparent"
-          autoComplete="off"
+          autoComplete="name"
           autoCorrect={false}
-          autoCapitalize="none"
+          autoCapitalize="words"
           style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
+          returnKeyType="next"
+          left={<TextInput.Icon icon="account-outline" />}
           theme={{
             colors: {
               background: theme.colors.surfaceVariant,
               primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.primary,
+              onSurfaceVariant: theme.colors.textSecondary,
             },
           }}
+          error={touched.nome && !nomeValid}
         />
 
         <TextInput
           label="Senha"
           value={senha}
           onChangeText={setSenha}
-          secureTextEntry
+          onBlur={() => setTouched((p) => ({ ...p, senha: true }))}
+          secureTextEntry={!showPassword}
           mode="flat"
-          placeholder=" "
           underlineColor="transparent"
-          autoComplete="off"
+          autoComplete="password"
           autoCorrect={false}
           autoCapitalize="none"
           style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
+          returnKeyType="done"
+          onSubmitEditing={handleRegister}
+          left={<TextInput.Icon icon="lock-outline" />}
+          right={
+            <TextInput.Icon
+              icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              onPress={() => setShowPassword((s) => !s)}
+              forceTextInputFocus={false}
+            />
+          }
           theme={{
             colors: {
               background: theme.colors.surfaceVariant,
               primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.primary,
+              onSurfaceVariant: theme.colors.textSecondary,
             },
           }}
+          error={touched.senha && !senhaValid}
         />
 
         <Button
           mode="contained"
           loading={loading}
           onPress={handleRegister}
+          disabled={!canSubmit}
           style={[styles.button, { backgroundColor: theme.colors.primary }]}
+          contentStyle={styles.buttonContent}
           textColor={theme.colors.onPrimary}
         >
           Registrar
@@ -164,33 +223,50 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 420,
-    padding: 28,
+    paddingHorizontal: 28,
+    paddingTop: 26,
+    paddingBottom: 20,
     borderRadius: 18,
     borderWidth: 1,
+    shadowColor: '#000000',
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 3,
   },
 
   title: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 25,
+  },
+
+  subtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 18,
   },
 
   input: {
-    marginBottom: 16,
-    borderRadius: 8,
+    marginBottom: 14,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
 
   button: {
-    marginTop: 10,
-    height: 48,
+    marginTop: 8,
     borderRadius: 12,
     justifyContent: 'center',
   },
 
+  buttonContent: {
+    height: 48,
+  },
+
   link: {
-    marginTop: 16,
+    marginTop: 14,
     textAlign: 'center',
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

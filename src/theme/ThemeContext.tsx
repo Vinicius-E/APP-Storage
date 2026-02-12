@@ -1,80 +1,105 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 import { MD3LightTheme } from 'react-native-paper';
-// Importe StyleSheet, View, Text, TouchableOpacity para o componente ThemeSwitcherButton
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 const warehouseThemes = {
-  // ... (definições de steel, wood, neon permanecem as mesmas)
   steel: {
     ...MD3LightTheme,
     id: 'steel',
-    /* colors: {
-      ...MD3LightTheme.colors,
-      background: '#432f00ff',
-      surface: '#f8f9fb',
-      primary: '#a98400',
-      onPrimary: '#ffffff',
-      text: '#1a1f2f',
-    }, */
     colors: {
       ...MD3LightTheme.colors,
-      background: '#e8e0d7',
-      surface: '#f8f2ea',
-      primary: '#b67a20',
-      onPrimary: '#ffffff',
-      text: '#2a1c11',
+
+      background: '#EFE7DF',
+      surface: '#FFF7EE',
+      surfaceVariant: '#F3E7DA',
+
+      primary: '#9C5B17',
+      onPrimary: '#FFFFFF',
+
+      outline: '#D6C6B9',
+      outlineVariant: '#E1D4C9',
+
+      text: '#2A1C11',
+      textSecondary: '#6B5A4B',
+
+      error: '#B3261E',
+      onSurface: '#2A1C11',
+      onSurfaceVariant: '#6B5A4B',
     },
   },
+
   wood: {
     ...MD3LightTheme,
     id: 'wood',
     colors: {
       ...MD3LightTheme.colors,
-      background: '#e8e0d7',
-      surface: '#f8f2ea',
-      primary: '#b67a20',
-      onPrimary: '#ffffff',
-      text: '#2a1c11',
+
+      background: '#F0E3D2',
+      surface: '#FFF4E6',
+      surfaceVariant: '#F1E2CF',
+
+      primary: '#7A4A21',
+      onPrimary: '#FFFFFF',
+
+      outline: '#D1B99F',
+      outlineVariant: '#DFCAB3',
+
+      text: '#2A1C11',
+      textSecondary: '#6D513B',
+
+      error: '#B3261E',
+      onSurface: '#2A1C11',
+      onSurfaceVariant: '#6D513B',
     },
   },
+
   neon: {
     ...MD3LightTheme,
     id: 'neon',
     colors: {
       ...MD3LightTheme.colors,
-      background: '#e3ffe6',
-      surface: '#f8fff9',
-      primary: '#99ff14',
-      onPrimary: '#000000',
-      text: '#1a1a1a',
+
+      background: '#07120B',
+      surface: '#0B1A10',
+      surfaceVariant: '#102617',
+
+      primary: '#99FF14',
+      onPrimary: '#07120B',
+
+      outline: '#1E3A27',
+      outlineVariant: '#284A33',
+
+      text: '#E9FFE1',
+      textSecondary: '#B9DDB0',
+
+      error: '#FF5A5A',
+      onSurface: '#E9FFE1',
+      onSurfaceVariant: '#B9DDB0',
     },
   },
 };
 
 const ThemeContext = createContext({
   theme: warehouseThemes.steel,
-  setTheme: (name) => {},
+  setTheme: (name: string) => {},
 });
 
-export const ThemeProvider = ({ children }) => {
-  const [theme, setTheme] = useState(warehouseThemes.steel);
+export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
+  const [theme, setThemeState] = useState(warehouseThemes.steel);
 
-  const switchTheme = (name) => {
-    if (warehouseThemes[name]) {
-      setTheme(warehouseThemes[name]);
+  const switchTheme = (name: string) => {
+    if (warehouseThemes[name as keyof typeof warehouseThemes]) {
+      setThemeState(warehouseThemes[name as keyof typeof warehouseThemes]);
     }
   };
 
-  return (
-    <ThemeContext.Provider value={{ theme, setTheme: switchTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  const value = useMemo(() => ({ theme, setTheme: switchTheme }), [theme]);
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
 
 export const useThemeContext = () => useContext(ThemeContext);
 
-// Componente de botão de alternância de tema aprimorado
 export const ThemeSwitcherButton = () => {
   const { theme, setTheme } = useThemeContext();
   const themes = Object.keys(warehouseThemes);
@@ -84,17 +109,15 @@ export const ThemeSwitcherButton = () => {
   const nextThemeName = themes[nextIndex];
   const nextThemeDisplayName = nextThemeName.charAt(0).toUpperCase() + nextThemeName.slice(1);
 
-  // Definindo estilos usando StyleSheet.create com valores literais corretos
   const styles = StyleSheet.create({
     buttonStyle: {
       backgroundColor: theme.colors.primary,
       padding: 12,
-      borderRadius: 8,
-      // CORREÇÃO: Usando o valor literal 'center' em vez de uma string genérica
+      borderRadius: 10,
       alignItems: 'center',
       justifyContent: 'center',
       marginTop: 20,
-      minHeight: 44, // Boa prática de usabilidade: área de toque mínima
+      minHeight: 44,
     },
     buttonTextStyle: {
       color: theme.colors.onPrimary,

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,15 @@ import {
   TextInput,
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useThemeContext } from '../theme/ThemeContext';
 import QuantityStepper from './QuantityStepper';
 import { AddGradeNivelButton } from './AddGradeNivelButton';
 import { AddFileiraButton } from './AddFileiraButton';
 import { ActionIconButton } from './IconActionButton';
 import { API } from '../../axios';
+import { AuthProvider } from '../auth/AuthContext';
+import { useWarehouseSearch } from '../search/WarehouseSearchContext';
 
 interface Produto {
   id: number;
@@ -102,7 +105,7 @@ const IS_WEB = Platform.OS === 'web';
 
 type SelectedGradeCtx = {
   fileiraId: number;
-  gradeId?: number; // se undefined => vai criar nova grade
+  gradeId?: number;
   label: string;
 
   nextNivelIdentificador: string;
@@ -110,6 +113,23 @@ type SelectedGradeCtx = {
 
   nextGradeIdentificador?: string;
   nextGradeOrdem?: number;
+};
+
+type SearchResult = {
+  nivelId: number;
+  gradeId: number;
+  fileiraId: number;
+  fileiraIdentificador: string;
+  gradeIdentificador: string;
+  nivelIdentificador: string;
+
+  nomeModelo: string;
+  codigo: string;
+  cor: string;
+  descricao: string;
+  quantidade: number;
+
+  label: string;
 };
 
 export default function Warehouse2DView() {
@@ -144,7 +164,7 @@ export default function Warehouse2DView() {
   const [itemLoading, setItemLoading] = useState(false);
   const [itemEstoque, setItemEstoque] = useState<ItemEstoque | null>(null);
 
-  const [editQuantidade, setEditQuantidade] = useState<number>(0);
+  const [editQuantidade, setEditQuantidade] = useState<number>(1);
   const [editCodigo, setEditCodigo] = useState<string>('');
   const [editCor, setEditCor] = useState<string>('');
   const [editNomeModelo, setEditNomeModelo] = useState<string>('');
@@ -153,25 +173,16 @@ export default function Warehouse2DView() {
   const [confirmSaveVisible, setConfirmSaveVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // ✅ modal "Adicionar item na grade" (CRIA NOVO NÍVEL NO FINAL, size + 1)
   const [addItemModalVisible, setAddItemModalVisible] = useState(false);
-  /* const [selectedGradeCtx, setSelectedGradeCtx] = useState<{
-    fileiraId: number;
-    gradeId: number;
-    label: string;
-    nextNivelIdentificador: string;
-    nextNivelOrdem: number;
-  } | null>(null); */
   const [selectedGradeCtx, setSelectedGradeCtx] = useState<SelectedGradeCtx | null>(null);
 
   const [addLoading, setAddLoading] = useState(false);
-  const [addQuantidade, setAddQuantidade] = useState<number>(0);
+  const [addQuantidade, setAddQuantidade] = useState<number>(1);
   const [addCodigo, setAddCodigo] = useState<string>('');
   const [addCor, setAddCor] = useState<string>('');
   const [addNomeModelo, setAddNomeModelo] = useState<string>('');
   const [addDescricao, setAddDescricao] = useState<string>('');
 
-  // ✅ modal "Adicionar grade na fileira" (CRIA GRADE + N1 + ITEM)
   const [addGradeModalVisible, setAddGradeModalVisible] = useState(false);
   const [selectedFileiraCtx, setSelectedFileiraCtx] = useState<{
     fileiraId: number;
@@ -182,20 +193,26 @@ export default function Warehouse2DView() {
   } | null>(null);
 
   const [addGradeLoading, setAddGradeLoading] = useState(false);
-  const [addGradeQuantidade, setAddGradeQuantidade] = useState<number>(0);
+  const [addGradeQuantidade, setAddGradeQuantidade] = useState<number>(1);
   const [addGradeCodigo, setAddGradeCodigo] = useState<string>('');
   const [addGradeCor, setAddGradeCor] = useState<string>('');
   const [addGradeNomeModelo, setAddGradeNomeModelo] = useState<string>('');
   const [addGradeDescricao, setAddGradeDescricao] = useState<string>('');
-  // ✅ modal de sucesso (já existe)
   const [successVisible, setSuccessVisible] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
 
-  // ✅ modal de erro (NOVO)
   const [errorVisible, setErrorVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // ✅ helpers (padroniza)
+  // ✅ SEARCH (HEADER)
+  const { searchText } = useWarehouseSearch();
+  const [searchOpen, setSearchOpen] = useState(false);
+  //const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
+  const [searchResultsVisible, setSearchResultsVisible] = useState(false);
+  const [focusedNivelId, setFocusedNivelId] = useState<number | null>(null);
+  const searchInputRef = useRef<TextInput | null>(null);
+
   const showSuccess = (message: string) => {
     setSuccessMessage(message);
     setSuccessVisible(true);
@@ -206,7 +223,6 @@ export default function Warehouse2DView() {
     setErrorVisible(true);
   };
 
-  // ✅ extrai msg padrão do axios/spring
   const extractErrorMessage = (error: any, fallback: string) => {
     const apiMsg =
       error?.response?.data?.message ??
@@ -252,7 +268,7 @@ export default function Warehouse2DView() {
       nextGradeOrdem: nextGrade.ordem,
     });
 
-    setAddQuantidade(0);
+    setAddQuantidade(1);
     setAddCodigo('');
     setAddCor('');
     setAddNomeModelo('');
@@ -287,15 +303,6 @@ export default function Warehouse2DView() {
     return { identificador: `N${nextNumber}`, ordem: nextNumber };
   };
 
-  const getGradeWidth = (grade: Grade, expanded: boolean) => {
-    const nivelCount = grade.niveis.length;
-    if (!expanded) {
-      return baseGradeWidth;
-    }
-    const extra = Math.max(0, nivelCount - 1) * perNivelWidth;
-    return baseGradeWidth + extra;
-  };
-
   const fetchAllData = async () => {
     try {
       const res = await API.get<EstoquePosicao[]>(`/estoque/posicoes/area/${AREA_ID}`);
@@ -314,7 +321,6 @@ export default function Warehouse2DView() {
 
         const fileira = fileiraMap.get(r.fileiraId)!;
 
-        // ✅ fileira sem grade
         if (r.gradeId == null) {
           continue;
         }
@@ -330,7 +336,6 @@ export default function Warehouse2DView() {
           fileira.grades.push(grade);
         }
 
-        // ✅ grade sem nível
         if (r.nivelId == null) {
           continue;
         }
@@ -449,7 +454,6 @@ export default function Warehouse2DView() {
       return parseNivelOrder(curr) >= parseNivelOrder(prev) ? curr : prev;
     });
 
-    // ✅ use o mesmo endpoint que funciona
     await deleteAndResequenceLocal(fileiraId, grade.id, alvo.id, alvo);
   };
 
@@ -473,7 +477,6 @@ export default function Warehouse2DView() {
         } catch (errorDelete: any) {
           const status = errorDelete?.response?.status;
 
-          // Se não existir endpoint de delete por nível, tenta fallback
           if (status !== 404 && status !== 405) {
             throw errorDelete;
           }
@@ -571,7 +574,7 @@ export default function Warehouse2DView() {
 
   const resetProductForm = () => {
     setItemEstoque(null);
-    setEditQuantidade(0);
+    setEditQuantidade(1);
     setEditCodigo('');
     setEditCor('');
     setEditNomeModelo('');
@@ -611,7 +614,7 @@ export default function Warehouse2DView() {
 
       setItemEstoque(dto);
 
-      setEditQuantidade(typeof dto.quantidade === 'number' ? dto.quantidade : 0);
+      setEditQuantidade(typeof dto.quantidade === 'number' ? dto.quantidade : 1);
       setEditCodigo(dto.produtoCodigoWester ?? '');
       setEditCor(dto.produtoCor ?? '');
       setEditNomeModelo(dto.produtoNomeModelo ?? '');
@@ -657,7 +660,7 @@ export default function Warehouse2DView() {
   const isDirty = useMemo(() => {
     if (!itemEstoque) {
       return (
-        editQuantidade !== 0 ||
+        editQuantidade !== 1 ||
         editCodigo.trim() !== '' ||
         editCor.trim() !== '' ||
         editNomeModelo.trim() !== '' ||
@@ -845,7 +848,6 @@ export default function Warehouse2DView() {
     });
   };
 
-  // ✅ abrir modal do + da grade: NÃO PERSISTE NADA AQUI, só prepara o "N{max+1}"
   const openAddItemModalForGrade = (fileira: Fileira, grade: Grade) => {
     const next = computeNextNivelForGrade(grade);
     const label = `Inserir item - Fileira ${fileira.identificador} - Grade ${grade.identificador} - Nível ${next.identificador}`;
@@ -858,7 +860,7 @@ export default function Warehouse2DView() {
       nextNivelOrdem: next.ordem,
     });
 
-    setAddQuantidade(0);
+    setAddQuantidade(1);
     setAddCodigo('');
     setAddCor('');
     setAddNomeModelo('');
@@ -880,6 +882,11 @@ export default function Warehouse2DView() {
 
     if (addNomeModelo.trim() === '') {
       showError('Informe o nome/modelo.');
+      return;
+    }
+
+    if (addQuantidade <= 0) {
+      showError('Quantidade 0 é tratada pela API como remoção de nível. Use valor maior que zero.');
       return;
     }
 
@@ -950,7 +957,6 @@ export default function Warehouse2DView() {
       setExpandedFileiras((prev) =>
         prev.includes(selectedGradeCtx.fileiraId) ? prev : [...prev, selectedGradeCtx.fileiraId]
       );
-
       setExpandedGrades((prev) =>
         prev.includes(targetGradeId!) ? prev : [...prev, targetGradeId!]
       );
@@ -981,7 +987,6 @@ export default function Warehouse2DView() {
             const mergedGrades = [...f.grades, newGrade].sort(
               (a, b) => parseGradeOrder(a) - parseGradeOrder(b)
             );
-
             return { ...f, grades: mergedGrades };
           });
         });
@@ -1001,6 +1006,12 @@ export default function Warehouse2DView() {
 
   const saveEdits = async () => {
     if (!selectedNivelCtx) {
+      closeConfirmSave();
+      return;
+    }
+
+    if (editQuantidade <= 0) {
+      showError('Quantidade 0 é tratada pela API como remoção de nível. Use valor maior que zero.');
       closeConfirmSave();
       return;
     }
@@ -1072,7 +1083,7 @@ export default function Warehouse2DView() {
       suggestedGradeOrdem: next.ordem,
     });
 
-    setAddGradeQuantidade(0);
+    setAddGradeQuantidade(1);
     setAddGradeCodigo('');
     setAddGradeCor('');
     setAddGradeNomeModelo('');
@@ -1130,6 +1141,11 @@ export default function Warehouse2DView() {
 
     if (addGradeNomeModelo.trim() === '') {
       showError('Informe o nome/modelo.');
+      return;
+    }
+
+    if (addGradeQuantidade <= 0) {
+      showError('Quantidade 0 é tratada pela API como remoção de nível. Use valor maior que zero.');
       return;
     }
 
@@ -1222,6 +1238,7 @@ export default function Warehouse2DView() {
 
     return result;
   };
+
   const numberToAlpha = (num: number): string => {
     let result = '';
 
@@ -1259,7 +1276,6 @@ export default function Warehouse2DView() {
     try {
       const next = computeNextFileira(fileiras);
 
-      // ✅ backend endpoint expected: POST /fileiras/area/{AREA_ID}
       const res = await API.post(`/fileiras/area/${AREA_ID}`, {
         identificador: next.identificador,
         ordem: next.ordem,
@@ -1331,206 +1347,919 @@ export default function Warehouse2DView() {
     });
   };
 
-  // dentro do deleteAndResequenceLocal, substitua:
-  // await API.delete(`/niveis/${nivelId}/resequence`);
-  // await fetchAllData();
-  //
-  // por:
+  // ✅ SEARCH helpers
+  const normalizeSearchText = (value: string) => {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  };
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearchText(searchText);
+    }, 320);
+
+    return () => clearTimeout(t);
+  }, [searchText]);
+
+  const normalizedQuery = useMemo(
+    () => normalizeSearchText(debouncedSearchText),
+    [debouncedSearchText]
+  );
+  const searchEnabled = normalizedQuery.length >= 3;
+
+  const matchedNivelIds = useMemo(() => {
+    const ids = new Set<number>();
+
+    if (!searchEnabled) {
+      return ids;
+    }
+
+    for (const f of fileiras) {
+      for (const g of f.grades) {
+        for (const n of g.niveis) {
+          const nome = (n.produto?.nomeModelo ?? n.produtoNomeModelo ?? '').toString();
+          const codigo = (n.produto?.codigoSistemaWester ?? '').toString();
+          const cor = (n.produto?.cor ?? '').toString();
+          const descricao = (n.produto?.descricao ?? '').toString();
+
+          const hay = normalizeSearchText(`${nome} ${codigo} ${cor} ${descricao}`);
+          if (hay.includes(normalizedQuery)) {
+            ids.add(n.id);
+          }
+        }
+      }
+    }
+
+    return ids;
+  }, [fileiras, normalizedQuery, searchEnabled]);
+
+  const searchResults = useMemo((): SearchResult[] => {
+    if (!searchEnabled) {
+      return [];
+    }
+
+    const results: SearchResult[] = [];
+
+    for (const f of fileiras) {
+      for (const g of f.grades) {
+        for (const n of g.niveis) {
+          if (!matchedNivelIds.has(n.id)) {
+            continue;
+          }
+
+          const nome = (n.produto?.nomeModelo ?? n.produtoNomeModelo ?? '').toString().trim();
+          const codigo = (n.produto?.codigoSistemaWester ?? '').toString().trim();
+          const cor = (n.produto?.cor ?? '').toString().trim();
+          const descricao = (n.produto?.descricao ?? '').toString().trim();
+          const qtd = typeof n.quantidade === 'number' ? n.quantidade : 0;
+
+          const label = `Fileira ${f.identificador} - Grade ${g.identificador} - Nível ${n.identificador}`;
+
+          results.push({
+            nivelId: n.id,
+            gradeId: g.id,
+            fileiraId: f.id,
+            fileiraIdentificador: f.identificador,
+            gradeIdentificador: g.identificador,
+            nivelIdentificador: n.identificador,
+            nomeModelo: nome,
+            codigo: codigo,
+            cor: cor,
+            descricao: descricao,
+            quantidade: qtd,
+            label,
+          });
+        }
+      }
+    }
+
+    results.sort((a, b) => {
+      const an = normalizeSearchText(a.nomeModelo);
+      const bn = normalizeSearchText(b.nomeModelo);
+      if (an < bn) {
+        return -1;
+      }
+      if (an > bn) {
+        return 1;
+      }
+      return a.label.localeCompare(b.label);
+    });
+
+    return results.slice(0, 200);
+  }, [fileiras, matchedNivelIds, searchEnabled]);
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    // setSearchText('');
+    setDebouncedSearchText('');
+    setSearchResultsVisible(false);
+    setFocusedNivelId(null);
+    setHoverNivel({});
+  };
+
+  const openSearch = () => {
+    setSearchOpen(true);
+    setTimeout(() => {
+      try {
+        searchInputRef.current?.focus?.();
+      } catch {
+        // ignore
+      }
+    }, 0);
+  };
+
+  const submitSearch = () => {
+    if (!searchEnabled) {
+      showError('Digite ao menos 3 caracteres para pesquisar.');
+      return;
+    }
+    setSearchResultsVisible(true);
+  };
+
+  const focusGlobalTopSearchInput = () => {
+    if (!IS_WEB || typeof document === 'undefined') {
+      return;
+    }
+
+    const focusExistingInput = () => {
+      const input = document.querySelector(
+        'input[placeholder*="Buscar"], input[placeholder*="Pesquisar"], input[placeholder*="search"], input[placeholder*="Search"]'
+      ) as HTMLInputElement | null;
+
+      if (!input) {
+        return false;
+      }
+
+      try {
+        input.focus();
+        input.select?.();
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (focusExistingInput()) {
+      return;
+    }
+
+    const candidates = Array.from(
+      document.querySelectorAll('button, [role="button"]')
+    ) as HTMLElement[];
+
+    const topRightButtons = candidates
+      .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+      .filter(
+        ({ rect }) =>
+          rect.top >= 0 &&
+          rect.top <= 120 &&
+          rect.left >= window.innerWidth * 0.7 &&
+          rect.width <= 56 &&
+          rect.height <= 56
+      )
+      .sort((a, b) => b.rect.left - a.rect.left);
+
+    const trigger = topRightButtons[0]?.el;
+    trigger?.click?.();
+
+    setTimeout(() => {
+      void focusExistingInput();
+    }, 80);
+
+    setTimeout(() => {
+      void focusExistingInput();
+    }, 220);
+  };
+
+  const focusOnResult = (r: SearchResult) => {
+    setExpandedFileiras((prev) => (prev.includes(r.fileiraId) ? prev : [...prev, r.fileiraId]));
+    setExpandedGrades((prev) => (prev.includes(r.gradeId) ? prev : [...prev, r.gradeId]));
+    setActiveGradeId(r.gradeId);
+
+    setHoverNivel((prev) => ({ ...prev, [r.nivelId]: true }));
+    setFocusedNivelId(r.nivelId);
+    setSearchResultsVisible(false);
+
+    if (IS_WEB) {
+      setTimeout(() => {
+        const el = document.getElementById(`nivel-${r.nivelId}`);
+        if (el && typeof (el as any).scrollIntoView === 'function') {
+          (el as any).scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        }
+      }, 60);
+    }
+
+    setTimeout(() => {
+      setHoverNivel((prev) => {
+        const next = { ...prev };
+        delete next[r.nivelId];
+        return next;
+      });
+    }, 2200);
+  };
+
+  useEffect(() => {
+    if (!searchOpen) {
+      return;
+    }
+    if (IS_WEB) {
+      const onKey = (e: any) => {
+        if (e?.key === 'Escape') {
+          closeSearch();
+        }
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }
+  }, [searchOpen]);
+
+  /*   const HeaderBar = (
+    <View
+      style={[
+        styles.headerBar,
+        { backgroundColor: colors.background, borderColor: colors.outline },
+      ]}
+    >
+      <Text style={[styles.headerTitle, { color: colors.text }]}>Armazém</Text>
+
+      <View style={styles.headerRight}>
+        {searchOpen ? (
+          <View
+            style={[
+              styles.searchBox,
+              { borderColor: colors.outline, backgroundColor: colors.surface },
+            ]}
+          >
+            <AntDesign name="search" size={16} color={colors.text} />
+            <TextInput
+              ref={(r) => {
+                searchInputRef.current = r;
+              }}
+              value={searchText}
+              onChangeText={setSearchText}
+              placeholder="Buscar (min. 3 chars): nome, código, cor, descrição"
+              placeholderTextColor="#888"
+              style={[styles.searchInput, { color: colors.text }]}
+              autoCorrect={false}
+              autoCapitalize="none"
+              onSubmitEditing={submitSearch}
+              returnKeyType="search"
+            />
+            {searchText.trim() !== '' ? (
+              <Pressable
+                onPress={() => {
+                  setSearchText('');
+                  setDebouncedSearchText('');
+                  setHoverNivel({});
+                  setFocusedNivelId(null);
+                  setSearchResultsVisible(false);
+                }}
+                style={({ pressed }) => [styles.searchIconBtn, pressed && { opacity: 0.7 }]}
+              >
+                <AntDesign name="close" size={16} color={colors.text} />
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              onPress={closeSearch}
+              style={({ pressed }) => [styles.searchIconBtn, pressed && { opacity: 0.7 }]}
+            >
+              <AntDesign name="caretup" size={16} color={colors.text} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            onPress={openSearch}
+            style={({ pressed }) => [styles.searchPill, pressed && { opacity: 0.7 }]}
+          >
+            <AntDesign name="search" size={18} color={colors.primary} />
+            <Text style={[styles.searchPillText, { color: colors.primary }]}>Buscar</Text>
+          </Pressable>
+        )}
+
+        {searchEnabled ? (
+          <Pressable
+            onPress={submitSearch}
+            style={({ pressed }) => [
+              styles.searchCount,
+              { backgroundColor: colors.surface, borderColor: colors.outline },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Text style={[styles.searchCountText, { color: colors.text }]}>
+              {searchResults.length}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  ); */
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }, styles.hoverFileira]}>
-      {IS_WEB ? (
-        <View style={[styles.webScroller, { backgroundColor: colors.background }]}>
-          <View style={styles.webContent}>
-            {fileiras.map((fileira) => {
-              const fileiraExpanded = expandedFileiras.includes(fileira.id);
-              const isFileiraHovered = !!hoverFileira[fileira.id];
-
-              const isAnyChildHovered = fileira.grades.some((g) => {
-                if (hoverGrade[g.id]) {
-                  return true;
+    <AuthProvider>
+      <View style={[styles.root, { backgroundColor: colors.background }, styles.hoverFileira]}>
+        {/*  {HeaderBar}
+         */}
+        {IS_WEB ? (
+          <View
+            style={[
+              styles.webSearchBar,
+              { backgroundColor: colors.surface, borderColor: colors.outline },
+            ]}
+          >
+            <Pressable
+              onPress={() => {
+                focusGlobalTopSearchInput();
+                if (searchEnabled) {
+                  submitSearch();
                 }
-                return g.niveis.some((n) => hoverNivel[n.id]);
-              });
+              }}
+              style={({ pressed }) => [
+                styles.webSearchButton,
+                { borderColor: colors.primary },
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <MaterialCommunityIcons name="magnify" size={18} color={colors.primary} />
+              <Text style={[styles.webSearchButtonText, { color: colors.primary }]}>Buscar</Text>
+            </Pressable>
 
-              const shouldShowFileiraHover =
-                (fileiraExpanded || isFileiraHovered) && !isAnyChildHovered;
+            <Text style={[styles.webSearchHint, { color: colors.text }]}>
+              {searchEnabled
+                ? `${searchResults.length} resultado(s) para "${debouncedSearchText.trim()}"`
+                : 'Digite ao menos 3 caracteres para pesquisar'}
+            </Text>
+          </View>
+        ) : null}
 
-              return (
-                <Pressable
-                  key={fileira.id}
-                  onHoverIn={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))}
-                  onHoverOut={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }))}
-                  style={[
-                    styles.fileiraContainer,
-                    { backgroundColor: colors.surface, borderColor: colors.outline },
-                    shouldShowFileiraHover && [
-                      styles.fileiraHover,
-                      { borderColor: colors.primary, shadowColor: colors.primary },
-                    ],
-                  ]}
-                >
+        {IS_WEB ? (
+          <View style={[styles.webScroller, { backgroundColor: colors.background }]}>
+            <View style={styles.webContent}>
+              {fileiras.map((fileira) => {
+                const fileiraExpanded = expandedFileiras.includes(fileira.id);
+                const isFileiraHovered = !!hoverFileira[fileira.id];
+
+                const isAnyChildHovered = fileira.grades.some((g) => {
+                  if (hoverGrade[g.id]) {
+                    return true;
+                  }
+                  return g.niveis.some((n) => hoverNivel[n.id]);
+                });
+
+                const shouldShowFileiraHover =
+                  (fileiraExpanded || isFileiraHovered) && !isAnyChildHovered;
+
+                return (
                   <Pressable
-                    onPress={() => toggleFileiraExpand(fileira)}
-                    style={({ pressed }) => [styles.fileiraHeader, pressed && { opacity: 0.7 }]}
+                    key={fileira.id}
+                    onHoverIn={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))}
+                    onHoverOut={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }))}
+                    style={[
+                      styles.fileiraContainer,
+                      { backgroundColor: colors.surface, borderColor: colors.outline },
+                      shouldShowFileiraHover && [
+                        styles.fileiraHover,
+                        { borderColor: colors.primary, shadowColor: colors.primary },
+                      ],
+                    ]}
                   >
-                    <Text
-                      style={[
-                        styles.fileiraTitle,
-                        { color: colors.text },
-                        (fileiraExpanded || shouldShowFileiraHover) && { color: colors.primary },
-                      ]}
+                    <Pressable
+                      onPress={() => toggleFileiraExpand(fileira)}
+                      style={({ pressed }) => [styles.fileiraHeader, pressed && { opacity: 0.7 }]}
                     >
-                      Fileira {fileira.identificador}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.fileiraTitle,
+                          { color: colors.text },
+                          (fileiraExpanded || shouldShowFileiraHover) && { color: colors.primary },
+                        ]}
+                      >
+                        Fileira {fileira.identificador}
+                      </Text>
 
-                    <AntDesign
-                      name={fileiraExpanded ? 'caret-left' : 'caret-right'}
-                      size={22}
-                      color={
-                        fileiraExpanded
-                          ? colors.primary
-                          : shouldShowFileiraHover
+                      <AntDesign
+                        name={fileiraExpanded ? 'caret-left' : 'caret-right'}
+                        size={22}
+                        color={
+                          fileiraExpanded
                             ? colors.primary
-                            : colors.text
-                      }
-                      style={shouldShowFileiraHover ? styles.iconHover : undefined}
-                    />
-                  </Pressable>
+                            : shouldShowFileiraHover
+                              ? colors.primary
+                              : colors.text
+                        }
+                        style={shouldShowFileiraHover ? styles.iconHover : undefined}
+                      />
+                    </Pressable>
 
-                  {fileira.grades.map((grade) => {
-                    const expanded = expandedGrades.includes(grade.id);
-                    const isGradeHovered = !!hoverGrade[grade.id];
-                    const isActiveGrade = activeGradeId === grade.id;
+                    {fileira.grades.map((grade) => {
+                      const expanded = expandedGrades.includes(grade.id);
+                      const isGradeHovered = !!hoverGrade[grade.id];
+                      const isActiveGrade = activeGradeId === grade.id;
 
-                    const niveisToShow = expanded
-                      ? grade.niveis
-                      : grade.niveis.filter((n) => n.identificador === 'N1');
+                      const niveisToShow = expanded
+                        ? grade.niveis
+                        : grade.niveis.filter(
+                            (n) =>
+                              n.identificador === 'N1' ||
+                              (searchEnabled && matchedNivelIds.has(n.id))
+                          );
 
-                    const hasAnyNivel = niveisToShow.length > 0;
-                    const width = getGradeWidth(grade, expanded);
+                      const uniqueNiveisToShow = (() => {
+                        const seen = new Set<number>();
+                        const list: Nivel[] = [];
+                        for (const n of niveisToShow) {
+                          if (!seen.has(n.id)) {
+                            seen.add(n.id);
+                            list.push(n);
+                          }
+                        }
+                        return list.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+                      })();
 
-                    return (
-                      <View key={grade.id} style={styles.gradeWrapper}>
-                        <View style={[styles.gradeInner, { width }]}>
-                          <Pressable
-                            onPress={() => handleGradePress(grade)}
-                            onHoverIn={() => {
-                              setHoverGrade((prev) => ({ ...prev, [grade.id]: true }));
-                              setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }));
-                            }}
-                            onHoverOut={() =>
-                              setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
-                            }
-                            style={({ pressed }) => [
-                              styles.gradeContainer,
-                              { backgroundColor: colors.surface, borderColor: colors.outline },
-                              (isGradeHovered || isActiveGrade) && [
-                                styles.gradeHover,
-                                { borderColor: colors.primary, shadowColor: colors.primary },
-                              ],
-                              pressed && { opacity: 0.8 },
-                            ]}
-                          >
-                            <View style={styles.gradeHeader}>
-                              <View style={styles.gradeHeaderTop}>
-                                <Text
-                                  style={[
-                                    styles.gradeTitle,
-                                    { color: colors.text },
-                                    (isGradeHovered || isActiveGrade) && { color: colors.primary },
-                                  ]}
-                                >
-                                  Grade {grade.identificador}
-                                </Text>
+                      const hasAnyNivel = uniqueNiveisToShow.length > 0;
+                      const countForWidth = expanded
+                        ? grade.niveis.length
+                        : uniqueNiveisToShow.length;
+                      const width =
+                        countForWidth <= 1
+                          ? baseGradeWidth
+                          : baseGradeWidth + Math.max(0, countForWidth - 1) * perNivelWidth;
 
-                                <AntDesign
-                                  name={expanded ? 'caret-left' : 'caret-right'}
-                                  size={20}
-                                  color={
-                                    expanded && isActiveGrade
-                                      ? colors.primary
-                                      : isGradeHovered
+                      return (
+                        <View key={grade.id} style={styles.gradeWrapper}>
+                          <View style={[styles.gradeInner, { width }]}>
+                            <Pressable
+                              onPress={() => handleGradePress(grade)}
+                              onHoverIn={() => {
+                                setHoverGrade((prev) => ({ ...prev, [grade.id]: true }));
+                                setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }));
+                              }}
+                              onHoverOut={() =>
+                                setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
+                              }
+                              style={({ pressed }) => [
+                                styles.gradeContainer,
+                                { backgroundColor: colors.surface, borderColor: colors.outline },
+                                (isGradeHovered || isActiveGrade) && [
+                                  styles.gradeHover,
+                                  { borderColor: colors.primary, shadowColor: colors.primary },
+                                ],
+                                pressed && { opacity: 0.8 },
+                              ]}
+                            >
+                              <View style={styles.gradeHeader}>
+                                <View style={styles.gradeHeaderTop}>
+                                  <Text
+                                    style={[
+                                      styles.gradeTitle,
+                                      { color: colors.text },
+                                      (isGradeHovered || isActiveGrade) && {
+                                        color: colors.primary,
+                                      },
+                                    ]}
+                                  >
+                                    Grade {grade.identificador}
+                                  </Text>
+
+                                  <AntDesign
+                                    name={expanded ? 'caret-left' : 'caret-right'}
+                                    size={20}
+                                    color={
+                                      expanded && isActiveGrade
                                         ? colors.primary
-                                        : colors.text
-                                  }
-                                  style={isGradeHovered ? styles.iconHover : undefined}
-                                />
-                              </View>
-
-                              <View style={styles.gradeControls}>
-                                <View
-                                  onStartShouldSetResponder={() => true}
-                                  onResponderRelease={(e) => (e as any).stopPropagation?.()}
-                                >
-                                  <ActionIconButton
-                                    iconName="plus"
-                                    size="medium"
-                                    borderColor={colors.outline}
-                                    backgroundColor={colors.surface}
-                                    iconColor={colors.primary}
-                                    primaryColor={colors.primary}
-                                    onPress={() => {
-                                      openAddItemModalForGrade(fileira, grade);
-                                    }}
-                                    style={styles.addButton}
+                                        : isGradeHovered
+                                          ? colors.primary
+                                          : colors.text
+                                    }
+                                    style={isGradeHovered ? styles.iconHover : undefined}
                                   />
                                 </View>
 
-                                {removingGradeId === grade.id ? (
+                                <View style={styles.gradeControls}>
+                                  <View
+                                    onStartShouldSetResponder={() => true}
+                                    onResponderRelease={(e) => (e as any).stopPropagation?.()}
+                                  >
+                                    <ActionIconButton
+                                      iconName="plus"
+                                      size="medium"
+                                      borderColor={colors.outline}
+                                      backgroundColor={colors.surface}
+                                      iconColor={colors.primary}
+                                      primaryColor={colors.primary}
+                                      onPress={() => {
+                                        openAddItemModalForGrade(fileira, grade);
+                                      }}
+                                      style={styles.addButton}
+                                    />
+                                  </View>
+
+                                  {removingGradeId === grade.id ? (
+                                    <View
+                                      style={[
+                                        styles.addButton,
+                                        { borderColor: colors.outline, opacity: 0.5 },
+                                      ]}
+                                    >
+                                      <ActivityIndicator size="small" color={colors.primary} />
+                                    </View>
+                                  ) : (
+                                    <ActionIconButton
+                                      iconName="minus"
+                                      size="medium"
+                                      buttonSize={{ width: 28, height: 28 }}
+                                      disabled={
+                                        removingGradeId === grade.id || grade.niveis.length <= 1
+                                      }
+                                      loading={removingGradeId === grade.id}
+                                      borderColor={colors.outline}
+                                      backgroundColor={colors.surface}
+                                      iconColor={colors.primary}
+                                      primaryColor={colors.primary}
+                                      onPress={() => {
+                                        removerUltimoNivel(fileira.id, grade);
+                                      }}
+                                    />
+                                  )}
+                                </View>
+                              </View>
+
+                              <View style={styles.niveisRow}>
+                                {hasAnyNivel ? (
+                                  uniqueNiveisToShow.map((nivel) => {
+                                    const isNivelHovered = !!hoverNivel[nivel.id];
+                                    const quantidadeExibida =
+                                      typeof nivel.quantidade === 'number' ? nivel.quantidade : 0;
+                                    const produtoExibido = (nivel.produtoNomeModelo ?? '').trim();
+
+                                    const onlyOneNivelInGrade = grade.niveis.length <= 1;
+                                    const isRemovingThisNivel = resequenceNivelId === nivel.id;
+                                    const disableRemoveNivelButton =
+                                      onlyOneNivelInGrade || isRemovingThisNivel;
+
+                                    const isMatch = searchEnabled && matchedNivelIds.has(nivel.id);
+                                    const shouldDim = searchEnabled && !isMatch;
+
+                                    return (
+                                      <Pressable
+                                        key={nivel.id}
+                                        id={`nivel-${nivel.id}` as any}
+                                        onPress={() => handleNivelClick(fileira, grade, nivel)}
+                                        onHoverIn={() => {
+                                          setHoverNivel((prev) => ({ ...prev, [nivel.id]: true }));
+                                          setHoverFileira((prev) => ({
+                                            ...prev,
+                                            [fileira.id]: false,
+                                          }));
+                                        }}
+                                        onHoverOut={() =>
+                                          setHoverNivel((prev) => ({ ...prev, [nivel.id]: false }))
+                                        }
+                                        style={[
+                                          styles.nivelBox,
+                                          {
+                                            backgroundColor: colors.surface,
+                                            borderColor: colors.outline,
+                                          },
+                                          isNivelHovered && [
+                                            styles.nivelHover,
+                                            {
+                                              borderColor: colors.primary,
+                                              shadowColor: colors.primary,
+                                            },
+                                          ],
+                                          isMatch && [
+                                            styles.nivelMatch,
+                                            { borderColor: colors.primary },
+                                          ],
+                                          shouldDim && styles.nivelDim,
+                                        ]}
+                                      >
+                                        <ActionIconButton
+                                          iconName="minus"
+                                          size="small"
+                                          disabled={disableRemoveNivelButton}
+                                          loading={isRemovingThisNivel}
+                                          borderColor={colors.outline}
+                                          backgroundColor={colors.surface}
+                                          iconColor={colors.primary}
+                                          primaryColor={colors.primary}
+                                          onPress={() => {
+                                            if (disableRemoveNivelButton) {
+                                              return;
+                                            }
+                                            openConfirmRemoveNivel(nivel, fileira, grade);
+                                          }}
+                                          style={[
+                                            styles.nivelRemoveButton,
+                                            disableRemoveNivelButton &&
+                                              styles.nivelRemoveButtonDisabled,
+                                          ]}
+                                        />
+
+                                        <Text
+                                          style={[
+                                            styles.nivelText,
+                                            { color: colors.text },
+                                            isNivelHovered && { color: colors.primary },
+                                          ]}
+                                        >
+                                          {nivel.identificador}
+                                        </Text>
+
+                                        {produtoExibido !== '' ? (
+                                          <Text
+                                            style={[
+                                              styles.produto,
+                                              { color: colors.text },
+                                              isNivelHovered && { color: colors.primary },
+                                            ]}
+                                            numberOfLines={2}
+                                          >
+                                            {produtoExibido}
+                                          </Text>
+                                        ) : null}
+
+                                        <Text
+                                          style={[
+                                            styles.qtd,
+                                            { color: colors.text },
+                                            isNivelHovered && { color: colors.primary },
+                                          ]}
+                                        >
+                                          Qtd: {quantidadeExibida}
+                                        </Text>
+                                      </Pressable>
+                                    );
+                                  })
+                                ) : (
                                   <View
                                     style={[
-                                      styles.addButton,
-                                      { borderColor: colors.outline, opacity: 0.5 },
+                                      styles.nivelBox,
+                                      { borderStyle: 'dashed', borderColor: colors.outline },
                                     ]}
                                   >
-                                    <ActivityIndicator size="small" color={colors.primary} />
+                                    <Text style={[styles.nivelText, { color: colors.text }]}>
+                                      SEM NÍVEIS
+                                    </Text>
+                                    <Text style={[styles.qtd, { color: colors.text }]}>
+                                      Clique no +
+                                    </Text>
                                   </View>
-                                ) : (
-                                  <ActionIconButton
-                                    iconName="minus"
-                                    size="medium"
-                                    buttonSize={{ width: 28, height: 28 }}
+                                )}
+                              </View>
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+
+                    <AddGradeNivelButton
+                      onPress={() => openAddGradeModalForFileira(fileira)}
+                      borderColor={colors.primary}
+                      primaryColor={colors.primary}
+                    />
+                  </Pressable>
+                );
+              })}
+
+              <AddFileiraButton
+                onPress={addNewFileira}
+                primaryColor={colors.primary}
+                creating={creatingFileira}
+              />
+              <View style={{ width: 24, height: 24 }} />
+            </View>
+          </View>
+        ) : (
+          <ScrollView
+            style={{ flex: 1 }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              flexGrow: 1,
+              backgroundColor: colors.background,
+              paddingBottom: 16,
+            }}
+            nestedScrollEnabled
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.fileirasRow}
+              nestedScrollEnabled
+            >
+              {fileiras.map((fileira) => {
+                const fileiraExpanded = expandedFileiras.includes(fileira.id);
+                const isFileiraHovered = !!hoverFileira[fileira.id];
+
+                return (
+                  <View
+                    key={fileira.id}
+                    style={[
+                      styles.fileiraContainer,
+                      { backgroundColor: colors.surface, borderColor: colors.outline },
+                    ]}
+                  >
+                    <Pressable
+                      onPress={() => toggleFileiraExpand(fileira)}
+                      onHoverIn={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))}
+                      onHoverOut={() =>
+                        setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }))
+                      }
+                      style={({ pressed }) => [
+                        styles.fileiraHeader,
+                        isFileiraHovered && styles.hoverFileira,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.fileiraTitle,
+                          { color: colors.text },
+                          (fileiraExpanded || isFileiraHovered) && { color: colors.primary },
+                        ]}
+                      >
+                        Fileira {fileira.identificador}
+                      </Text>
+
+                      <AntDesign
+                        name={fileiraExpanded ? 'caret-left' : 'caret-right'}
+                        size={22}
+                        color={
+                          fileiraExpanded
+                            ? colors.primary
+                            : isFileiraHovered
+                              ? colors.primary
+                              : colors.text
+                        }
+                        style={isFileiraHovered ? styles.iconHover : undefined}
+                      />
+                    </Pressable>
+
+                    {fileira.grades.map((grade) => {
+                      const expanded = expandedGrades.includes(grade.id);
+                      const isGradeHovered = !!hoverGrade[grade.id];
+                      const isActiveGrade = activeGradeId === grade.id;
+
+                      const niveisToShow = expanded
+                        ? grade.niveis
+                        : grade.niveis.filter(
+                            (n) =>
+                              n.identificador === 'N1' ||
+                              (searchEnabled && matchedNivelIds.has(n.id))
+                          );
+
+                      const uniqueNiveisToShow = (() => {
+                        const seen = new Set<number>();
+                        const list: Nivel[] = [];
+                        for (const n of niveisToShow) {
+                          if (!seen.has(n.id)) {
+                            seen.add(n.id);
+                            list.push(n);
+                          }
+                        }
+                        return list.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+                      })();
+
+                      if (uniqueNiveisToShow.length === 0) {
+                        return null;
+                      }
+
+                      const countForWidth = expanded
+                        ? grade.niveis.length
+                        : uniqueNiveisToShow.length;
+                      const width =
+                        countForWidth <= 1
+                          ? baseGradeWidth
+                          : baseGradeWidth + Math.max(0, countForWidth - 1) * perNivelWidth;
+
+                      return (
+                        <View key={grade.id} style={styles.gradeWrapper}>
+                          <View style={[styles.gradeInner, { width }]}>
+                            <Pressable
+                              onPress={() => handleGradePress(grade)}
+                              onHoverIn={() =>
+                                setHoverGrade((prev) => ({ ...prev, [grade.id]: true }))
+                              }
+                              onHoverOut={() =>
+                                setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
+                              }
+                              style={({ pressed }) => [
+                                styles.gradeContainer,
+                                { backgroundColor: colors.surface, borderColor: colors.outline },
+                                (isGradeHovered || isActiveGrade) && [
+                                  styles.gradeActive,
+                                  { borderColor: colors.primary, shadowColor: colors.primary },
+                                ],
+                                pressed && { opacity: 0.8 },
+                              ]}
+                            >
+                              <View style={styles.gradeHeader}>
+                                <View style={styles.gradeHeaderTop}>
+                                  <Text
+                                    style={[
+                                      styles.gradeTitle,
+                                      { color: colors.text },
+                                      (isGradeHovered || isActiveGrade) && {
+                                        color: colors.primary,
+                                      },
+                                    ]}
+                                  >
+                                    Grade {grade.identificador}
+                                  </Text>
+
+                                  <AntDesign
+                                    name={expanded ? 'caret-left' : 'caret-right'}
+                                    size={20}
+                                    color={
+                                      expanded && isActiveGrade
+                                        ? colors.primary
+                                        : isGradeHovered
+                                          ? colors.primary
+                                          : colors.text
+                                    }
+                                    style={isGradeHovered ? styles.iconHover : undefined}
+                                  />
+                                </View>
+
+                                <View style={styles.gradeControls}>
+                                  <Pressable
+                                    onPress={(e) => {
+                                      e.stopPropagation();
+                                      openAddItemModalForGrade(fileira, grade);
+                                    }}
+                                    style={[styles.addButton, { borderColor: colors.outline }]}
+                                  >
+                                    <AntDesign name="plus" size={16} color={colors.primary} />
+                                  </Pressable>
+
+                                  <Pressable
+                                    onPress={(e) => {
+                                      e.stopPropagation();
+                                      criarNivel(fileira.id, grade);
+                                    }}
+                                    disabled={creatingGradeId === grade.id}
+                                    style={[
+                                      styles.addButton,
+                                      { borderColor: colors.outline },
+                                      creatingGradeId === grade.id && { opacity: 0.6 },
+                                    ]}
+                                  >
+                                    {creatingGradeId === grade.id ? (
+                                      <ActivityIndicator size="small" color={colors.primary} />
+                                    ) : (
+                                      <AntDesign
+                                        name="pluscircleo"
+                                        size={16}
+                                        color={colors.primary}
+                                      />
+                                    )}
+                                  </Pressable>
+
+                                  <Pressable
+                                    onPress={(e) => {
+                                      e.stopPropagation();
+                                      removerUltimoNivel(fileira.id, grade);
+                                    }}
                                     disabled={
                                       removingGradeId === grade.id || grade.niveis.length <= 1
                                     }
-                                    loading={removingGradeId === grade.id}
-                                    borderColor={colors.outline}
-                                    backgroundColor={colors.surface}
-                                    iconColor={colors.primary}
-                                    primaryColor={colors.primary}
-                                    onPress={() => {
-                                      removerUltimoNivel(fileira.id, grade);
-                                    }}
-                                  />
-                                )}
+                                    style={[
+                                      styles.addButton,
+                                      { borderColor: colors.outline },
+                                      (removingGradeId === grade.id ||
+                                        grade.niveis.length <= 1) && { opacity: 0.5 },
+                                    ]}
+                                  >
+                                    {removingGradeId === grade.id ? (
+                                      <ActivityIndicator size="small" color={colors.primary} />
+                                    ) : (
+                                      <AntDesign name="minus" size={16} color={colors.primary} />
+                                    )}
+                                  </Pressable>
+                                </View>
                               </View>
-                            </View>
 
-                            <View style={styles.niveisRow}>
-                              {hasAnyNivel ? (
-                                niveisToShow.map((nivel) => {
+                              <View style={styles.niveisRow}>
+                                {uniqueNiveisToShow.map((nivel) => {
                                   const isNivelHovered = !!hoverNivel[nivel.id];
                                   const quantidadeExibida =
                                     typeof nivel.quantidade === 'number' ? nivel.quantidade : 0;
                                   const produtoExibido = (nivel.produtoNomeModelo ?? '').trim();
 
-                                  const onlyOneNivelInGrade = grade.niveis.length <= 1;
-                                  const isRemovingThisNivel = resequenceNivelId === nivel.id;
-                                  const disableRemoveNivelButton =
-                                    onlyOneNivelInGrade || isRemovingThisNivel;
+                                  const isMatch = searchEnabled && matchedNivelIds.has(nivel.id);
+                                  const shouldDim = searchEnabled && !isMatch;
 
                                   return (
                                     <Pressable
                                       key={nivel.id}
                                       onPress={() => handleNivelClick(fileira, grade, nivel)}
-                                      onHoverIn={() => {
-                                        setHoverNivel((prev) => ({ ...prev, [nivel.id]: true }));
-                                        setHoverFileira((prev) => ({
-                                          ...prev,
-                                          [fileira.id]: false,
-                                        }));
-                                      }}
+                                      onHoverIn={() =>
+                                        setHoverNivel((prev) => ({ ...prev, [nivel.id]: true }))
+                                      }
                                       onHoverOut={() =>
                                         setHoverNivel((prev) => ({ ...prev, [nivel.id]: false }))
                                       }
@@ -1547,29 +2276,36 @@ export default function Warehouse2DView() {
                                             shadowColor: colors.primary,
                                           },
                                         ],
+                                        isMatch && [
+                                          styles.nivelMatch,
+                                          { borderColor: colors.primary },
+                                        ],
+                                        shouldDim && styles.nivelDim,
                                       ]}
                                     >
-                                      <ActionIconButton
-                                        iconName="minus"
-                                        size="small"
-                                        disabled={disableRemoveNivelButton}
-                                        loading={isRemovingThisNivel}
-                                        borderColor={colors.outline}
-                                        backgroundColor={colors.surface}
-                                        iconColor={colors.primary}
-                                        primaryColor={colors.primary}
-                                        onPress={() => {
-                                          if (disableRemoveNivelButton) {
-                                            return;
-                                          }
+                                      <Pressable
+                                        onPress={(e) => {
+                                          e.stopPropagation();
                                           openConfirmRemoveNivel(nivel, fileira, grade);
                                         }}
                                         style={[
                                           styles.nivelRemoveButton,
-                                          disableRemoveNivelButton &&
-                                            styles.nivelRemoveButtonDisabled,
+                                          {
+                                            borderColor: colors.outline,
+                                            backgroundColor: colors.surface,
+                                          },
                                         ]}
-                                      />
+                                      >
+                                        {resequenceNivelId === nivel.id ? (
+                                          <ActivityIndicator size="small" color={colors.primary} />
+                                        ) : (
+                                          <AntDesign
+                                            name="minus"
+                                            size={14}
+                                            color={colors.primary}
+                                          />
+                                        )}
+                                      </Pressable>
 
                                       <Text
                                         style={[
@@ -1582,832 +2318,733 @@ export default function Warehouse2DView() {
                                       </Text>
 
                                       {produtoExibido !== '' ? (
-                                        <Text
-                                          style={[
-                                            styles.produto,
-                                            { color: colors.text },
-                                            isNivelHovered && { color: colors.primary },
-                                          ]}
-                                        >
-                                          {produtoExibido}
-                                        </Text>
+                                        <Text style={styles.produto}>{produtoExibido}</Text>
                                       ) : null}
-
-                                      <Text
-                                        style={[
-                                          styles.qtd,
-                                          { color: colors.text },
-                                          isNivelHovered && { color: colors.primary },
-                                        ]}
-                                      >
-                                        Qtd: {quantidadeExibida}
-                                      </Text>
+                                      <Text style={styles.qtd}>Qtd: {quantidadeExibida}</Text>
                                     </Pressable>
                                   );
-                                })
-                              ) : (
-                                <View
-                                  style={[
-                                    styles.nivelBox,
-                                    { borderStyle: 'dashed', borderColor: colors.outline },
-                                  ]}
-                                >
-                                  <Text style={[styles.nivelText, { color: colors.text }]}>
-                                    SEM NÍVEIS
-                                  </Text>
-                                  <Text style={[styles.qtd, { color: colors.text }]}>
-                                    Clique no +
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                          </Pressable>
+                                })}
+                              </View>
+                            </Pressable>
+                          </View>
                         </View>
-                      </View>
-                    );
-                  })}
+                      );
+                    })}
 
-                  <AddGradeNivelButton
-                    onPress={() => openAddGradeModalForFileira(fileira)}
-                    borderColor={colors.primary}
-                    primaryColor={colors.primary}
-                  />
-                </Pressable>
-              );
-            })}
-            <AddFileiraButton
-              onPress={addNewFileira}
-              primaryColor={colors.primary}
-              creating={creatingFileira}
-            />
-            <View style={{ width: 24, height: 24 }} />
-          </View>
-        </View>
-      ) : (
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            flexGrow: 1,
-            backgroundColor: colors.background,
-            paddingBottom: 16,
-          }}
-          nestedScrollEnabled
-        >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.fileirasRow}
-            nestedScrollEnabled
-          >
-            {fileiras.map((fileira) => {
-              const fileiraExpanded = expandedFileiras.includes(fileira.id);
-              const isFileiraHovered = !!hoverFileira[fileira.id];
-
-              return (
-                <View
-                  key={fileira.id}
-                  style={[
-                    styles.fileiraContainer,
-                    { backgroundColor: colors.surface, borderColor: colors.outline },
-                  ]}
-                >
-                  <Pressable
-                    onPress={() => toggleFileiraExpand(fileira)}
-                    onHoverIn={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))}
-                    onHoverOut={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }))}
-                    style={({ pressed }) => [
-                      styles.fileiraHeader,
-                      isFileiraHovered && styles.hoverFileira,
-                      pressed && { opacity: 0.7 },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.fileiraTitle,
-                        { color: colors.text },
-                        (fileiraExpanded || isFileiraHovered) && { color: colors.primary },
-                      ]}
+                    <Pressable
+                      onPress={() => openAddItemModalForNewGrade(fileira)}
+                      style={[styles.addGradeButton, { borderColor: colors.primary }]}
                     >
-                      Fileira {fileira.identificador}
-                    </Text>
+                      <AntDesign name="plus" size={22} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                );
+              })}
 
-                    <AntDesign
-                      name={fileiraExpanded ? 'caret-left' : 'caret-right'}
-                      size={22}
-                      color={
-                        fileiraExpanded
-                          ? colors.primary
-                          : isFileiraHovered
-                            ? colors.primary
-                            : colors.text
-                      }
-                      style={isFileiraHovered ? styles.iconHover : undefined}
-                    />
-                  </Pressable>
+              <Pressable
+                onPress={addNewFileira}
+                disabled={creatingFileira}
+                style={[
+                  styles.addFileiraButton,
+                  { borderColor: colors.primary, opacity: creatingFileira ? 0.6 : 1 },
+                ]}
+              >
+                {creatingFileira ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <AntDesign name="plus" size={26} color={colors.primary} />
+                )}
+                <Text style={[styles.addFileiraButtonText, { color: colors.primary }]}>
+                  Adicionar Fileira
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </ScrollView>
+        )}
 
-                  {fileira.grades.map((grade) => {
-                    const expanded = expandedGrades.includes(grade.id);
-                    const isGradeHovered = !!hoverGrade[grade.id];
-                    const isActiveGrade = activeGradeId === grade.id;
-
-                    const niveisToShow = expanded
-                      ? grade.niveis
-                      : grade.niveis.filter((n) => n.identificador === 'N1');
-
-                    if (niveisToShow.length === 0) {
-                      return null;
-                    }
-
-                    const width = getGradeWidth(grade, expanded);
-
-                    return (
-                      <View key={grade.id} style={styles.gradeWrapper}>
-                        <View style={[styles.gradeInner, { width }]}>
-                          <Pressable
-                            onPress={() => handleGradePress(grade)}
-                            onHoverIn={() =>
-                              setHoverGrade((prev) => ({ ...prev, [grade.id]: true }))
-                            }
-                            onHoverOut={() =>
-                              setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
-                            }
-                            style={({ pressed }) => [
-                              styles.gradeContainer,
-                              { backgroundColor: colors.surface, borderColor: colors.outline },
-                              (isGradeHovered || isActiveGrade) && [
-                                styles.gradeActive,
-                                { borderColor: colors.primary, shadowColor: colors.primary },
-                              ],
-                              pressed && { opacity: 0.8 },
-                            ]}
-                          >
-                            <View style={styles.gradeHeader}>
-                              <View style={styles.gradeHeaderTop}>
-                                <Text
-                                  style={[
-                                    styles.gradeTitle,
-                                    { color: colors.text },
-                                    (isGradeHovered || isActiveGrade) && { color: colors.primary },
-                                  ]}
-                                >
-                                  Grade {grade.identificador}
-                                </Text>
-
-                                <AntDesign
-                                  name={expanded ? 'caret-left' : 'caret-right'}
-                                  size={20}
-                                  color={
-                                    expanded && isActiveGrade
-                                      ? colors.primary
-                                      : isGradeHovered
-                                        ? colors.primary
-                                        : colors.text
-                                  }
-                                  style={isGradeHovered ? styles.iconHover : undefined}
-                                />
-                              </View>
-
-                              <View style={styles.gradeControls}>
-                                <Pressable
-                                  onPress={(e) => {
-                                    e.stopPropagation();
-                                    openAddItemModalForGrade(fileira, grade);
-                                  }}
-                                  style={[styles.addButton, { borderColor: colors.outline }]}
-                                >
-                                  <AntDesign name="plus" size={16} color={colors.primary} />
-                                </Pressable>
-
-                                <Pressable
-                                  onPress={(e) => {
-                                    e.stopPropagation();
-                                    criarNivel(fileira.id, grade);
-                                  }}
-                                  disabled={creatingGradeId === grade.id}
-                                  style={[
-                                    styles.addButton,
-                                    { borderColor: colors.outline },
-                                    creatingGradeId === grade.id && { opacity: 0.6 },
-                                  ]}
-                                >
-                                  {creatingGradeId === grade.id ? (
-                                    <ActivityIndicator size="small" color={colors.primary} />
-                                  ) : (
-                                    <AntDesign
-                                      name="pluscircleo"
-                                      size={16}
-                                      color={colors.primary}
-                                    />
-                                  )}
-                                </Pressable>
-
-                                <Pressable
-                                  onPress={(e) => {
-                                    e.stopPropagation();
-                                    removerUltimoNivel(fileira.id, grade);
-                                  }}
-                                  disabled={
-                                    removingGradeId === grade.id || grade.niveis.length <= 1
-                                  }
-                                  style={[
-                                    styles.addButton,
-                                    { borderColor: colors.outline },
-                                    (removingGradeId === grade.id || grade.niveis.length <= 1) && {
-                                      opacity: 0.5,
-                                    },
-                                  ]}
-                                >
-                                  {removingGradeId === grade.id ? (
-                                    <ActivityIndicator size="small" color={colors.primary} />
-                                  ) : (
-                                    <AntDesign name="minus" size={16} color={colors.primary} />
-                                  )}
-                                </Pressable>
-                              </View>
-                            </View>
-
-                            <View style={styles.niveisRow}>
-                              {niveisToShow.map((nivel) => {
-                                const isNivelHovered = !!hoverNivel[nivel.id];
-                                const quantidadeExibida =
-                                  typeof nivel.quantidade === 'number' ? nivel.quantidade : 0;
-                                const produtoExibido = (nivel.produtoNomeModelo ?? '').trim();
-
-                                return (
-                                  <Pressable
-                                    key={nivel.id}
-                                    onPress={() => handleNivelClick(fileira, grade, nivel)}
-                                    onHoverIn={() =>
-                                      setHoverNivel((prev) => ({ ...prev, [nivel.id]: true }))
-                                    }
-                                    onHoverOut={() =>
-                                      setHoverNivel((prev) => ({ ...prev, [nivel.id]: false }))
-                                    }
-                                    style={[
-                                      styles.nivelBox,
-                                      {
-                                        backgroundColor: colors.surface,
-                                        borderColor: colors.outline,
-                                      },
-                                      isNivelHovered && [
-                                        styles.nivelHover,
-                                        {
-                                          borderColor: colors.primary,
-                                          shadowColor: colors.primary,
-                                        },
-                                      ],
-                                    ]}
-                                  >
-                                    <Pressable
-                                      onPress={(e) => {
-                                        e.stopPropagation();
-                                        openConfirmRemoveNivel(nivel, fileira, grade);
-                                      }}
-                                      style={[
-                                        styles.nivelRemoveButton,
-                                        {
-                                          borderColor: colors.outline,
-                                          backgroundColor: colors.surface,
-                                        },
-                                      ]}
-                                    >
-                                      {resequenceNivelId === nivel.id ? (
-                                        <ActivityIndicator size="small" color={colors.primary} />
-                                      ) : (
-                                        <AntDesign name="minus" size={14} color={colors.primary} />
-                                      )}
-                                    </Pressable>
-
-                                    <Text
-                                      style={[
-                                        styles.nivelText,
-                                        { color: colors.text },
-                                        isNivelHovered && { color: colors.primary },
-                                      ]}
-                                    >
-                                      {nivel.identificador}
-                                    </Text>
-
-                                    {produtoExibido !== '' ? (
-                                      <Text style={styles.produto}>{produtoExibido}</Text>
-                                    ) : null}
-                                    <Text style={styles.qtd}>Qtd: {quantidadeExibida}</Text>
-                                  </Pressable>
-                                );
-                              })}
-                            </View>
-                          </Pressable>
-                        </View>
-                      </View>
-                    );
-                  })}
-
-                  {/* ✅ + NO FINAL DA FILEIRA (NATIVE TAMBÉM) */}
-                  <Pressable
-                    onPress={() => openAddItemModalForNewGrade(fileira)}
-                    style={[styles.addGradeButton, { borderColor: colors.primary }]}
-                  >
-                    <AntDesign name="plus" size={22} color={colors.primary} />
-                  </Pressable>
-                </View>
-              );
-            })}
-            <Pressable
-              onPress={addNewFileira}
-              disabled={creatingFileira}
+        {/* SEARCH RESULTS MODAL */}
+        <Modal visible={searchResultsVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View
               style={[
-                styles.addFileiraButton,
-                { borderColor: colors.primary, opacity: creatingFileira ? 0.6 : 1 },
+                styles.searchResultsContainer,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
               ]}
             >
-              {creatingFileira ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <AntDesign name="plus" size={26} color={colors.primary} />
-              )}
-              <Text style={[styles.addFileiraButtonText, { color: colors.primary }]}>
-                Adicionar Fileira
-              </Text>
-            </Pressable>
-          </ScrollView>
-        </ScrollView>
-      )}
-
-      {/* Modal confirmar remover nível */}
-      <Modal visible={confirmRemoveVisible} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <View
-            style={[
-              styles.confirmContainer,
-              { backgroundColor: colors.surface, borderColor: colors.outline },
-            ]}
-          >
-            <Text style={[styles.confirmTitle, { color: colors.text }]}>Remover nível?</Text>
-
-            <Text style={[styles.confirmMessage, { color: colors.text }]}>
-              {pendingRemoveNivel?.label ?? 'Nível selecionado'}
-            </Text>
-
-            <Text style={[styles.confirmWarn, { color: colors.text }]}>
-              Esta ação irá remover o nível e resequenciar os demais.
-            </Text>
-
-            <View style={styles.confirmActions}>
-              <Pressable
-                onPress={closeConfirmRemoveNivel}
-                style={[styles.confirmButton, { borderColor: colors.outline }]}
-              >
-                <Text style={[styles.confirmButtonText, { color: colors.text }]}>Cancelar</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={confirmRemoveNivel}
-                style={[
-                  styles.confirmButton,
-                  { backgroundColor: colors.primary, borderColor: colors.primary },
-                ]}
-                disabled={!!resequenceNivelId}
-              >
-                {resequenceNivelId ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Remover</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal editar produto do nível */}
-      <Modal visible={productModalVisible} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <View
-            style={[
-              styles.productModalContainer,
-              { backgroundColor: colors.surface, borderColor: colors.outline },
-            ]}
-          >
-            <Text
-              style={[styles.productTitle, { color: colors.primary }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {selectedNivelCtx?.label ?? 'Produto'}
-            </Text>
-
-            {itemLoading ? (
-              <View style={{ paddingVertical: 18 }}>
-                <ActivityIndicator size="large" color={colors.primary} />
+              <View style={styles.searchResultsHeader}>
+                <Text style={[styles.searchResultsTitle, { color: colors.text }]}>Resultados</Text>
+                <Pressable
+                  onPress={() => setSearchResultsVisible(false)}
+                  style={({ pressed }) => [styles.searchIconBtn, pressed && { opacity: 0.7 }]}
+                >
+                  <AntDesign name="close" size={18} color={colors.text} />
+                </Pressable>
               </View>
-            ) : (
-              <>
-                <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Nome</Text>
-                  <TextInput
-                    value={editNomeModelo}
-                    onChangeText={setEditNomeModelo}
-                    placeholder="nome_modelo"
-                    placeholderTextColor="#888"
-                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                  />
-                </View>
 
-                <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
-                  <QuantityStepper
-                    value={editQuantidade}
-                    onChange={setEditQuantidade}
-                    min={0}
-                    max={999999}
-                    step={1}
-                    borderColor={colors.outline}
-                    textColor={colors.text}
-                    primaryColor={colors.primary}
-                    backgroundColor={colors.surface}
-                  />
-                </View>
+              <Text style={[styles.searchResultsSubtitle, { color: colors.text }]}>
+                {searchEnabled
+                  ? `${searchResults.length} encontrado(s) para "${debouncedSearchText.trim()}"`
+                  : 'Digite ao menos 3 caracteres'}
+              </Text>
 
-                <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
-                  <TextInput
-                    value={editCodigo}
-                    editable
-                    placeholder="codigo_sistema_wester"
-                    placeholderTextColor="#888"
-                    disableFullscreenUI
-                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                    onChangeText={setEditCodigo}
-                  />
-                </View>
-
-                <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
-                  <TextInput
-                    value={editCor}
-                    onChangeText={setEditCor}
-                    placeholder="Cor"
-                    placeholderTextColor="#888"
-                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                  />
-                </View>
-
-                <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
-                  <TextInput
-                    value={editDescricao}
-                    onChangeText={setEditDescricao}
-                    placeholder="descricao"
-                    placeholderTextColor="#888"
-                    multiline
-                    style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
-                  />
-                </View>
-
-                <View style={styles.productActions}>
-                  <Pressable
-                    onPress={closeProductModal}
-                    style={[styles.actionButton, { borderColor: colors.outline }]}
-                  >
-                    <Text style={[styles.actionText, { color: colors.text }]}>Fechar</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={openConfirmSave}
-                    disabled={!isDirty || saving}
-                    style={[
-                      styles.actionButton,
-                      {
-                        backgroundColor: colors.primary,
-                        borderColor: colors.primary,
-                        opacity: !isDirty || saving ? 0.6 : 1,
-                      },
-                    ]}
-                  >
-                    {saving ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
-                    )}
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Confirm salvar (edição) */}
-      <Modal visible={confirmSaveVisible} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <View
-            style={[
-              styles.confirmContainer,
-              { backgroundColor: colors.surface, borderColor: colors.outline },
-            ]}
-          >
-            <Text style={[styles.confirmTitle, { color: colors.text }]}>Salvar alterações?</Text>
-
-            <Text style={[styles.confirmMessage, { color: colors.text }]}>
-              Você tem certeza que deseja salvar as alterações deste produto?
-            </Text>
-
-            <View style={styles.confirmActions}>
-              <Pressable
-                onPress={closeConfirmSave}
-                style={[styles.confirmButton, { borderColor: colors.outline }]}
-              >
-                <Text style={[styles.confirmButtonText, { color: colors.text }]}>Cancelar</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={saveEdits}
-                style={[
-                  styles.confirmButton,
-                  { backgroundColor: colors.primary, borderColor: colors.primary },
-                ]}
-                disabled={saving}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color="#fff" />
+              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                {searchResults.length === 0 ? (
+                  <View style={{ paddingVertical: 18 }}>
+                    <Text style={[styles.searchEmpty, { color: colors.text }]}>
+                      Nenhum resultado.
+                    </Text>
+                  </View>
                 ) : (
-                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Salvar</Text>
+                  searchResults.map((r) => {
+                    return (
+                      <Pressable
+                        key={r.nivelId}
+                        onPress={() => focusOnResult(r)}
+                        style={({ pressed }) => [
+                          styles.searchRow,
+                          { borderColor: colors.outline, backgroundColor: colors.background },
+                          pressed && { opacity: 0.8 },
+                        ]}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[styles.searchRowTitle, { color: colors.text }]}
+                            numberOfLines={1}
+                          >
+                            {r.nomeModelo !== '' ? r.nomeModelo : '(Sem nome)'}{' '}
+                            {r.codigo !== '' ? `(${r.codigo})` : ''}
+                          </Text>
+                          <Text
+                            style={[styles.searchRowMeta, { color: colors.text }]}
+                            numberOfLines={1}
+                          >
+                            {r.label}
+                          </Text>
+                          <Text
+                            style={[styles.searchRowMeta, { color: colors.text }]}
+                            numberOfLines={1}
+                          >
+                            {r.cor !== '' ? `Cor: ${r.cor}` : 'Cor: -'}{' '}
+                            {r.descricao !== '' ? ` • ${r.descricao}` : ''}
+                          </Text>
+                        </View>
+
+                        <View style={styles.searchRowRight}>
+                          <Text style={[styles.searchRowQty, { color: colors.primary }]}>
+                            {r.quantidade}
+                          </Text>
+                          <AntDesign name="caretright" size={16} color={colors.primary} />
+                        </View>
+                      </Pressable>
+                    );
+                  })
                 )}
-              </Pressable>
+              </ScrollView>
+
+              <View style={styles.searchResultsActions}>
+                <Pressable
+                  onPress={() => setSearchResultsVisible(false)}
+                  style={[styles.confirmButton, { borderColor: colors.outline }]}
+                >
+                  <Text style={[styles.confirmButtonText, { color: colors.text }]}>Fechar</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      {/* Modal adicionar item via + da grade */}
-      <Modal visible={addItemModalVisible} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <View
-            style={[
-              styles.productModalContainer,
-              { backgroundColor: colors.surface, borderColor: colors.outline },
-            ]}
-          >
-            <Text style={[styles.productTitle, { color: colors.primary }]} numberOfLines={2}>
-              {selectedGradeCtx?.label ?? 'Inserir item'}
-            </Text>
+        {/* Modal confirmar remover nível */}
+        <Modal visible={confirmRemoveVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View
+              style={[
+                styles.confirmContainer,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
+              ]}
+            >
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>Remover nível?</Text>
 
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Nome/Modelo</Text>
-              <TextInput
-                value={addNomeModelo}
-                onChangeText={setAddNomeModelo}
-                placeholder="nome_modelo"
-                placeholderTextColor="#888"
-                style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-              />
-            </View>
+              <Text style={[styles.confirmMessage, { color: colors.text }]}>
+                {pendingRemoveNivel?.label ?? 'Nível selecionado'}
+              </Text>
 
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
-              <QuantityStepper
-                value={addQuantidade}
-                onChange={setAddQuantidade}
-                min={0}
-                max={999999}
-                step={1}
-                borderColor={colors.outline}
-                textColor={colors.text}
-                primaryColor={colors.primary}
-                backgroundColor={colors.surface}
-              />
-            </View>
+              <Text style={[styles.confirmWarn, { color: colors.text }]}>
+                Esta ação irá remover o nível e resequenciar os demais.
+              </Text>
 
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
-              <TextInput
-                value={addCodigo}
-                onChangeText={setAddCodigo}
-                placeholder="codigo_sistema_wester"
-                placeholderTextColor="#888"
-                style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-              />
-            </View>
+              <View style={styles.confirmActions}>
+                <Pressable
+                  onPress={closeConfirmRemoveNivel}
+                  style={[styles.confirmButton, { borderColor: colors.outline }]}
+                >
+                  <Text style={[styles.confirmButtonText, { color: colors.text }]}>Cancelar</Text>
+                </Pressable>
 
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
-              <TextInput
-                value={addCor}
-                onChangeText={setAddCor}
-                placeholder="cor"
-                placeholderTextColor="#888"
-                style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-              />
-            </View>
-
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
-              <TextInput
-                value={addDescricao}
-                onChangeText={setAddDescricao}
-                placeholder="descricao"
-                placeholderTextColor="#888"
-                multiline
-                style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
-              />
-            </View>
-
-            <View style={styles.productActions}>
-              <Pressable
-                onPress={closeAddItemModal}
-                style={[styles.actionButton, { borderColor: colors.outline }]}
-              >
-                <Text style={[styles.actionText, { color: colors.text }]}>Cancelar</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={saveAddItem}
-                disabled={addLoading}
-                style={[
-                  styles.actionButton,
-                  {
-                    backgroundColor: colors.primary,
-                    borderColor: colors.primary,
-                    opacity: addLoading ? 0.6 : 1,
-                  },
-                ]}
-              >
-                {addLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
-                )}
-              </Pressable>
+                <Pressable
+                  onPress={confirmRemoveNivel}
+                  style={[
+                    styles.confirmButton,
+                    { backgroundColor: colors.primary, borderColor: colors.primary },
+                  ]}
+                  disabled={!!resequenceNivelId}
+                >
+                  {resequenceNivelId ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Remover</Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      {/* ✅ Modal adicionar grade via + da fileira */}
-      <Modal visible={addGradeModalVisible} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <View
-            style={[
-              styles.productModalContainer,
-              { backgroundColor: colors.surface, borderColor: colors.outline },
-            ]}
-          >
-            <Text style={[styles.productTitle, { color: colors.primary }]} numberOfLines={2}>
-              {selectedFileiraCtx?.label ?? 'Inserir item'}
-            </Text>
-
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Nome/Modelo</Text>
-              <TextInput
-                value={addGradeNomeModelo}
-                onChangeText={setAddGradeNomeModelo}
-                placeholder="nome_modelo"
-                placeholderTextColor="#888"
-                style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-              />
-            </View>
-
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
-              <QuantityStepper
-                value={addGradeQuantidade}
-                onChange={setAddGradeQuantidade}
-                min={0}
-                max={999999}
-                step={1}
-                borderColor={colors.outline}
-                textColor={colors.text}
-                primaryColor={colors.primary}
-                backgroundColor={colors.surface}
-              />
-            </View>
-
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
-              <TextInput
-                value={addGradeCodigo}
-                onChangeText={setAddGradeCodigo}
-                placeholder="codigo_sistema_wester"
-                placeholderTextColor="#888"
-                style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-              />
-            </View>
-
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
-              <TextInput
-                value={addGradeCor}
-                onChangeText={setAddGradeCor}
-                placeholder="cor"
-                placeholderTextColor="#888"
-                style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-              />
-            </View>
-
-            <View style={[styles.formRow, { borderBottomColor: colors.outline }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
-              <TextInput
-                value={addGradeDescricao}
-                onChangeText={setAddGradeDescricao}
-                placeholder="descricao"
-                placeholderTextColor="#888"
-                multiline
-                style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
-              />
-            </View>
-
-            <View style={styles.productActions}>
-              <Pressable
-                onPress={closeAddGradeModal}
-                style={[styles.actionButton, { borderColor: colors.outline }]}
+        {/* Modal editar produto do nível */}
+        <Modal visible={productModalVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View
+              style={[
+                styles.productModalContainer,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
+              ]}
+            >
+              <Text
+                style={[styles.productTitle, { color: colors.primary }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
               >
-                <Text style={[styles.actionText, { color: colors.text }]}>Cancelar</Text>
-              </Pressable>
+                {selectedNivelCtx?.label ?? 'Produto'}
+              </Text>
 
-              <Pressable
-                onPress={saveAddGrade}
-                disabled={addGradeLoading}
-                style={[
-                  styles.actionButton,
-                  {
-                    backgroundColor: colors.primary,
-                    borderColor: colors.primary,
-                    opacity: addGradeLoading ? 0.6 : 1,
-                  },
-                ]}
-              >
-                {addGradeLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
-                )}
-              </Pressable>
+              {itemLoading ? (
+                <View style={{ paddingVertical: 18 }}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+              ) : (
+                <>
+                  <View style={[styles.formRow]}>
+                    <Text style={[styles.formLabel, { color: colors.text }]}>Nome</Text>
+                    <TextInput
+                      value={editNomeModelo}
+                      onChangeText={setEditNomeModelo}
+                      placeholder="Nome / Modelo"
+                      placeholderTextColor="#888"
+                      style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                    />
+                  </View>
+
+                  <View style={[styles.formRow]}>
+                    <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
+                    <QuantityStepper
+                      value={editQuantidade}
+                      onChange={setEditQuantidade}
+                      min={1}
+                      max={999999}
+                      step={1}
+                      borderColor={colors.outline}
+                      textColor={colors.text}
+                      primaryColor={colors.primary}
+                      backgroundColor={colors.surface}
+                    />
+                  </View>
+
+                  <View style={[styles.formRow]}>
+                    <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
+                    <TextInput
+                      value={editCodigo}
+                      editable
+                      placeholder="Código Wester"
+                      placeholderTextColor="#888"
+                      disableFullscreenUI
+                      style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                      onChangeText={setEditCodigo}
+                    />
+                  </View>
+
+                  <View style={[styles.formRow]}>
+                    <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
+                    <TextInput
+                      value={editCor}
+                      onChangeText={setEditCor}
+                      placeholder="Cor"
+                      placeholderTextColor="#888"
+                      style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                    />
+                  </View>
+
+                  <View style={[styles.formRow]}>
+                    <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
+                    <TextInput
+                      value={editDescricao}
+                      onChangeText={setEditDescricao}
+                      placeholder="Descrição"
+                      placeholderTextColor="#888"
+                      multiline
+                      style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
+                    />
+                  </View>
+
+                  <View style={styles.productActions}>
+                    <Pressable
+                      onPress={closeProductModal}
+                      style={[styles.actionButton, { borderColor: colors.outline }]}
+                    >
+                      <Text style={[styles.actionText, { color: colors.text }]}>Fechar</Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={openConfirmSave}
+                      disabled={!isDirty || saving}
+                      style={[
+                        styles.actionButton,
+                        {
+                          backgroundColor: colors.primary,
+                          borderColor: colors.primary,
+                          opacity: !isDirty || saving ? 0.6 : 1,
+                        },
+                      ]}
+                    >
+                      {saving ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </>
+              )}
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      {/* Modal de sucesso */}
-      <Modal visible={successVisible} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <View
-            style={[
-              styles.confirmContainer,
-              { backgroundColor: colors.surface, borderColor: colors.outline },
-            ]}
-          >
-            <Text style={[styles.confirmTitle, { color: colors.text }]}>Sucesso</Text>
-            <Text style={[styles.confirmMessage, { color: colors.text }]}>{successMessage}</Text>
+        {/* Confirm salvar (edição) */}
+        <Modal visible={confirmSaveVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View
+              style={[
+                styles.confirmContainer,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
+              ]}
+            >
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>Salvar alterações?</Text>
 
-            <View style={styles.confirmActions}>
-              <Pressable
-                onPress={() => setSuccessVisible(false)}
-                style={[
-                  styles.confirmButton,
-                  { backgroundColor: colors.primary, borderColor: colors.primary },
-                ]}
-              >
-                <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Ok</Text>
-              </Pressable>
+              <Text style={[styles.confirmMessage, { color: colors.text }]}>
+                Você tem certeza que deseja salvar as alterações deste produto?
+              </Text>
+
+              <View style={styles.confirmActions}>
+                <Pressable
+                  onPress={closeConfirmSave}
+                  style={[styles.confirmButton, { borderColor: colors.outline }]}
+                >
+                  <Text style={[styles.confirmButtonText, { color: colors.text }]}>Cancelar</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={saveEdits}
+                  style={[
+                    styles.confirmButton,
+                    { backgroundColor: colors.primary, borderColor: colors.primary },
+                  ]}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Salvar</Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      {/* Modal de erro */}
-      <Modal visible={errorVisible} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <View
-            style={[
-              styles.confirmContainer,
-              { backgroundColor: colors.surface, borderColor: colors.outline },
-            ]}
-          >
-            <Text style={[styles.confirmTitle, { color: colors.text }]}>Erro</Text>
+        {/* Modal adicionar item via + da grade */}
+        <Modal visible={addItemModalVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View
+              style={[
+                styles.productModalContainer,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
+              ]}
+            >
+              <Text style={[styles.productTitle, { color: colors.primary }]} numberOfLines={2}>
+                {selectedGradeCtx?.label ?? 'Inserir item'}
+              </Text>
 
-            <Text style={[styles.confirmMessage, { color: colors.text }]}>{errorMessage}</Text>
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Nome/Modelo</Text>
+                <TextInput
+                  value={addNomeModelo}
+                  onChangeText={setAddNomeModelo}
+                  placeholder="Nome / Modelo"
+                  placeholderTextColor="#888"
+                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                />
+              </View>
 
-            <View style={styles.confirmActions}>
-              <Pressable
-                onPress={() => setErrorVisible(false)}
-                style={[
-                  styles.confirmButton,
-                  { backgroundColor: colors.primary, borderColor: colors.primary },
-                ]}
-              >
-                <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Ok</Text>
-              </Pressable>
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
+                <QuantityStepper
+                  value={addQuantidade}
+                  onChange={setAddQuantidade}
+                  min={1}
+                  max={999999}
+                  step={1}
+                  borderColor={colors.outline}
+                  textColor={colors.text}
+                  primaryColor={colors.primary}
+                  backgroundColor={colors.surface}
+                />
+              </View>
+
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
+                <TextInput
+                  value={addCodigo}
+                  onChangeText={setAddCodigo}
+                  placeholder="Código Wester"
+                  placeholderTextColor="#888"
+                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                />
+              </View>
+
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
+                <TextInput
+                  value={addCor}
+                  onChangeText={setAddCor}
+                  placeholder="Cor"
+                  placeholderTextColor="#888"
+                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                />
+              </View>
+
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
+                <TextInput
+                  value={addDescricao}
+                  onChangeText={setAddDescricao}
+                  placeholder="Descrição"
+                  placeholderTextColor="#888"
+                  multiline
+                  style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
+                />
+              </View>
+
+              <View style={styles.productActions}>
+                <Pressable
+                  onPress={closeAddItemModal}
+                  style={[styles.actionButton, { borderColor: colors.outline }]}
+                >
+                  <Text style={[styles.actionText, { color: colors.text }]}>Cancelar</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={saveAddItem}
+                  disabled={addLoading}
+                  style={[
+                    styles.actionButton,
+                    {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                      opacity: addLoading ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  {addLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+
+        {/* ✅ Modal adicionar grade via + da fileira */}
+        <Modal visible={addGradeModalVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View
+              style={[
+                styles.productModalContainer,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
+              ]}
+            >
+              <Text style={[styles.productTitle, { color: colors.primary }]} numberOfLines={2}>
+                {selectedFileiraCtx?.label ?? 'Inserir item'}
+              </Text>
+
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Nome / Modelo</Text>
+                <TextInput
+                  value={addGradeNomeModelo}
+                  onChangeText={setAddGradeNomeModelo}
+                  placeholder="Nome / Modelo"
+                  placeholderTextColor="#888"
+                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                />
+              </View>
+
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
+                <QuantityStepper
+                  value={addGradeQuantidade}
+                  onChange={setAddGradeQuantidade}
+                  min={1}
+                  max={999999}
+                  step={1}
+                  borderColor={colors.outline}
+                  textColor={colors.text}
+                  primaryColor={colors.primary}
+                  backgroundColor={colors.surface}
+                />
+              </View>
+
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
+                <TextInput
+                  value={addGradeCodigo}
+                  onChangeText={setAddGradeCodigo}
+                  placeholder="Código Wester"
+                  placeholderTextColor="#888"
+                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                />
+              </View>
+
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
+                <TextInput
+                  value={addGradeCor}
+                  onChangeText={setAddGradeCor}
+                  placeholder="Cor"
+                  placeholderTextColor="#888"
+                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                />
+              </View>
+
+              <View style={[styles.formRow]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
+                <TextInput
+                  value={addGradeDescricao}
+                  onChangeText={setAddGradeDescricao}
+                  placeholder="Descrição"
+                  placeholderTextColor="#888"
+                  multiline
+                  style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
+                />
+              </View>
+
+              <View style={styles.productActions}>
+                <Pressable
+                  onPress={closeAddGradeModal}
+                  style={[styles.actionButton, { borderColor: colors.outline }]}
+                >
+                  <Text style={[styles.actionText, { color: colors.text }]}>Cancelar</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={saveAddGrade}
+                  disabled={addGradeLoading}
+                  style={[
+                    styles.actionButton,
+                    {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                      opacity: addGradeLoading ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  {addGradeLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal de sucesso */}
+        <Modal visible={successVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View
+              style={[
+                styles.confirmContainer,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
+              ]}
+            >
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>Sucesso</Text>
+              <Text style={[styles.confirmMessage, { color: colors.text }]}>{successMessage}</Text>
+
+              <View style={styles.confirmActions}>
+                <Pressable
+                  onPress={() => setSuccessVisible(false)}
+                  style={[
+                    styles.confirmButton,
+                    { backgroundColor: colors.primary, borderColor: colors.primary },
+                  ]}
+                >
+                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Ok</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal de erro */}
+        <Modal visible={errorVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View
+              style={[
+                styles.confirmContainer,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
+              ]}
+            >
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>Erro</Text>
+
+              <Text style={[styles.confirmMessage, { color: colors.text }]}>{errorMessage}</Text>
+
+              <View style={styles.confirmActions}>
+                <Pressable
+                  onPress={() => setErrorVisible(false)}
+                  style={[
+                    styles.confirmButton,
+                    { backgroundColor: colors.primary, borderColor: colors.primary },
+                  ]}
+                >
+                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Ok</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </AuthProvider>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+
+  headerBar: {
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexShrink: 1,
+  },
+
+  searchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
+  },
+
+  searchPillText: {
+    fontWeight: '900',
+    fontSize: 13,
+  },
+
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 360,
+    maxWidth: 560,
+    flexShrink: 1,
+  },
+
+  searchInput: {
+    flex: 1,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+  searchIconBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  searchCount: {
+    minWidth: 36,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+
+  searchCountText: {
+    fontWeight: '900',
+    fontSize: 13,
+  },
+
+  webSearchBar: {
+    width: '100%',
+    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  webSearchButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  webSearchButtonText: {
+    fontWeight: '900',
+    fontSize: 13,
+  },
+
+  webSearchHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    opacity: 0.85,
+  },
 
   webScroller: {
     flex: 1,
@@ -2569,6 +3206,14 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
 
+  nivelMatch: {
+    borderWidth: 2,
+  },
+
+  nivelDim: {
+    opacity: 0.28,
+  },
+
   nivelRemoveButton: {
     position: 'absolute',
     right: 6,
@@ -2650,8 +3295,7 @@ const styles = StyleSheet.create({
   },
 
   formRow: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+    paddingVertical: 5,
     gap: 8,
   },
 
@@ -2734,5 +3378,80 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12,
     textAlign: 'center',
+  },
+
+  searchResultsContainer: {
+    width: '92%',
+    maxWidth: 720,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+  },
+
+  searchResultsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 6,
+  },
+
+  searchResultsTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  searchResultsSubtitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    opacity: 0.92,
+    marginBottom: 10,
+  },
+
+  searchRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  searchRowTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+
+  searchRowMeta: {
+    fontSize: 12,
+    fontWeight: '700',
+    opacity: 0.9,
+  },
+
+  searchRowRight: {
+    minWidth: 56,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 6,
+  },
+
+  searchRowQty: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  searchEmpty: {
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+    opacity: 0.9,
+  },
+
+  searchResultsActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 10,
   },
 });

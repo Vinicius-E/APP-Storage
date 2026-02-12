@@ -10,6 +10,7 @@ import store from './src/store';
 
 import { PaperProvider } from 'react-native-paper';
 import { ThemeProvider, useThemeContext } from './src/theme/ThemeContext';
+import { AuthProvider } from './src/auth/AuthContext';
 import { PaperIcon } from './src/PaperIcon';
 
 function AppWithTheme() {
@@ -28,7 +29,9 @@ export default function App() {
   return (
     <Provider store={store}>
       <ThemeProvider>
-        <AppWithTheme />
+        <AuthProvider>
+          <AppWithTheme />
+        </AuthProvider>
       </ThemeProvider>
     </Provider>
   );

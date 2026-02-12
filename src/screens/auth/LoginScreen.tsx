@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
 import { TextInput, Button, Text } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,36 +6,79 @@ import { useNavigation } from '@react-navigation/native';
 import AlertDialog from '../../components/AlertDialog';
 import { loginUsuario } from '../../services/authService';
 import { useThemeContext } from '../../theme/ThemeContext';
+import { useAuth } from '../../auth/AuthContext';
+
+type DialogType = 'success' | 'error' | 'warning';
 
 export default function LoginScreen() {
-  const [login, setLogin] = useState('');
-  const [senha, setSenha] = useState('');
-  const [dialogVisible, setDialogVisible] = useState(false);
-  const [dialogMsg, setDialogMsg] = useState('');
-  const [dialogType, setDialogType] = useState<'success' | 'error' | 'warning'>('success');
+  const [login, setLogin] = useState<string>('');
+  const [senha, setSenha] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+
+  const [touched, setTouched] = useState<{ login: boolean; senha: boolean }>({
+    login: false,
+    senha: false,
+  });
+
+  const [dialogVisible, setDialogVisible] = useState<boolean>(false);
+  const [dialogMsg, setDialogMsg] = useState<string>('');
+  const [dialogType, setDialogType] = useState<DialogType>('success');
 
   const navigation = useNavigation<any>();
   const { theme } = useThemeContext();
+  const { login: setAuth } = useAuth();
+
+  const emailValid = useMemo(() => {
+    const value = login.trim();
+    if (!value) {
+      return false;
+    }
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }, [login]);
+
+  const senhaValid = useMemo(() => senha.trim().length >= 6, [senha]);
+  const canSubmit = emailValid && senhaValid && !loading;
+
+  const openDialog = (type: DialogType, message: string) => {
+    setDialogType(type);
+    setDialogMsg(message);
+    setDialogVisible(true);
+  };
 
   const handleLogin = async () => {
-    try {
-      const usuario = await loginUsuario(login, senha);
+    setTouched({ login: true, senha: true });
 
+    if (!canSubmit) {
+      if (!emailValid) {
+        openDialog('warning', 'Informe um email válido.');
+        return;
+      }
+      if (!senhaValid) {
+        openDialog('warning', 'A senha deve ter pelo menos 6 caracteres.');
+        return;
+      }
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const usuario = await loginUsuario(login.trim(), senha);
       if (!usuario || !usuario.token) {
-        throw new Error('Usuário inválido');
+        openDialog('error', 'Usuário inválido.');
+        return;
       }
 
       await AsyncStorage.setItem('authToken', usuario.token);
+      setAuth();
 
-      setDialogMsg(`Bem-vindo, ${usuario.nome}`);
-      setDialogType('success');
-      setDialogVisible(true);
-
-      setTimeout(() => navigation.navigate('Warehouse'), 1000);
+      openDialog('success', `Bem-vindo, ${usuario.nome}`);
+      setTimeout(() => navigation.navigate('Dashboard'), 800);
     } catch (error) {
-      setDialogMsg('Login inválido ou erro de conexão');
-      setDialogType('error');
-      setDialogVisible(true);
+      openDialog('error', 'Login inválido ou erro de conexão');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -50,58 +93,83 @@ export default function LoginScreen() {
           { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
         ]}
       >
-        <Text style={[styles.title, { color: theme.colors.primary }]}>Armazém - Login</Text>
+        <Text style={[styles.title, { color: theme.colors.primary }]}>Armazém</Text>
+        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+          Entre com suas credenciais
+        </Text>
 
         <TextInput
           label="Email"
           value={login}
           onChangeText={setLogin}
+          onBlur={() => setTouched((p) => ({ ...p, login: true }))}
           mode="flat"
           underlineColor="transparent"
           style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
-          outlineColor="transparent"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          returnKeyType="next"
+          left={<TextInput.Icon icon="email-outline" />}
           theme={{
             colors: {
               primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.primary,
+              onSurfaceVariant: theme.colors.textSecondary,
               background: theme.colors.surfaceVariant,
             },
           }}
+          error={touched.login && !emailValid}
         />
 
         <TextInput
           label="Senha"
           value={senha}
           onChangeText={setSenha}
+          onBlur={() => setTouched((p) => ({ ...p, senha: true }))}
           mode="flat"
           underlineColor="transparent"
-          secureTextEntry
+          secureTextEntry={!showPassword}
           style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
           activeUnderlineColor={theme.colors.primary}
           textColor={theme.colors.text}
           selectionColor={theme.colors.primary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={handleLogin}
+          left={<TextInput.Icon icon="lock-outline" />}
+          right={
+            <TextInput.Icon
+              icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              onPress={() => setShowPassword((s) => !s)}
+              forceTextInputFocus={false}
+            />
+          }
           theme={{
             colors: {
               primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.primary,
+              onSurfaceVariant: theme.colors.textSecondary,
               background: theme.colors.surfaceVariant,
             },
           }}
+          error={touched.senha && !senhaValid}
         />
 
         <Button
           mode="contained"
           onPress={handleLogin}
+          loading={loading}
+          disabled={!canSubmit}
           style={[styles.button, { backgroundColor: theme.colors.primary }]}
+          contentStyle={styles.buttonContent}
           textColor={theme.colors.onPrimary}
         >
           Entrar
         </Button>
 
-        {/* LINK PARA LOGIN */}
         <Pressable onPress={() => navigation.navigate('Register')}>
           <Text style={[styles.link, { color: theme.colors.primary }]}>Não tem conta? Criar</Text>
         </Pressable>
@@ -128,33 +196,50 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 420,
-    padding: 28,
+    paddingHorizontal: 28,
+    paddingTop: 26,
+    paddingBottom: 20,
     borderRadius: 18,
     borderWidth: 1,
+    shadowColor: '#000000',
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 3,
   },
 
   title: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 25,
+  },
+
+  subtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 18,
   },
 
   input: {
-    marginBottom: 16,
-    borderRadius: 8,
+    marginBottom: 14,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
 
   button: {
-    marginTop: 10,
-    height: 48,
+    marginTop: 8,
     borderRadius: 12,
     justifyContent: 'center',
   },
 
+  buttonContent: {
+    height: 48,
+  },
+
   link: {
-    marginTop: 16,
+    marginTop: 14,
     textAlign: 'center',
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
