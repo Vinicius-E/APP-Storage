@@ -22,7 +22,7 @@ function AppWithTheme() {
       return;
     }
 
-    const iconAsset = require('./assets/favIcon.png') as any;
+    const iconAsset = require('./assets/favicon.png') as any;
     const rawUri =
       typeof iconAsset === 'string'
         ? iconAsset
