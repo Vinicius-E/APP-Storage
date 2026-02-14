@@ -1,20 +1,27 @@
-import { API } from '../../axios';
-import { RegisterPayload, UsuarioResponse } from '../models/AuthModel';
+import { RegisterPayload } from '../models/AuthModel';
+import {
+  loginUsuario as loginUsuarioRequest,
+  criarUsuario,
+  UsuarioResponseDTO,
+} from './usuarioApi';
 
-export async function loginUsuario(login: string, senha: string): Promise<UsuarioResponse | null> {
+export async function loginUsuario(
+  login: string,
+  senha: string
+): Promise<UsuarioResponseDTO | null> {
   try {
-    const response = await API.post<UsuarioResponse>('/usuarios/login', {
-      login,
-      senha,
-    });
-
-    return response.data;
-  } catch (error: any) {
-    console.error('Erro ao autenticar:', error?.response?.data || error.message);
+    return await loginUsuarioRequest({ login, senha });
+  } catch (error) {
+    console.error('Erro ao autenticar:', error);
     return null;
   }
 }
 
 export async function registerUser(data: RegisterPayload): Promise<void> {
-  await API.post('/usuarios', data);
+  await criarUsuario({
+    login: data.login,
+    nome: data.nome,
+    senha: data.senha,
+    perfil: 'LEITURA',
+  });
 }

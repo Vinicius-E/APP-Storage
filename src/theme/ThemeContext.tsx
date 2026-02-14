@@ -11,10 +11,18 @@ const warehouseThemes = {
 
       background: '#EFE7DF',
       surface: '#FFF7EE',
-      surfaceVariant: '#F3E7DA',
+      surfaceVariant: '#EFE1D3',
 
       primary: '#9C5B17',
       onPrimary: '#FFFFFF',
+      secondary: '#B3742A',
+      onSecondary: '#FFFFFF',
+      secondaryContainer: '#F3DFC4',
+      onSecondaryContainer: '#5E3B14',
+      tertiary: '#C0863D',
+      onTertiary: '#FFFFFF',
+      tertiaryContainer: '#FBE8CF',
+      onTertiaryContainer: '#5A370E',
 
       outline: '#D6C6B9',
       outlineVariant: '#E1D4C9',
@@ -36,10 +44,18 @@ const warehouseThemes = {
 
       background: '#F0E3D2',
       surface: '#FFF4E6',
-      surfaceVariant: '#F1E2CF',
+      surfaceVariant: '#F3E5D2',
 
       primary: '#7A4A21',
       onPrimary: '#FFFFFF',
+      secondary: '#9A6127',
+      onSecondary: '#FFFFFF',
+      secondaryContainer: '#EED9BC',
+      onSecondaryContainer: '#4C2F10',
+      tertiary: '#A87139',
+      onTertiary: '#FFFFFF',
+      tertiaryContainer: '#F7E2C5',
+      onTertiaryContainer: '#4F2F12',
 
       outline: '#D1B99F',
       outlineVariant: '#DFCAB3',
@@ -61,10 +77,18 @@ const warehouseThemes = {
 
       background: '#07120B',
       surface: '#0B1A10',
-      surfaceVariant: '#102617',
+      surfaceVariant: '#162018',
 
       primary: '#99FF14',
       onPrimary: '#07120B',
+      secondary: '#7EDB1A',
+      onSecondary: '#07120B',
+      secondaryContainer: '#223E16',
+      onSecondaryContainer: '#DFF7CD',
+      tertiary: '#57C46C',
+      onTertiary: '#07120B',
+      tertiaryContainer: '#1C3323',
+      onTertiaryContainer: '#D8F6DE',
 
       outline: '#1E3A27',
       outlineVariant: '#284A33',

@@ -5,13 +5,23 @@ import {
   DrawerContentScrollView,
   DrawerItem,
 } from '@react-navigation/drawer';
-import { View, Pressable, TextInput, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import {
+  View,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  Platform,
+  useWindowDimensions,
+} from 'react-native';
 import AntDesignBase from '@expo/vector-icons/AntDesign';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import AppLoadingState from '../components/AppLoadingState';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import DashboardScreen from '../screens/DashboardScreen';
+import HistoryScreen from '../screens/HistoryScreen';
+import UserScreen from '../screens/UserScreen';
 import Warehouse2DView from '../components/Warehouse2DView';
 import { useThemeContext } from '../theme/ThemeContext';
 import { RequireAuth } from '../auth/RequireAuth';
@@ -23,7 +33,7 @@ const IS_WEB = Platform.OS === 'web';
 
 function ThemedDrawerContent(props: any) {
   const { theme } = useThemeContext();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, signOut } = useAuth();
   const { colors } = theme;
 
   return (
@@ -33,7 +43,16 @@ function ThemedDrawerContent(props: any) {
       contentContainerStyle={{ backgroundColor: colors.surface }}
     >
       {props.state.routes.map((route: any, index: number) => {
-        if (!isAuthenticated && (route.name === 'Dashboard' || route.name === 'Armazem')) {
+        if (
+          !isAuthenticated &&
+          (route.name === 'Dashboard' ||
+            route.name === 'Armazém' ||
+            route.name === 'Usuários' ||
+            route.name === 'Histórico')
+        ) {
+          return null;
+        }
+        if (isAuthenticated && (route.name === 'Login' || route.name === 'Register')) {
           return null;
         }
 
@@ -61,67 +80,78 @@ function ThemedDrawerContent(props: any) {
           />
         );
       })}
+      {isAuthenticated ? (
+        <DrawerItem
+          label="Sair"
+          onPress={async () => {
+            await signOut();
+            props.navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          }}
+          labelStyle={{
+            color: colors.error,
+            fontWeight: '700',
+            paddingBottom: 4,
+          }}
+          style={{
+            borderRadius: 12,
+            marginHorizontal: 8,
+          }}
+        />
+      ) : null}
     </DrawerContentScrollView>
   );
 }
 
-function WarehouseHeaderRight() {
+function WarehouseHeaderRight({ screenWidth }: { screenWidth: number }) {
   const { theme } = useThemeContext();
   const { colors } = theme;
-  const { searchOpen, searchText, setSearchText, toggle, clear } = useWarehouseSearch();
+  const { searchText, setSearchText } = useWarehouseSearch();
+  const hasText = searchText.trim().length > 0;
 
   const placeholderColor = `${colors.primary}99`;
 
   return (
-    <View style={styles.headerRight}>
-      {searchOpen && (
-        <View
+    <View style={[styles.headerRight, { width: screenWidth * 0.5 }]}>
+      <View
+        style={[
+          styles.searchBox,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.primary,
+          },
+        ]}
+      >
+        <AntDesign name="search1" size={16} color={placeholderColor} style={{ marginTop: 1 }} />
+
+        <TextInput
+          value={searchText}
+          onChangeText={setSearchText}
+          placeholder="Buscar por nome do produto, código, cor ou descrição (mínimo 3 caracteres)"
+          placeholderTextColor={placeholderColor}
           style={[
-            styles.searchBox,
+            styles.searchInput,
             {
-              backgroundColor: colors.surface,
-              borderColor: colors.primary,
+              color: colors.text,
             },
           ]}
-        >
-          <AntDesign name="search1" size={16} color={placeholderColor} style={{ marginTop: 1 }} />
+        />
 
-          <TextInput
-            value={searchText}
-            onChangeText={setSearchText}
-            placeholder="Buscar produto, código, cor ou descrição (mín. 3)"
-            placeholderTextColor={placeholderColor}
-            style={[
-              styles.searchInput,
-              {
-                color: colors.text,
-              },
-            ]}
-          />
-
-          {searchText !== '' && (
-            <Pressable onPress={clear} style={styles.iconBtn}>
-              <AntDesign name="close" size={14} color={colors.primary} />
-            </Pressable>
-          )}
-        </View>
-      )}
-
-      <Pressable
-        onPress={toggle}
-        style={[styles.iconBtn, searchOpen && { backgroundColor: colors.surfaceVariant }]}
-      >
-        <AntDesign name={searchOpen ? 'close' : 'search1'} size={18} color={colors.primary} />
-      </Pressable>
+        {hasText && (
+          <Pressable onPress={() => setSearchText('')} style={styles.clearBtn}>
+            <AntDesign name="close" size={14} color={colors.primary} />
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
-
 const AntDesign = (props: any) => {
   const iconName = String(props?.name ?? '').toLowerCase();
   if (iconName === 'search' || iconName === 'search1') {
-    const normalizedSize =
-      typeof props?.size === 'number' ? Math.max(props.size, 18) : 18;
+    const normalizedSize = typeof props?.size === 'number' ? Math.max(props.size, 18) : 18;
     return (
       <MaterialCommunityIcons
         name="magnify"
@@ -137,14 +167,28 @@ const AntDesign = (props: any) => {
 
 export default function DrawerNavigator() {
   const { theme } = useThemeContext();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isRestoring } = useAuth();
   const { width: screenWidth } = useWindowDimensions();
   const showHeaderSearch = IS_WEB && screenWidth >= 900;
+
+  if (isRestoring) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: theme.colors.background,
+          paddingHorizontal: 20,
+        }}
+      >
+        <AppLoadingState message="Carregando sessão..." style={{ flex: 1 }} />
+      </View>
+    );
+  }
 
   return (
     <WarehouseSearchProvider>
       <Drawer.Navigator
-        initialRouteName="Login"
+        initialRouteName={isAuthenticated ? 'Dashboard' : 'Login'}
         drawerContent={(props) => <ThemedDrawerContent {...props} />}
         screenOptions={{
           headerStyle: { backgroundColor: theme.colors.surface },
@@ -185,16 +229,21 @@ export default function DrawerNavigator() {
 
         {isAuthenticated ? (
           <Drawer.Screen
-            name="Armazem"
+            name="Armazém"
             component={Warehouse2DView}
             options={{
               title: 'Armazém',
-              headerRight: () => (showHeaderSearch ? <WarehouseHeaderRight /> : null),
+              headerRightContainerStyle: {
+                width: screenWidth * 0.5 + 20,
+                paddingRight: 10,
+              },
+              headerRight: () =>
+                showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null,
             }}
           />
         ) : (
           <Drawer.Screen
-            name="Armazem"
+            name="Armazém"
             component={() => (
               <RequireAuth>
                 <Warehouse2DView />
@@ -203,8 +252,49 @@ export default function DrawerNavigator() {
             options={{
               title: 'Armazém',
               drawerItemStyle: { display: 'none' },
-              headerRight: () => (showHeaderSearch ? <WarehouseHeaderRight /> : null),
+              headerRightContainerStyle: {
+                width: screenWidth * 0.5 + 20,
+                paddingRight: 10,
+              },
+              headerRight: () =>
+                showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null,
             }}
+          />
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen
+            name="Usuários"
+            component={UserScreen}
+            options={{ title: 'Usuários' }}
+          />
+        ) : (
+          <Drawer.Screen
+            name="Usuários"
+            component={() => (
+              <RequireAuth>
+                <UserScreen />
+              </RequireAuth>
+            )}
+            options={{ title: 'Usuários', drawerItemStyle: { display: 'none' } }}
+          />
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen
+            name="Histórico"
+            component={HistoryScreen}
+            options={{ title: 'Histórico' }}
+          />
+        ) : (
+          <Drawer.Screen
+            name="Histórico"
+            component={() => (
+              <RequireAuth>
+                <HistoryScreen />
+              </RequireAuth>
+            )}
+            options={{ title: 'Histórico', drawerItemStyle: { display: 'none' } }}
           />
         )}
       </Drawer.Navigator>
@@ -221,8 +311,7 @@ const styles = StyleSheet.create({
   },
   searchBox: {
     height: 34,
-    width: 440,
-    maxWidth: 520,
+    width: '100%',
     borderWidth: 1.5,
     borderRadius: 14,
     paddingHorizontal: 12,
@@ -236,10 +325,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     outlineStyle: 'none' as any,
   },
-  iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+  clearBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -3,6 +3,7 @@ import { View, StyleSheet, KeyboardAvoidingView, Platform, Pressable } from 'rea
 import { TextInput, Button, Text } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import AlertDialog from '../../components/AlertDialog';
+import AppTextInput from '../../components/AppTextInput';
 import { registerUser } from '../../services/authService';
 import { useThemeContext } from '../../theme/ThemeContext';
 
@@ -25,6 +26,10 @@ export default function RegisterScreen() {
 
   const navigation = useNavigation<any>();
   const { theme } = useThemeContext();
+  const colors = theme.colors as typeof theme.colors & {
+    secondaryContainer?: string;
+    onSecondaryContainer?: string;
+  };
 
   const emailValid = useMemo(() => {
     const value = login.trim();
@@ -37,6 +42,12 @@ export default function RegisterScreen() {
   const nomeValid = useMemo(() => nome.trim().length >= 2, [nome]);
   const senhaValid = useMemo(() => senha.trim().length >= 6, [senha]);
   const canSubmit = emailValid && nomeValid && senhaValid && !loading;
+  const registerButtonColor = canSubmit
+    ? theme.colors.primary
+    : colors.secondaryContainer ?? '#EED9BC';
+  const registerTextColor = canSubmit
+    ? theme.colors.onPrimary
+    : colors.onSecondaryContainer ?? '#5E3B14';
 
   const handleRegister = async () => {
     setTouched({ login: true, nome: true, senha: true });
@@ -93,78 +104,49 @@ export default function RegisterScreen() {
         ]}
       >
         <Text style={[styles.title, { color: theme.colors.primary }]}>Criar Conta</Text>
-        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+        <Text style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}>
           Preencha seus dados para continuar
         </Text>
 
-        <TextInput
+        <AppTextInput
           label="Email"
           value={login}
           onChangeText={setLogin}
           onBlur={() => setTouched((p) => ({ ...p, login: true }))}
-          mode="flat"
-          underlineColor="transparent"
           autoComplete="email"
           autoCorrect={false}
           autoCapitalize="none"
-          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
-          activeUnderlineColor={theme.colors.primary}
-          textColor={theme.colors.text}
-          selectionColor={theme.colors.primary}
+          style={styles.input}
           keyboardType="email-address"
           returnKeyType="next"
           left={<TextInput.Icon icon="email-outline" />}
-          theme={{
-            colors: {
-              background: theme.colors.surfaceVariant,
-              primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.textSecondary,
-            },
-          }}
           error={touched.login && !emailValid}
         />
 
-        <TextInput
+        <AppTextInput
           label="Nome"
           value={nome}
           onChangeText={setNome}
           onBlur={() => setTouched((p) => ({ ...p, nome: true }))}
-          mode="flat"
-          underlineColor="transparent"
           autoComplete="name"
           autoCorrect={false}
           autoCapitalize="words"
-          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
-          activeUnderlineColor={theme.colors.primary}
-          textColor={theme.colors.text}
-          selectionColor={theme.colors.primary}
+          style={styles.input}
           returnKeyType="next"
           left={<TextInput.Icon icon="account-outline" />}
-          theme={{
-            colors: {
-              background: theme.colors.surfaceVariant,
-              primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.textSecondary,
-            },
-          }}
           error={touched.nome && !nomeValid}
         />
 
-        <TextInput
+        <AppTextInput
           label="Senha"
           value={senha}
           onChangeText={setSenha}
           onBlur={() => setTouched((p) => ({ ...p, senha: true }))}
           secureTextEntry={!showPassword}
-          mode="flat"
-          underlineColor="transparent"
           autoComplete="password"
           autoCorrect={false}
           autoCapitalize="none"
-          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
-          activeUnderlineColor={theme.colors.primary}
-          textColor={theme.colors.text}
-          selectionColor={theme.colors.primary}
+          style={styles.input}
           returnKeyType="done"
           onSubmitEditing={handleRegister}
           left={<TextInput.Icon icon="lock-outline" />}
@@ -175,13 +157,6 @@ export default function RegisterScreen() {
               forceTextInputFocus={false}
             />
           }
-          theme={{
-            colors: {
-              background: theme.colors.surfaceVariant,
-              primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.textSecondary,
-            },
-          }}
           error={touched.senha && !senhaValid}
         />
 
@@ -190,9 +165,11 @@ export default function RegisterScreen() {
           loading={loading}
           onPress={handleRegister}
           disabled={!canSubmit}
-          style={[styles.button, { backgroundColor: theme.colors.primary }]}
+          style={styles.button}
+          buttonColor={registerButtonColor}
           contentStyle={styles.buttonContent}
-          textColor={theme.colors.onPrimary}
+          textColor={registerTextColor}
+          labelStyle={styles.buttonLabel}
         >
           Registrar
         </Button>
@@ -250,8 +227,6 @@ const styles = StyleSheet.create({
 
   input: {
     marginBottom: 14,
-    borderRadius: 10,
-    overflow: 'hidden',
   },
 
   button: {
@@ -262,6 +237,12 @@ const styles = StyleSheet.create({
 
   buttonContent: {
     height: 48,
+  },
+
+  buttonLabel: {
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 
   link: {

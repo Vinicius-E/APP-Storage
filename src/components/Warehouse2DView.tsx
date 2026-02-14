@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,8 @@ import QuantityStepper from './QuantityStepper';
 import { AddGradeNivelButton } from './AddGradeNivelButton';
 import { AddFileiraButton } from './AddFileiraButton';
 import { ActionIconButton } from './IconActionButton';
-import { API } from '../../axios';
+import AppLoadingState from './AppLoadingState';
+import { API } from '../axios';
 import { AuthProvider } from '../auth/AuthContext';
 import { useWarehouseSearch } from '../search/WarehouseSearchContext';
 
@@ -136,6 +137,7 @@ type SearchResult = {
 export default function Warehouse2DView() {
   const { width: screenWidth } = useWindowDimensions();
   const [fileiras, setFileiras] = useState<Fileira[]>([]);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [creatingFileira, setCreatingFileira] = useState(false);
   const [expandedGrades, setExpandedGrades] = useState<number[]>([]);
   const [expandedFileiras, setExpandedFileiras] = useState<number[]>([]);
@@ -206,7 +208,7 @@ export default function Warehouse2DView() {
   const [errorVisible, setErrorVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // ✅ SEARCH (HEADER)
+  // ? SEARCH (HEADER)
   const { searchText, setSearchText } = useWarehouseSearch();
   const [searchOpen, setSearchOpen] = useState(false);
   //const [searchText, setSearchText] = useState('');
@@ -234,6 +236,31 @@ export default function Warehouse2DView() {
 
     const msg = String(apiMsg ?? '').trim();
     return msg !== '' ? msg : fallback;
+  };
+
+  const normalizeErrorText = (value: any) =>
+    String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const isItemEstoqueNotFoundError = (error: any) => {
+    const status = error?.response?.status;
+    const message = extractErrorMessage(error, '');
+    const normalized = normalizeErrorText(message);
+
+    if (status === 404) {
+      return true;
+    }
+
+    if (status === 400) {
+      return normalized.includes('itemestoque nao encontrado')
+        || normalized.includes('item estoque nao encontrado');
+    }
+
+    return normalized.includes('itemestoque nao encontrado')
+      || normalized.includes('item estoque nao encontrado');
   };
 
   const { theme } = useThemeContext();
@@ -307,9 +334,13 @@ export default function Warehouse2DView() {
     return { identificador: `N${nextNumber}`, ordem: nextNumber };
   };
 
-  const fetchAllData = async () => {
+  const fetchAllData = async (showInitialLoader = false): Promise<EstoquePosicao[] | null> => {
+    if (showInitialLoader) {
+      setInitialLoading(true);
+    }
+
     try {
-      const res = await API.get<EstoquePosicao[]>(`/estoque/posicoes/area/${AREA_ID}`);
+      const res = await API.get<EstoquePosicao[]>(`/api/estoque/posicoes/area/${AREA_ID}`);
       const rows = res.data ?? [];
 
       const fileiraMap = new Map<number, Fileira>();
@@ -383,13 +414,19 @@ export default function Warehouse2DView() {
       }));
 
       setFileiras(fileirasOrdenadas);
+      return rows;
     } catch (error: any) {
       Alert.alert('Erro', error?.response?.data ?? 'Não foi possível carregar o mapa do estoque.');
+      return null;
+    } finally {
+      if (showInitialLoader) {
+        setInitialLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    void fetchAllData();
+    void fetchAllData(true);
   }, []);
 
   const toggleGradeExpand = (grade: Grade) => {
@@ -433,7 +470,7 @@ export default function Warehouse2DView() {
     setCreatingGradeId(grade.id);
 
     try {
-      await API.post(`/niveis/grade/${grade.id}`, {
+      await API.post(`/api/niveis/grade/${grade.id}`, {
         identificador,
         ordem,
         grade: { id: grade.id },
@@ -466,69 +503,70 @@ export default function Warehouse2DView() {
     gradeId: number,
     nivelId: number,
     nivel: Nivel
-  ) => {
+  ): Promise<boolean> => {
     setResequenceNivelId(nivelId);
 
     try {
       const temItem = (nivel.itemEstoqueId ?? null) !== null;
 
       if (temItem) {
-        let deleteOk = false;
-
         try {
-          await API.delete(`/itens-estoque/nivel/${nivelId}`);
-          deleteOk = true;
+          await API.delete(`/api/itens-estoque/nivel/${nivelId}`);
         } catch (errorDelete: any) {
           const status = errorDelete?.response?.status;
 
-          if (status !== 404 && status !== 405) {
+          if (!isItemEstoqueNotFoundError(errorDelete) && status !== 405) {
             throw errorDelete;
           }
         }
-
-        if (!deleteOk) {
-          const nomeModelo =
-            (nivel.produto?.nomeModelo ?? nivel.produtoNomeModelo ?? '').trim() !== ''
-              ? (nivel.produto?.nomeModelo ?? nivel.produtoNomeModelo ?? '').trim()
-              : 'SEM_NOME';
-
-          const cor =
-            (nivel.produto?.cor ?? '').trim() !== ''
-              ? (nivel.produto?.cor ?? '').trim()
-              : 'SEM_COR';
-
-          const codigoSistemaWester = (nivel.produto?.codigoSistemaWester ?? '').toString();
-          const descricao = (nivel.produto?.descricao ?? '').toString();
-
-          await API.put(`/itens-estoque/nivel/${nivelId}`, {
-            quantidade: 0,
-            produto: {
-              codigoSistemaWester,
-              cor,
-              nomeModelo,
-              descricao,
-            },
-          });
-        }
       }
 
-      const res = await API.delete<any>(`/niveis/${nivelId}/resequence`);
-      const dto = res?.data;
+      let dto: any = null;
+      try {
+        const res = await API.delete<any>(`/api/niveis/${nivelId}/resequence`);
+        dto = res?.data;
+      } catch (resequenceError: any) {
+        if (resequenceError?.response?.status === 404) {
+          await fetchAllData();
+          setExpandedFileiras((prev) => (prev.includes(fileiraId) ? prev : [...prev, fileiraId]));
+          setExpandedGrades((prev) => (prev.includes(gradeId) ? prev : [...prev, gradeId]));
+          setActiveGradeId(gradeId);
+          showSuccess(`Nível ${nivel.identificador} já havia sido removido. Lista sincronizada.`);
+          return true;
+        }
+        throw resequenceError;
+      }
 
       if (dto && typeof dto.gradeId === 'number' && Array.isArray(dto.niveis)) {
         resequenceGradeLocal(fileiraId, gradeId, dto.niveis);
-      } else {
-        await fetchAllData();
       }
+      await fetchAllData();
 
       setExpandedFileiras((prev) => (prev.includes(fileiraId) ? prev : [...prev, fileiraId]));
       setExpandedGrades((prev) => (prev.includes(gradeId) ? prev : [...prev, gradeId]));
       setActiveGradeId(gradeId);
+      showSuccess(`Nível ${nivel.identificador} removido com sucesso. Grade atualizada.`);
+      return true;
     } catch (error: any) {
-      Alert.alert(
-        'Erro',
-        error?.response?.data ?? 'Não foi possível remover/resequenciar o nível.'
-      );
+      if (isItemEstoqueNotFoundError(error)) {
+        const rows = await fetchAllData();
+        const nivelAindaExiste =
+          Array.isArray(rows) && rows.some((r) => Number(r?.nivelId) === Number(nivelId));
+
+        if (!nivelAindaExiste) {
+          showSuccess(`Nível ${nivel.identificador} já estava removido. Lista sincronizada.`);
+          return true;
+        }
+      }
+
+      const message = extractErrorMessage(error, 'Não foi possível remover/resequenciar o nível.');
+      showError(message);
+      try {
+        await fetchAllData();
+      } catch (_syncError) {
+        // ignora erro de sincronização secundária
+      }
+      return false;
     } finally {
       setResequenceNivelId(null);
     }
@@ -560,7 +598,7 @@ export default function Warehouse2DView() {
       return;
     }
 
-    await deleteAndResequenceLocal(
+    const removed = await deleteAndResequenceLocal(
       selectedNivelCtx.fileiraId,
       selectedNivelCtx.gradeId,
       selectedNivelCtx.nivelId,
@@ -568,6 +606,9 @@ export default function Warehouse2DView() {
     );
 
     closeConfirmRemoveNivel();
+    if (removed && productModalVisible) {
+      closeProductModal();
+    }
   };
 
   const handleGradePress = (grade: Grade) => {
@@ -608,7 +649,7 @@ export default function Warehouse2DView() {
     setItemLoading(true);
 
     try {
-      const res = await API.get<any>(`/itens-estoque/nivel/${nivelId}`);
+      const res = await API.get<any>(`/api/itens-estoque/nivel/${nivelId}`);
       const dto = normalizeItemEstoqueResponse(res.data);
 
       if (!dto) {
@@ -906,7 +947,7 @@ export default function Warehouse2DView() {
         };
 
         const createdGradeRes = await API.post<any>(
-          `/grades/fileira/${selectedGradeCtx.fileiraId}`,
+          `/api/grades/fileira/${selectedGradeCtx.fileiraId}`,
           gradePayload
         );
 
@@ -924,7 +965,7 @@ export default function Warehouse2DView() {
         grade: { id: targetGradeId },
       };
 
-      const createdNivelRes = await API.post<any>(`/niveis/grade/${targetGradeId}`, nivelPayload);
+      const createdNivelRes = await API.post<any>(`/api/niveis/grade/${targetGradeId}`, nivelPayload);
 
       const createdNivelId = createdNivelRes?.data?.id;
       if (typeof createdNivelId !== 'number') {
@@ -951,7 +992,7 @@ export default function Warehouse2DView() {
         },
       };
 
-      const itemRes = await API.put<any>(`/itens-estoque/nivel/${createdNivel.id}`, itemPayload);
+      const itemRes = await API.put<any>(`/api/itens-estoque/nivel/${createdNivel.id}`, itemPayload);
       const updated = normalizeItemEstoqueResponse(itemRes.data);
 
       if (!updated) {
@@ -1033,7 +1074,7 @@ export default function Warehouse2DView() {
         },
       };
 
-      const res = await API.put<any>(`/itens-estoque/nivel/${selectedNivelCtx.nivelId}`, payload);
+      const res = await API.put<any>(`/api/itens-estoque/nivel/${selectedNivelCtx.nivelId}`, payload);
       const updated = normalizeItemEstoqueResponse(res.data);
 
       if (!updated) {
@@ -1111,7 +1152,7 @@ export default function Warehouse2DView() {
 
     for (let i = 0; i < 25; i++) {
       try {
-        const res = await API.post<any>(`/grades/fileira/${fileiraId}`, { identificador, ordem });
+        const res = await API.post<any>(`/api/grades/fileira/${fileiraId}`, { identificador, ordem });
         const data = res?.data;
 
         if (data && typeof data.id === 'number') {
@@ -1168,7 +1209,7 @@ export default function Warehouse2DView() {
         grade: { id: createdGrade.id },
       };
 
-      const nivelRes = await API.post<any>(`/niveis/grade/${createdGrade.id}`, createNivelPayload);
+      const nivelRes = await API.post<any>(`/api/niveis/grade/${createdGrade.id}`, createNivelPayload);
       const nivelData = nivelRes?.data;
 
       if (!nivelData || typeof nivelData.id !== 'number') {
@@ -1191,7 +1232,7 @@ export default function Warehouse2DView() {
         },
       };
 
-      const itemRes = await API.put<any>(`/itens-estoque/nivel/${createdNivel.id}`, itemPayload);
+      const itemRes = await API.put<any>(`/api/itens-estoque/nivel/${createdNivel.id}`, itemPayload);
       const updated = normalizeItemEstoqueResponse(itemRes.data);
 
       if (!updated) {
@@ -1280,7 +1321,7 @@ export default function Warehouse2DView() {
     try {
       const next = computeNextFileira(fileiras);
 
-      const res = await API.post(`/fileiras/area/${AREA_ID}`, {
+      const res = await API.post(`/api/fileiras/area/${AREA_ID}`, {
         identificador: next.identificador,
         ordem: next.ordem,
       });
@@ -1351,7 +1392,7 @@ export default function Warehouse2DView() {
     });
   };
 
-  // ✅ SEARCH helpers
+  // ? SEARCH helpers
   const normalizeSearchText = (value: string) => {
     return String(value ?? '')
       .trim()
@@ -1597,7 +1638,7 @@ export default function Warehouse2DView() {
               }}
               value={searchText}
               onChangeText={setSearchText}
-              placeholder="Buscar (min. 3 chars): nome, código, cor, descrição"
+              placeholder="Busque por nome do produto, código, cor ou descrição (mínimo 3 caracteres)"
               placeholderTextColor="#888"
               style={[styles.searchInput, { color: colors.text }]}
               autoCorrect={false}
@@ -1683,7 +1724,7 @@ export default function Warehouse2DView() {
                   }}
                   value={searchText}
                   onChangeText={setSearchText}
-                  placeholder="Buscar (min. 3 chars): nome, código, cor, descrição"
+                  placeholder="Busque por nome do produto, código, cor ou descrição (mínimo 3 caracteres)"
                   placeholderTextColor={`${colors.primary}88`}
                   style={[styles.searchInput, { color: colors.text }]}
                   autoCorrect={false}
@@ -1723,16 +1764,19 @@ export default function Warehouse2DView() {
                 <MaterialCommunityIcons name="magnify" size={20} color={colors.primary} />
               </Pressable>
             </View>
-
-            <Text style={[styles.webSearchHintCompact, { color: colors.primary }]}>
-              {searchEnabled
-                ? `${searchResults.length} resultado(s)`
-                : 'Digite ao menos 3 caracteres'}
-            </Text>
+            {searchEnabled ? (
+              <Text style={[styles.webSearchHintCompact, { color: colors.primary }]}>
+                {`${searchResults.length} resultado(s)`}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
-        {IS_WEB ? (
+        {initialLoading ? (
+          <View style={styles.initialLoadingWrap}>
+            <AppLoadingState message="Carregando mapa do armazém..." style={styles.initialLoadingState} />
+          </View>
+        ) : IS_WEB ? (
           <View style={[styles.webScroller, { backgroundColor: colors.background }]}>
             <View style={styles.webContent}>
               {fileiras.map((fileira) => {
@@ -2420,11 +2464,11 @@ export default function Warehouse2DView() {
                 </Pressable>
               </View>
 
-              <Text style={[styles.searchResultsSubtitle, { color: colors.primary }]}>
-                {searchEnabled
-                  ? `${searchResults.length} encontrado(s) para "${debouncedSearchText.trim()}"`
-                  : 'Digite ao menos 3 caracteres'}
-              </Text>
+              {searchEnabled ? (
+                <Text style={[styles.searchResultsSubtitle, { color: colors.primary }]}>
+                  {`${searchResults.length} encontrado(s) para "${debouncedSearchText.trim()}"`}
+                </Text>
+              ) : null}
 
               <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
                 {searchResults.length === 0 ? (
@@ -2464,7 +2508,7 @@ export default function Warehouse2DView() {
                             numberOfLines={1}
                           >
                             {r.cor !== '' ? `Cor: ${r.cor}` : 'Cor: -'}{' '}
-                            {r.descricao !== '' ? ` • ${r.descricao}` : ''}
+                            {r.descricao !== '' ? ` - ${r.descricao}` : ''}
                           </Text>
                         </View>
 
@@ -2802,7 +2846,7 @@ export default function Warehouse2DView() {
           </View>
         </Modal>
 
-        {/* ✅ Modal adicionar grade via + da fileira */}
+        {/* ? Modal adicionar grade via + da fileira */}
         <Modal visible={addGradeModalVisible} transparent animationType="fade">
           <View style={styles.overlay}>
             <View
@@ -2979,6 +3023,14 @@ export default function Warehouse2DView() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  initialLoadingWrap: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+  },
+  initialLoadingState: {
+    minHeight: 220,
+  },
 
   headerBar: {
     width: '100%',
@@ -3553,3 +3605,5 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 });
+
+

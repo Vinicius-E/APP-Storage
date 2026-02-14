@@ -4,19 +4,19 @@ import { NavigationProp, ParamListBase, useNavigation } from '@react-navigation/
 import { useAuth } from './AuthContext';
 
 export const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isRestoring } = useAuth();
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && !isRestoring) {
       navigation.reset({
         index: 0,
         routes: [{ name: 'Login' }],
       });
     }
-  }, [isAuthenticated, navigation]);
+  }, [isAuthenticated, isRestoring, navigation]);
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || isRestoring) {
     return null;
   }
 

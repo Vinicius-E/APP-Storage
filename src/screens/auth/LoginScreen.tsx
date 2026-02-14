@@ -1,44 +1,36 @@
 import React, { useMemo, useState } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
-import { TextInput, Button, Text } from 'react-native-paper';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import AlertDialog from '../../components/AlertDialog';
-import { loginUsuario } from '../../services/authService';
-import { useThemeContext } from '../../theme/ThemeContext';
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { NavigationProp, ParamListBase, useNavigation } from '@react-navigation/native';
+import { AxiosError } from 'axios';
+import { Button, Text, TextInput } from 'react-native-paper';
 import { useAuth } from '../../auth/AuthContext';
+import AlertDialog from '../../components/AlertDialog';
+import AppTextInput from '../../components/AppTextInput';
+import { useThemeContext } from '../../theme/ThemeContext';
 
 type DialogType = 'success' | 'error' | 'warning';
 
 export default function LoginScreen() {
-  const [login, setLogin] = useState<string>('');
-  const [senha, setSenha] = useState<string>('');
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
-
+  const [login, setLogin] = useState('');
+  const [senha, setSenha] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState<{ login: boolean; senha: boolean }>({
     login: false,
     senha: false,
   });
-
-  const [dialogVisible, setDialogVisible] = useState<boolean>(false);
-  const [dialogMsg, setDialogMsg] = useState<string>('');
+  const [dialogVisible, setDialogVisible] = useState(false);
+  const [dialogMsg, setDialogMsg] = useState('');
   const [dialogType, setDialogType] = useState<DialogType>('success');
 
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { theme } = useThemeContext();
-  const { login: setAuth } = useAuth();
+  const { signIn } = useAuth();
+  const colors = theme.colors as typeof theme.colors & { textSecondary?: string };
 
-  const emailValid = useMemo(() => {
-    const value = login.trim();
-    if (!value) {
-      return false;
-    }
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-  }, [login]);
-
+  const loginValid = useMemo(() => login.trim().length >= 3, [login]);
   const senhaValid = useMemo(() => senha.trim().length >= 6, [senha]);
-  const canSubmit = emailValid && senhaValid && !loading;
+  const canSubmit = loginValid && senhaValid && !loading;
 
   const openDialog = (type: DialogType, message: string) => {
     setDialogType(type);
@@ -46,12 +38,22 @@ export default function LoginScreen() {
     setDialogVisible(true);
   };
 
+  const resolveLoginError = (error: unknown): string => {
+    if (error instanceof AxiosError) {
+      if (error.response?.status === 401 || error.response?.status === 400) {
+        return 'Login ou senha inválidos.';
+      }
+      return 'Não foi possível conectar ao servidor. Tente novamente.';
+    }
+    return 'Falha ao autenticar. Confira suas credenciais.';
+  };
+
   const handleLogin = async () => {
     setTouched({ login: true, senha: true });
 
     if (!canSubmit) {
-      if (!emailValid) {
-        openDialog('warning', 'Informe um email válido.');
+      if (!loginValid) {
+        openDialog('warning', 'Informe seu login.');
         return;
       }
       if (!senhaValid) {
@@ -63,20 +65,14 @@ export default function LoginScreen() {
 
     try {
       setLoading(true);
-
-      const usuario = await loginUsuario(login.trim(), senha);
-      if (!usuario || !usuario.token) {
-        openDialog('error', 'Usuário inválido.');
-        return;
-      }
-
-      await AsyncStorage.setItem('authToken', usuario.token);
-      setAuth();
-
-      openDialog('success', `Bem-vindo, ${usuario.nome}`);
-      setTimeout(() => navigation.navigate('Dashboard'), 800);
+      await signIn(login.trim(), senha);
+      openDialog('success', 'Login realizado com sucesso.');
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Dashboard' }],
+      });
     } catch (error) {
-      openDialog('error', 'Login inválido ou erro de conexão');
+      openDialog('error', resolveLoginError(error));
     } finally {
       setLoading(false);
     }
@@ -94,48 +90,30 @@ export default function LoginScreen() {
         ]}
       >
         <Text style={[styles.title, { color: theme.colors.primary }]}>Armazém</Text>
-        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+        <Text style={[styles.subtitle, { color: colors.textSecondary ?? theme.colors.onSurfaceVariant }]}>
           Entre com suas credenciais
         </Text>
 
-        <TextInput
-          label="Email"
+        <AppTextInput
+          label="Email / Login"
           value={login}
           onChangeText={setLogin}
-          onBlur={() => setTouched((p) => ({ ...p, login: true }))}
-          mode="flat"
-          underlineColor="transparent"
-          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
-          activeUnderlineColor={theme.colors.primary}
-          textColor={theme.colors.text}
-          selectionColor={theme.colors.primary}
+          onBlur={() => setTouched((prev) => ({ ...prev, login: true }))}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
           returnKeyType="next"
           left={<TextInput.Icon icon="email-outline" />}
-          theme={{
-            colors: {
-              primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.textSecondary,
-              background: theme.colors.surfaceVariant,
-            },
-          }}
-          error={touched.login && !emailValid}
+          error={touched.login && !loginValid}
+          style={styles.input}
         />
 
-        <TextInput
+        <AppTextInput
           label="Senha"
           value={senha}
           onChangeText={setSenha}
-          onBlur={() => setTouched((p) => ({ ...p, senha: true }))}
-          mode="flat"
-          underlineColor="transparent"
+          onBlur={() => setTouched((prev) => ({ ...prev, senha: true }))}
           secureTextEntry={!showPassword}
-          style={[styles.input, { backgroundColor: theme.colors.surfaceVariant }]}
-          activeUnderlineColor={theme.colors.primary}
-          textColor={theme.colors.text}
-          selectionColor={theme.colors.primary}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="done"
@@ -144,18 +122,12 @@ export default function LoginScreen() {
           right={
             <TextInput.Icon
               icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
-              onPress={() => setShowPassword((s) => !s)}
+              onPress={() => setShowPassword((state) => !state)}
               forceTextInputFocus={false}
             />
           }
-          theme={{
-            colors: {
-              primary: theme.colors.primary,
-              onSurfaceVariant: theme.colors.textSecondary,
-              background: theme.colors.surfaceVariant,
-            },
-          }}
           error={touched.senha && !senhaValid}
+          style={styles.input}
         />
 
         <Button
@@ -192,7 +164,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
   },
-
   card: {
     width: '100%',
     maxWidth: 420,
@@ -207,36 +178,28 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     elevation: 3,
   },
-
   title: {
     fontSize: 26,
     fontWeight: '800',
     textAlign: 'center',
   },
-
   subtitle: {
     marginTop: 6,
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 18,
   },
-
   input: {
     marginBottom: 14,
-    borderRadius: 10,
-    overflow: 'hidden',
   },
-
   button: {
     marginTop: 8,
     borderRadius: 12,
     justifyContent: 'center',
   },
-
   buttonContent: {
     height: 48,
   },
-
   link: {
     marginTop: 14,
     textAlign: 'center',

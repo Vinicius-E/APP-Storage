@@ -66,12 +66,12 @@ export default function WarehouseSearchBar() {
         onHoverOut={() => setHovered(false)}
         style={styles.inner}
       >
-        <AntDesign name="questioncircleo" size={16} color={colors.primary} />
+        <AntDesign name="search" size={16} color={colors.primary} />
 
         <TextInput
           value={searchText}
           onChangeText={setSearchText}
-          placeholder="Buscar (min. 3): nome, código, cor, descrição"
+          placeholder="Buscar por nome, código, cor ou descrição (mínimo 3 caracteres)"
           placeholderTextColor="#888"
           style={[styles.input, { color: colors.text }]}
           autoFocus
@@ -91,7 +91,7 @@ export default function WarehouseSearchBar() {
             hitSlop={8}
           >
             <AntDesign
-              name="closecircleo"
+              name="close-circle"
               size={18}
               color={hoverClear ? colors.primary : colors.text}
             />
