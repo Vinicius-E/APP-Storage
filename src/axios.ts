@@ -1,7 +1,9 @@
 import axios, { AxiosHeaders, InternalAxiosRequestConfig } from 'axios';
 
 const rawBaseURL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
+  process.env.EXPO_PUBLIC_API_BASE_URL ??
+  process.env.VITE_API_BASE_URL ??
+  'https://api-storage-wivi.onrender.com';
 
 const baseURL = rawBaseURL.replace(/\/+$/, '');
 
