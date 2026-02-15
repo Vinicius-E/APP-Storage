@@ -9,8 +9,10 @@ import {
 } from 'react-native';
 import { Button, Chip, Divider, Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
 import AlertDialog from '../components/AlertDialog';
+import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
+import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
 import {
   UsuarioResponseDTO,
   alterarSenhaUsuario,
@@ -235,7 +237,8 @@ export default function UserScreen() {
       setUsers(data.map(toManagedUser));
     } catch (error) {
       console.error('Falha ao listar usuários:', error);
-      setErrorMessage('Não foi possível carregar usuários. Tente recarregar.');
+      const backendMessage = resolveRequestErrorMessage(error, '');
+      setErrorMessage(backendMessage || API_STATE_MESSAGES.users.error.description);
     } finally {
       if (isRefresh) {
         setRefreshing(false);
@@ -280,6 +283,14 @@ export default function UserScreen() {
       return byStatus && byRole && bySearch;
     });
   }, [roleFilter, search, statusFilter, users]);
+
+  const hasUserFilters = useMemo(() => {
+    return search.trim() !== '' || statusFilter !== 'all' || roleFilter !== 'Todos';
+  }, [roleFilter, search, statusFilter]);
+
+  const usersEmptyCopy = useMemo(() => {
+    return getApiEmptyCopy('users', hasUserFilters);
+  }, [hasUserFilters]);
 
   const resetCreatePasswordState = () => {
     setShowCreatePassword(false);
@@ -516,12 +527,22 @@ export default function UserScreen() {
           ]}
           elevation={0}
         >
-          <View style={styles.heroTop}>
-            <View style={styles.heroCopy}>
-              <Text style={[styles.title, { color: textColor }]}>Usuários</Text>
-              {/* <Text style={[styles.subtitle, { color: textSecondary }]}>Cadastro e Perfis</Text> */}
+          <View style={[styles.heroTop, isCompact && styles.heroTopCompact]}>
+            <View style={[styles.metricsRow, isCompact && styles.metricsRowCompact]}>
+              <View pointerEvents="none">
+                <Chip style={styles.metricChip}>Total: {summary.total}</Chip>
+              </View>
+              <View pointerEvents="none">
+                <Chip style={styles.metricChip}>Ativos: {summary.active}</Chip>
+              </View>
+              <View pointerEvents="none">
+                <Chip style={styles.metricChip}>Inativos: {summary.inactive}</Chip>
+              </View>
+              <View pointerEvents="none">
+                <Chip style={styles.metricChip}>Administradores: {summary.admins}</Chip>
+              </View>
             </View>
-            <View style={styles.heroActions}>
+            <View style={[styles.heroActions, isCompact && styles.heroActionsCompact]}>
               <Button
                 mode="outlined"
                 icon="refresh"
@@ -544,21 +565,6 @@ export default function UserScreen() {
               >
                 Novo usuário
               </Button>
-            </View>
-          </View>
-
-          <View style={styles.metricsRow}>
-            <View pointerEvents="none">
-              <Chip style={styles.metricChip}>Total: {summary.total}</Chip>
-            </View>
-            <View pointerEvents="none">
-              <Chip style={styles.metricChip}>Ativos: {summary.active}</Chip>
-            </View>
-            <View pointerEvents="none">
-              <Chip style={styles.metricChip}>Inativos: {summary.inactive}</Chip>
-            </View>
-            <View pointerEvents="none">
-              <Chip style={styles.metricChip}>Administradores: {summary.admins}</Chip>
             </View>
           </View>
         </Surface>
@@ -638,7 +644,7 @@ export default function UserScreen() {
           </Surface>
         ) : null}
 
-        {errorMessage ? (
+        {!loading && errorMessage ? (
           <Surface
             style={[
               styles.empty,
@@ -646,7 +652,12 @@ export default function UserScreen() {
             ]}
             elevation={0}
           >
-            <Text style={[styles.userName, { color: textColor }]}>{errorMessage}</Text>
+            <AppEmptyState
+              title={API_STATE_MESSAGES.users.error.title}
+              description={errorMessage}
+              icon="alert-circle-outline"
+              tone="error"
+            />
           </Surface>
         ) : null}
 
@@ -708,7 +719,7 @@ export default function UserScreen() {
                             ID #{user.id}
                           </Text>
                         </View>
-                        <View
+                        {/* <View
                           style={[
                             styles.userFactPill,
                             {
@@ -733,7 +744,7 @@ export default function UserScreen() {
                           <Text style={[styles.userFactText, { color: textSecondary }]}>
                             Último acesso {user.lastAccess}
                           </Text>
-                        </View>
+                        </View> */}
                       </View>
                     </View>
                   </View>
@@ -825,7 +836,7 @@ export default function UserScreen() {
             );
           })}
 
-          {!loading && filteredUsers.length === 0 ? (
+          {!loading && !errorMessage && filteredUsers.length === 0 ? (
             <Surface
               style={[
                 styles.empty,
@@ -833,10 +844,11 @@ export default function UserScreen() {
               ]}
               elevation={0}
             >
-              <Text style={[styles.userName, { color: textColor }]}>Nenhum usuário encontrado</Text>
-              <Text style={[styles.userInfo, { color: textSecondary }]}>
-                Ajuste os filtros para visualizar resultados.
-              </Text>
+              <AppEmptyState
+                title={usersEmptyCopy.title}
+                description={usersEmptyCopy.description}
+                icon="account-search-outline"
+              />
             </Surface>
           ) : null}
         </View>
@@ -846,222 +858,244 @@ export default function UserScreen() {
         <Modal
           visible={editingUserId !== null}
           onDismiss={closeEdit}
-          contentContainerStyle={[
-            styles.modal,
-            { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-          ]}
+          contentContainerStyle={styles.modalFrame}
         >
-          <Text style={[styles.modalTitle, { color: textColor }]}>
-            {editingUserId === 'new' ? 'Novo usuário' : 'Editar usuário'}
-          </Text>
-
-          <AppTextInput
-            label="Nome"
-            value={editForm.name}
-            onChangeText={(value) => setEditForm((prev) => ({ ...prev, name: value }))}
-            style={styles.input}
-          />
-
-          <AppTextInput
-            label="Login"
-            value={editForm.login}
-            autoCapitalize="none"
-            autoComplete="off"
-            textContentType="none"
-            onChangeText={(value) => setEditForm((prev) => ({ ...prev, login: value }))}
-            style={styles.input}
-          />
-
-          {editingUserId === 'new' ? (
-            <>
-              <AppTextInput
-                label="Senha"
-                value={editForm.password}
-                onChangeText={(value) => setEditForm((prev) => ({ ...prev, password: value }))}
-                secureTextEntry={!showCreatePassword}
-                autoComplete="new-password"
-                textContentType="newPassword"
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                right={
-                  <TextInput.Icon
-                    icon={showCreatePassword ? 'eye-off-outline' : 'eye-outline'}
-                    onPress={() => setShowCreatePassword((state) => !state)}
-                    forceTextInputFocus={false}
-                  />
-                }
-              />
-
-              <AppTextInput
-                label="Confirmar senha"
-                value={editForm.confirmPassword}
-                onChangeText={(value) =>
-                  setEditForm((prev) => ({ ...prev, confirmPassword: value }))
-                }
-                secureTextEntry={!showCreateConfirmPassword}
-                autoComplete="new-password"
-                textContentType="newPassword"
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                right={
-                  <TextInput.Icon
-                    icon={showCreateConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                    onPress={() => setShowCreateConfirmPassword((state) => !state)}
-                    forceTextInputFocus={false}
-                  />
-                }
-              />
-            </>
-          ) : null}
-
-          <Text style={[styles.helperText, { color: textSecondary }]}>Perfil</Text>
-          <View style={styles.filterRow}>
-            {ROLE_OPTIONS.map((role) => (
-              <Chip
-                key={role}
-                selected={editForm.role === role}
-                onPress={() => setEditForm((prev) => ({ ...prev, role }))}
-              >
-                {role}
-              </Chip>
-            ))}
-          </View>
-
-          <View style={styles.modalActions}>
-            <Button mode="text" onPress={closeEdit} disabled={submitting || savingPassword}>
-              Cancelar
-            </Button>
-            <Button
-              mode="contained"
-              onPress={() => void saveUser()}
-              disabled={!canSaveUser || submitting || savingPassword}
-              loading={submitting}
+          <View
+            style={[
+              styles.modal,
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
+            ]}
+          >
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
             >
-              Salvar usuário
-            </Button>
-          </View>
-
-          {typeof editingUserId === 'number' ? (
-            <View style={styles.passwordSection}>
-              <Divider style={styles.passwordDivider} />
-              <Text style={[styles.modalTitle, styles.passwordTitle, { color: textColor }]}>
-                Alterar senha
+              <Text style={[styles.modalTitle, { color: textColor }]}>
+                {editingUserId === 'new' ? 'Novo usuário' : 'Editar usuário'}
               </Text>
 
               <AppTextInput
-                label="Senha atual"
-                value={changePasswordForm.senhaAtual}
-                onChangeText={(value) =>
-                  setChangePasswordForm((prev) => ({
-                    ...prev,
-                    senhaAtual: value,
-                  }))
-                }
-                secureTextEntry={!showSenhaAtual}
-                autoCapitalize="none"
-                autoCorrect={false}
+                label="Nome"
+                value={editForm.name}
+                onChangeText={(value) => setEditForm((prev) => ({ ...prev, name: value }))}
                 style={styles.input}
-                right={
-                  <TextInput.Icon
-                    icon={showSenhaAtual ? 'eye-off-outline' : 'eye-outline'}
-                    onPress={() => setShowSenhaAtual((state) => !state)}
-                    forceTextInputFocus={false}
-                  />
-                }
               />
 
               <AppTextInput
-                label="Nova senha"
-                value={changePasswordForm.novaSenha}
-                onChangeText={(value) =>
-                  setChangePasswordForm((prev) => ({
-                    ...prev,
-                    novaSenha: value,
-                  }))
-                }
-                secureTextEntry={!showNovaSenha}
+                label="Login"
+                value={editForm.login}
                 autoCapitalize="none"
-                autoCorrect={false}
+                autoComplete="off"
+                textContentType="none"
+                onChangeText={(value) => setEditForm((prev) => ({ ...prev, login: value }))}
                 style={styles.input}
-                right={
-                  <TextInput.Icon
-                    icon={showNovaSenha ? 'eye-off-outline' : 'eye-outline'}
-                    onPress={() => setShowNovaSenha((state) => !state)}
-                    forceTextInputFocus={false}
-                  />
-                }
               />
 
-              <AppTextInput
-                label="Confirmar nova senha"
-                value={changePasswordForm.confirmarNovaSenha}
-                onChangeText={(value) =>
-                  setChangePasswordForm((prev) => ({
-                    ...prev,
-                    confirmarNovaSenha: value,
-                  }))
-                }
-                secureTextEntry={!showConfirmarNovaSenha}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                right={
-                  <TextInput.Icon
-                    icon={showConfirmarNovaSenha ? 'eye-off-outline' : 'eye-outline'}
-                    onPress={() => setShowConfirmarNovaSenha((state) => !state)}
-                    forceTextInputFocus={false}
+              {editingUserId === 'new' ? (
+                <>
+                  <AppTextInput
+                    label="Senha"
+                    value={editForm.password}
+                    onChangeText={(value) => setEditForm((prev) => ({ ...prev, password: value }))}
+                    secureTextEntry={!showCreatePassword}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.input}
+                    right={
+                      <TextInput.Icon
+                        icon={showCreatePassword ? 'eye-off-outline' : 'eye-outline'}
+                        onPress={() => setShowCreatePassword((state) => !state)}
+                        forceTextInputFocus={false}
+                      />
+                    }
                   />
-                }
-              />
 
-              <View style={styles.passwordActions}>
+                  <AppTextInput
+                    label="Confirmar senha"
+                    value={editForm.confirmPassword}
+                    onChangeText={(value) =>
+                      setEditForm((prev) => ({ ...prev, confirmPassword: value }))
+                    }
+                    secureTextEntry={!showCreateConfirmPassword}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.input}
+                    right={
+                      <TextInput.Icon
+                        icon={showCreateConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                        onPress={() => setShowCreateConfirmPassword((state) => !state)}
+                        forceTextInputFocus={false}
+                      />
+                    }
+                  />
+                </>
+              ) : null}
+
+              <Text style={[styles.helperText, { color: textSecondary }]}>Perfil</Text>
+              <View style={styles.filterRow}>
+                {ROLE_OPTIONS.map((role) => (
+                  <Chip
+                    key={role}
+                    selected={editForm.role === role}
+                    onPress={() => setEditForm((prev) => ({ ...prev, role }))}
+                  >
+                    {role}
+                  </Chip>
+                ))}
+              </View>
+
+              <View style={styles.modalActions}>
+                <Button mode="text" onPress={closeEdit} disabled={submitting || savingPassword}>
+                  Cancelar
+                </Button>
                 <Button
-                  mode="contained-tonal"
-                  onPress={() => void savePassword()}
-                  loading={savingPassword}
-                  disabled={submitting || savingPassword}
+                  mode="contained"
+                  onPress={() => void saveUser()}
+                  disabled={!canSaveUser || submitting || savingPassword}
+                  loading={submitting}
                 >
-                  Salvar senha
+                  Salvar usuário
                 </Button>
               </View>
-            </View>
-          ) : null}
+
+              {typeof editingUserId === 'number' ? (
+                <View style={styles.passwordSection}>
+                  <Divider style={styles.passwordDivider} />
+                  <Text style={[styles.modalTitle, styles.passwordTitle, { color: textColor }]}>
+                    Alterar senha
+                  </Text>
+
+                  <AppTextInput
+                    label="Senha atual"
+                    value={changePasswordForm.senhaAtual}
+                    onChangeText={(value) =>
+                      setChangePasswordForm((prev) => ({
+                        ...prev,
+                        senhaAtual: value,
+                      }))
+                    }
+                    secureTextEntry={!showSenhaAtual}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.input}
+                    right={
+                      <TextInput.Icon
+                        icon={showSenhaAtual ? 'eye-off-outline' : 'eye-outline'}
+                        onPress={() => setShowSenhaAtual((state) => !state)}
+                        forceTextInputFocus={false}
+                      />
+                    }
+                  />
+
+                  <AppTextInput
+                    label="Nova senha"
+                    value={changePasswordForm.novaSenha}
+                    onChangeText={(value) =>
+                      setChangePasswordForm((prev) => ({
+                        ...prev,
+                        novaSenha: value,
+                      }))
+                    }
+                    secureTextEntry={!showNovaSenha}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.input}
+                    right={
+                      <TextInput.Icon
+                        icon={showNovaSenha ? 'eye-off-outline' : 'eye-outline'}
+                        onPress={() => setShowNovaSenha((state) => !state)}
+                        forceTextInputFocus={false}
+                      />
+                    }
+                  />
+
+                  <AppTextInput
+                    label="Confirmar nova senha"
+                    value={changePasswordForm.confirmarNovaSenha}
+                    onChangeText={(value) =>
+                      setChangePasswordForm((prev) => ({
+                        ...prev,
+                        confirmarNovaSenha: value,
+                      }))
+                    }
+                    secureTextEntry={!showConfirmarNovaSenha}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.input}
+                    right={
+                      <TextInput.Icon
+                        icon={showConfirmarNovaSenha ? 'eye-off-outline' : 'eye-outline'}
+                        onPress={() => setShowConfirmarNovaSenha((state) => !state)}
+                        forceTextInputFocus={false}
+                      />
+                    }
+                  />
+
+                  <View style={styles.passwordActions}>
+                    <Button
+                      mode="contained-tonal"
+                      onPress={() => void savePassword()}
+                      loading={savingPassword}
+                      disabled={submitting || savingPassword}
+                    >
+                      Salvar senha
+                    </Button>
+                  </View>
+                </View>
+              ) : null}
+            </ScrollView>
+          </View>
         </Modal>
 
         <Modal
           visible={statusConfirmTarget !== null}
           onDismiss={closeStatusConfirm}
-          contentContainerStyle={[
-            styles.confirmModal,
-            { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-          ]}
+          contentContainerStyle={styles.confirmModalFrame}
         >
-          <Text style={[styles.modalTitle, styles.confirmTitle, { color: textColor }]}>
-            Inativar usuário
-          </Text>
-          <Text style={[styles.confirmMessage, { color: textSecondary }]}>
-            Deseja inativar {statusConfirmTarget?.name}?
-          </Text>
+          <View
+            style={[
+              styles.confirmModal,
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
+            ]}
+          >
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={[styles.modalTitle, styles.confirmTitle, { color: textColor }]}>
+                Inativar usuário
+              </Text>
+              <Text style={[styles.confirmMessage, { color: textSecondary }]}>
+                Deseja inativar {statusConfirmTarget?.name}?
+              </Text>
 
-          <View style={styles.modalActions}>
-            <Button
-              mode="text"
-              onPress={closeStatusConfirm}
-              disabled={submitting || savingPassword}
-            >
-              Cancelar
-            </Button>
-            <Button
-              mode="contained"
-              onPress={() => void confirmInactivation()}
-              buttonColor={theme.colors.error}
-              textColor="#fff"
-              disabled={submitting || savingPassword}
-            >
-              Inativar
-            </Button>
+              <View style={styles.modalActions}>
+                <Button
+                  mode="text"
+                  onPress={closeStatusConfirm}
+                  disabled={submitting || savingPassword}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  mode="contained"
+                  onPress={() => void confirmInactivation()}
+                  buttonColor={theme.colors.error}
+                  textColor="#fff"
+                  disabled={submitting || savingPassword}
+                >
+                  Inativar
+                </Button>
+              </View>
+            </ScrollView>
           </View>
         </Modal>
       </Portal>
@@ -1082,18 +1116,18 @@ const styles = StyleSheet.create({
   hero: { gap: 8 },
   heroTop: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
   },
-  heroCopy: { maxWidth: 620, gap: 2 },
-  heroActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  heroTopCompact: { flexDirection: 'column', alignItems: 'stretch', gap: 8 },
+  heroActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' },
+  heroActionsCompact: { width: '100%', justifyContent: 'flex-end' },
   topActionBtn: { borderRadius: 10 },
   createBtn: { borderRadius: 10 },
-  title: { fontSize: 24, fontWeight: '800' },
-  subtitle: { fontSize: 13, fontWeight: '600' },
-  metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, flex: 1 },
+  metricsRowCompact: { width: '100%' },
   metricChip: { borderRadius: 999 },
   input: { marginBottom: 8 },
   filterRow: {
@@ -1157,23 +1191,34 @@ const styles = StyleSheet.create({
   actionSuccess: { borderColor: SUCCESS_ACTION_COLOR },
   empty: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 6, alignItems: 'center' },
   loadingBox: { minHeight: 136 },
+  modalFrame: {
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+  },
   modal: {
     alignSelf: 'center',
-    width: '92%',
+    width: '100%',
     maxWidth: 560,
     borderWidth: 1,
     borderRadius: 16,
-    padding: 14,
-    maxHeight: '92%',
+    maxHeight: '90%',
+    overflow: 'hidden',
+  },
+  modalScroll: { maxHeight: '100%' },
+  modalScrollContent: { padding: 14 },
+  confirmModalFrame: {
+    paddingHorizontal: 14,
+    paddingVertical: 16,
   },
   modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 8 },
   confirmModal: {
     alignSelf: 'center',
-    width: '92%',
+    width: '100%',
     maxWidth: 460,
     borderWidth: 1,
     borderRadius: 16,
-    padding: 14,
+    maxHeight: '80%',
+    overflow: 'hidden',
   },
   confirmTitle: { marginBottom: 4 },
   confirmMessage: { fontSize: 14, fontWeight: '600', marginBottom: 8 },

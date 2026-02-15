@@ -21,9 +21,11 @@ import QuantityStepper from './QuantityStepper';
 import { AddGradeNivelButton } from './AddGradeNivelButton';
 import { AddFileiraButton } from './AddFileiraButton';
 import { ActionIconButton } from './IconActionButton';
+import AppEmptyState from './AppEmptyState';
 import AppLoadingState from './AppLoadingState';
 import { API } from '../axios';
 import { AuthProvider } from '../auth/AuthContext';
+import { API_STATE_MESSAGES } from '../constants/apiStateMessages';
 import { useWarehouseSearch } from '../search/WarehouseSearchContext';
 
 interface Produto {
@@ -215,11 +217,20 @@ export default function Warehouse2DView() {
   const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [searchResultsVisible, setSearchResultsVisible] = useState(false);
   const [focusedNivelId, setFocusedNivelId] = useState<number | null>(null);
+  const [searchInputFocused, setSearchInputFocused] = useState(false);
   const searchInputRef = useRef<TextInput | null>(null);
 
   const showSuccess = (message: string) => {
     setSuccessMessage(message);
     setSuccessVisible(true);
+  };
+
+  const compactInsertSuccessMessage = (contextLabel: string) => {
+    const location = contextLabel
+      .replace(/^Inserir item\s*-\s*/i, '')
+      .replace(/\s*-\s*/g, ' / ')
+      .trim();
+    return `Produto inserido em ${location}.`;
   };
 
   const showError = (message: string) => {
@@ -1040,7 +1051,7 @@ export default function Warehouse2DView() {
       addNivelWithItemLocal(selectedGradeCtx.fileiraId, targetGradeId!, createdNivel, updated);
 
       closeAddItemModal();
-      showSuccess(`Produto inserido com sucesso em ${selectedGradeCtx.label}`);
+      showSuccess(compactInsertSuccessMessage(selectedGradeCtx.label));
     } catch (error: any) {
       const msg = extractErrorMessage(error, 'Não foi possível inserir o item na grade.');
       showError(msg);
@@ -1255,7 +1266,7 @@ export default function Warehouse2DView() {
       );
 
       closeAddGradeModal();
-      showSuccess(`Produto inserido com sucesso em ${selectedFileiraCtx.label}`);
+      showSuccess(compactInsertSuccessMessage(selectedFileiraCtx.label));
     } catch (error: any) {
       const msg = extractErrorMessage(error, 'Erro ao criar Grade.');
       showError(msg);
@@ -1416,6 +1427,10 @@ export default function Warehouse2DView() {
   const searchEnabled = normalizedQuery.length >= 3;
   const HEADER_SEARCH_BREAKPOINT = 900;
   const showInlineSearchHelper = IS_WEB && screenWidth < HEADER_SEARCH_BREAKPOINT;
+  const isTightSearchViewport = IS_WEB && screenWidth < 440;
+  const compactSearchPlaceholder = isTightSearchViewport
+    ? 'Nome, código, cor ou descrição'
+    : 'Digite nome, código, cor ou descrição (mín. 3 caracteres)';
 
   useEffect(() => {
     if (
@@ -1565,9 +1580,13 @@ export default function Warehouse2DView() {
   };
 
   const submitSearch = () => {
-    if (!searchEnabled) {
+    const instantQuery = normalizeSearchText(searchText);
+    if (instantQuery.length < 3) {
       showError('Digite ao menos 3 caracteres para pesquisar.');
       return;
+    }
+    if (instantQuery !== normalizedQuery) {
+      setDebouncedSearchText(searchText);
     }
     setSearchResultsVisible(true);
   };
@@ -1714,26 +1733,50 @@ export default function Warehouse2DView() {
                 style={[
                   styles.searchBox,
                   styles.searchBoxCompact,
-                  { borderColor: colors.outline, backgroundColor: colors.surface },
+                  isTightSearchViewport && styles.searchBoxCompactTight,
+                  {
+                    borderColor: searchInputFocused ? colors.primary : colors.outline,
+                    backgroundColor: colors.surface,
+                  },
                 ]}
               >
-                <MaterialCommunityIcons name="magnify" size={17} color={colors.primary} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Pesquisar produtos no armazém"
+                  onPress={submitSearch}
+                  style={(state: any) => [
+                    styles.searchIconBtn,
+                    state?.hovered && { backgroundColor: colors.surfaceVariant },
+                    state?.pressed && { opacity: 0.75 },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="magnify" size={17} color={colors.primary} />
+                </Pressable>
                 <TextInput
                   ref={(r) => {
                     searchInputRef.current = r;
                   }}
                   value={searchText}
                   onChangeText={setSearchText}
-                  placeholder="Busque por nome do produto, código, cor ou descrição (mínimo 3 caracteres)"
+                  placeholder={compactSearchPlaceholder}
                   placeholderTextColor={`${colors.primary}88`}
-                  style={[styles.searchInput, { color: colors.text }]}
+                  style={[
+                    styles.searchInput,
+                    isTightSearchViewport && styles.searchInputTight,
+                    IS_WEB && styles.searchInputWeb,
+                    { color: colors.text },
+                  ]}
                   autoCorrect={false}
                   autoCapitalize="none"
                   onSubmitEditing={submitSearch}
                   returnKeyType="search"
+                  onFocus={() => setSearchInputFocused(true)}
+                  onBlur={() => setSearchInputFocused(false)}
                 />
                 {searchText.trim() !== '' ? (
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Limpar busca"
                     onPress={() => {
                       setSearchText('');
                       setDebouncedSearchText('');
@@ -1741,28 +1784,16 @@ export default function Warehouse2DView() {
                       setFocusedNivelId(null);
                       setSearchResultsVisible(false);
                     }}
-                    style={({ pressed, hovered }) => [
+                    style={(state: any) => [
                       styles.searchIconBtn,
-                      hovered && { backgroundColor: colors.surfaceVariant },
-                      pressed && { opacity: 0.7 },
+                      state?.hovered && { backgroundColor: colors.surfaceVariant },
+                      state?.pressed && { opacity: 0.7 },
                     ]}
                   >
                     <AntDesign name="close" size={16} color={colors.primary} />
                   </Pressable>
                 ) : null}
               </View>
-
-              <Pressable
-                onPress={submitSearch}
-                style={({ pressed, hovered }) => [
-                  styles.webSearchIconButtonCompact,
-                  { borderColor: colors.primary },
-                  hovered && { backgroundColor: colors.surfaceVariant },
-                  pressed && { opacity: 0.75 },
-                ]}
-              >
-                <MaterialCommunityIcons name="magnify" size={20} color={colors.primary} />
-              </Pressable>
             </View>
             {searchEnabled ? (
               <Text style={[styles.webSearchHintCompact, { color: colors.primary }]}>
@@ -1779,6 +1810,24 @@ export default function Warehouse2DView() {
         ) : IS_WEB ? (
           <View style={[styles.webScroller, { backgroundColor: colors.background }]}>
             <View style={styles.webContent}>
+              {fileiras.length === 0 ? (
+                <View
+                  style={[
+                    styles.emptyStateCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.outline,
+                    },
+                  ]}
+                >
+                  <AppEmptyState
+                    title={API_STATE_MESSAGES.warehouse.empty.default.title}
+                    description={API_STATE_MESSAGES.warehouse.empty.default.description}
+                    icon="warehouse"
+                  />
+                </View>
+              ) : null}
+
               {fileiras.map((fileira) => {
                 const fileiraExpanded = expandedFileiras.includes(fileira.id);
                 const isFileiraHovered = !!hoverFileira[fileira.id];
@@ -2132,6 +2181,24 @@ export default function Warehouse2DView() {
               contentContainerStyle={styles.fileirasRow}
               nestedScrollEnabled
             >
+              {fileiras.length === 0 ? (
+                <View
+                  style={[
+                    styles.emptyStateCardMobile,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.outline,
+                    },
+                  ]}
+                >
+                  <AppEmptyState
+                    title={API_STATE_MESSAGES.warehouse.empty.default.title}
+                    description={API_STATE_MESSAGES.warehouse.empty.default.description}
+                    icon="warehouse"
+                  />
+                </View>
+              ) : null}
+
               {fileiras.map((fileira) => {
                 const fileiraExpanded = expandedFileiras.includes(fileira.id);
                 const isFileiraHovered = !!hoverFileira[fileira.id];
@@ -2292,11 +2359,7 @@ export default function Warehouse2DView() {
                                     {creatingGradeId === grade.id ? (
                                       <ActivityIndicator size="small" color={colors.primary} />
                                     ) : (
-                                      <AntDesign
-                                        name="pluscircleo"
-                                        size={16}
-                                        color={colors.primary}
-                                      />
+                                      <AntDesign name="plus-circle" size={16} color={colors.primary} />
                                     )}
                                   </Pressable>
 
@@ -2452,86 +2515,93 @@ export default function Warehouse2DView() {
                 { backgroundColor: colors.surface, borderColor: colors.outline },
               ]}
             >
-              <View style={styles.searchResultsHeader}>
-                <Text style={[styles.searchResultsTitle, { color: colors.primary }]}>
-                  Resultados
-                </Text>
-                <Pressable
-                  onPress={() => setSearchResultsVisible(false)}
-                  style={({ pressed }) => [styles.searchIconBtn, pressed && { opacity: 0.7 }]}
-                >
-                  <AntDesign name="close" size={18} color={colors.primary} />
-                </Pressable>
-              </View>
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={styles.searchResultsHeader}>
+                  <Text style={[styles.searchResultsTitle, { color: colors.primary }]}>
+                    Resultados
+                  </Text>
+                  <Pressable
+                    onPress={() => setSearchResultsVisible(false)}
+                    style={({ pressed }) => [styles.searchIconBtn, pressed && { opacity: 0.7 }]}
+                  >
+                    <AntDesign name="close" size={18} color={colors.primary} />
+                  </Pressable>
+                </View>
 
-              {searchEnabled ? (
-                <Text style={[styles.searchResultsSubtitle, { color: colors.primary }]}>
-                  {`${searchResults.length} encontrado(s) para "${debouncedSearchText.trim()}"`}
-                </Text>
-              ) : null}
+                {searchEnabled ? (
+                  <Text style={[styles.searchResultsSubtitle, { color: colors.primary }]}>
+                    {`${searchResults.length} encontrado(s) para "${debouncedSearchText.trim()}"`}
+                  </Text>
+                ) : null}
 
-              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-                {searchResults.length === 0 ? (
-                  <View style={{ paddingVertical: 18 }}>
-                    <Text style={[styles.searchEmpty, { color: colors.primary }]}>
-                      Nenhum resultado.
-                    </Text>
-                  </View>
-                ) : (
-                  searchResults.map((r) => {
-                    return (
-                      <Pressable
-                        key={r.nivelId}
-                        onPress={() => focusOnResult(r)}
-                        style={({ pressed }) => [
-                          styles.searchRow,
-                          { borderColor: colors.outline, backgroundColor: colors.background },
-                          pressed && { opacity: 0.8 },
-                        ]}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text
-                            style={[styles.searchRowTitle, { color: colors.text }]}
-                            numberOfLines={1}
-                          >
-                            {r.nomeModelo !== '' ? r.nomeModelo : '(Sem nome)'}{' '}
-                            {r.codigo !== '' ? `(${r.codigo})` : ''}
-                          </Text>
-                          <Text
-                            style={[styles.searchRowMeta, { color: colors.text }]}
-                            numberOfLines={1}
-                          >
-                            {r.label}
-                          </Text>
-                          <Text
-                            style={[styles.searchRowMeta, { color: colors.text }]}
-                            numberOfLines={1}
-                          >
-                            {r.cor !== '' ? `Cor: ${r.cor}` : 'Cor: -'}{' '}
-                            {r.descricao !== '' ? ` - ${r.descricao}` : ''}
-                          </Text>
-                        </View>
+                <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                  {searchResults.length === 0 ? (
+                    <View style={{ paddingVertical: 18 }}>
+                      <Text style={[styles.searchEmpty, { color: colors.primary }]}>
+                        Nenhum resultado.
+                      </Text>
+                    </View>
+                  ) : (
+                    searchResults.map((r) => {
+                      return (
+                        <Pressable
+                          key={r.nivelId}
+                          onPress={() => focusOnResult(r)}
+                          style={({ pressed }) => [
+                            styles.searchRow,
+                            { borderColor: colors.outline, backgroundColor: colors.background },
+                            pressed && { opacity: 0.8 },
+                          ]}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[styles.searchRowTitle, { color: colors.text }]}
+                              numberOfLines={1}
+                            >
+                              {r.nomeModelo !== '' ? r.nomeModelo : '(Sem nome)'}{' '}
+                              {r.codigo !== '' ? `(${r.codigo})` : ''}
+                            </Text>
+                            <Text
+                              style={[styles.searchRowMeta, { color: colors.text }]}
+                              numberOfLines={1}
+                            >
+                              {r.label}
+                            </Text>
+                            <Text
+                              style={[styles.searchRowMeta, { color: colors.text }]}
+                              numberOfLines={1}
+                            >
+                              {r.cor !== '' ? `Cor: ${r.cor}` : 'Cor: -'}{' '}
+                              {r.descricao !== '' ? ` - ${r.descricao}` : ''}
+                            </Text>
+                          </View>
 
-                        <View style={styles.searchRowRight}>
-                          <Text style={[styles.searchRowQty, { color: colors.primary }]}>
-                            {r.quantidade}
-                          </Text>
-                          <AntDesign name="caretright" size={16} color={colors.primary} />
-                        </View>
-                      </Pressable>
-                    );
-                  })
-                )}
+                          <View style={styles.searchRowRight}>
+                            <Text style={[styles.searchRowQty, { color: colors.primary }]}>
+                              {r.quantidade}
+                            </Text>
+                            <AntDesign name="caret-right" size={16} color={colors.primary} />
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </ScrollView>
+
+                <View style={styles.searchResultsActions}>
+                  <Pressable
+                    onPress={() => setSearchResultsVisible(false)}
+                    style={[styles.confirmButton, { borderColor: colors.outline }]}
+                  >
+                    <Text style={[styles.confirmButtonText, { color: colors.text }]}>Fechar</Text>
+                  </Pressable>
+                </View>
               </ScrollView>
-
-              <View style={styles.searchResultsActions}>
-                <Pressable
-                  onPress={() => setSearchResultsVisible(false)}
-                  style={[styles.confirmButton, { borderColor: colors.outline }]}
-                >
-                  <Text style={[styles.confirmButtonText, { color: colors.text }]}>Fechar</Text>
-                </Pressable>
-              </View>
             </View>
           </View>
         </Modal>
@@ -2545,39 +2615,46 @@ export default function Warehouse2DView() {
                 { backgroundColor: colors.surface, borderColor: colors.outline },
               ]}
             >
-              <Text style={[styles.confirmTitle, { color: colors.text }]}>Remover nível?</Text>
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.confirmTitle, { color: colors.text }]}>Remover nível?</Text>
 
-              <Text style={[styles.confirmMessage, { color: colors.text }]}>
-                {pendingRemoveNivel?.label ?? 'Nível selecionado'}
-              </Text>
+                <Text style={[styles.confirmMessage, { color: colors.text }]}>
+                  {pendingRemoveNivel?.label ?? 'Nível selecionado'}
+                </Text>
 
-              <Text style={[styles.confirmWarn, { color: colors.text }]}>
-                Esta ação irá remover o nível e resequenciar os demais.
-              </Text>
+                <Text style={[styles.confirmWarn, { color: colors.text }]}>
+                  Esta ação irá remover o nível e resequenciar os demais.
+                </Text>
 
-              <View style={styles.confirmActions}>
-                <Pressable
-                  onPress={closeConfirmRemoveNivel}
-                  style={[styles.confirmButton, { borderColor: colors.outline }]}
-                >
-                  <Text style={[styles.confirmButtonText, { color: colors.text }]}>Cancelar</Text>
-                </Pressable>
+                <View style={styles.confirmActions}>
+                  <Pressable
+                    onPress={closeConfirmRemoveNivel}
+                    style={[styles.confirmButton, { borderColor: colors.outline }]}
+                  >
+                    <Text style={[styles.confirmButtonText, { color: colors.text }]}>Cancelar</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={confirmRemoveNivel}
-                  style={[
-                    styles.confirmButton,
-                    { backgroundColor: colors.primary, borderColor: colors.primary },
-                  ]}
-                  disabled={!!resequenceNivelId}
-                >
-                  {resequenceNivelId ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Remover</Text>
-                  )}
-                </Pressable>
-              </View>
+                  <Pressable
+                    onPress={confirmRemoveNivel}
+                    style={[
+                      styles.confirmButton,
+                      { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
+                    disabled={!!resequenceNivelId}
+                  >
+                    {resequenceNivelId ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Remover</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -2591,111 +2668,118 @@ export default function Warehouse2DView() {
                 { backgroundColor: colors.surface, borderColor: colors.outline },
               ]}
             >
-              <Text
-                style={[styles.productTitle, { color: colors.primary }]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
               >
-                {selectedNivelCtx?.label ?? 'Produto'}
-              </Text>
+                <Text
+                  style={[styles.productTitle, { color: colors.primary }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {selectedNivelCtx?.label ?? 'Produto'}
+                </Text>
 
-              {itemLoading ? (
-                <View style={{ paddingVertical: 18 }}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                </View>
-              ) : (
-                <>
-                  <View style={[styles.formRow]}>
-                    <Text style={[styles.formLabel, { color: colors.text }]}>Nome</Text>
-                    <TextInput
-                      value={editNomeModelo}
-                      onChangeText={setEditNomeModelo}
-                      placeholder="Nome / Modelo"
-                      placeholderTextColor="#888"
-                      style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                    />
+                {itemLoading ? (
+                  <View style={{ paddingVertical: 18 }}>
+                    <ActivityIndicator size="large" color={colors.primary} />
                   </View>
+                ) : (
+                  <>
+                    <View style={[styles.formRow]}>
+                      <Text style={[styles.formLabel, { color: colors.text }]}>Nome</Text>
+                      <TextInput
+                        value={editNomeModelo}
+                        onChangeText={setEditNomeModelo}
+                        placeholder="Nome / Modelo"
+                        placeholderTextColor="#888"
+                        style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                      />
+                    </View>
 
-                  <View style={[styles.formRow]}>
-                    <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
-                    <QuantityStepper
-                      value={editQuantidade}
-                      onChange={setEditQuantidade}
-                      min={1}
-                      max={999999}
-                      step={1}
-                      borderColor={colors.outline}
-                      textColor={colors.text}
-                      primaryColor={colors.primary}
-                      backgroundColor={colors.surface}
-                    />
-                  </View>
+                    <View style={[styles.formRow]}>
+                      <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
+                      <QuantityStepper
+                        value={editQuantidade}
+                        onChange={setEditQuantidade}
+                        min={1}
+                        max={999999}
+                        step={1}
+                        borderColor={colors.outline}
+                        textColor={colors.text}
+                        primaryColor={colors.primary}
+                        backgroundColor={colors.surface}
+                      />
+                    </View>
 
-                  <View style={[styles.formRow]}>
-                    <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
-                    <TextInput
-                      value={editCodigo}
-                      editable
-                      placeholder="Código Wester"
-                      placeholderTextColor="#888"
-                      disableFullscreenUI
-                      style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                      onChangeText={setEditCodigo}
-                    />
-                  </View>
+                    <View style={[styles.formRow]}>
+                      <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
+                      <TextInput
+                        value={editCodigo}
+                        editable
+                        placeholder="Código Wester"
+                        placeholderTextColor="#888"
+                        disableFullscreenUI
+                        style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                        onChangeText={setEditCodigo}
+                      />
+                    </View>
 
-                  <View style={[styles.formRow]}>
-                    <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
-                    <TextInput
-                      value={editCor}
-                      onChangeText={setEditCor}
-                      placeholder="Cor"
-                      placeholderTextColor="#888"
-                      style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                    />
-                  </View>
+                    <View style={[styles.formRow]}>
+                      <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
+                      <TextInput
+                        value={editCor}
+                        onChangeText={setEditCor}
+                        placeholder="Cor"
+                        placeholderTextColor="#888"
+                        style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                      />
+                    </View>
 
-                  <View style={[styles.formRow]}>
-                    <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
-                    <TextInput
-                      value={editDescricao}
-                      onChangeText={setEditDescricao}
-                      placeholder="Descrição"
-                      placeholderTextColor="#888"
-                      multiline
-                      style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
-                    />
-                  </View>
+                    <View style={[styles.formRow]}>
+                      <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
+                      <TextInput
+                        value={editDescricao}
+                        onChangeText={setEditDescricao}
+                        placeholder="Descrição"
+                        placeholderTextColor="#888"
+                        multiline
+                        style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
+                      />
+                    </View>
 
-                  <View style={styles.productActions}>
-                    <Pressable
-                      onPress={closeProductModal}
-                      style={[styles.actionButton, { borderColor: colors.outline }]}
-                    >
-                      <Text style={[styles.actionText, { color: colors.text }]}>Fechar</Text>
-                    </Pressable>
+                    <View style={styles.productActions}>
+                      <Pressable
+                        onPress={closeProductModal}
+                        style={[styles.actionButton, { borderColor: colors.outline }]}
+                      >
+                        <Text style={[styles.actionText, { color: colors.text }]}>Fechar</Text>
+                      </Pressable>
 
-                    <Pressable
-                      onPress={openConfirmSave}
-                      disabled={!isDirty || saving}
-                      style={[
-                        styles.actionButton,
-                        {
-                          backgroundColor: colors.primary,
-                          borderColor: colors.primary,
-                          opacity: !isDirty || saving ? 0.6 : 1,
-                        },
-                      ]}
-                    >
-                      {saving ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
-                      )}
-                    </Pressable>
-                  </View>
-                </>
-              )}
+                      <Pressable
+                        onPress={openConfirmSave}
+                        disabled={!isDirty || saving}
+                        style={[
+                          styles.actionButton,
+                          {
+                            backgroundColor: colors.primary,
+                            borderColor: colors.primary,
+                            opacity: !isDirty || saving ? 0.6 : 1,
+                          },
+                        ]}
+                      >
+                        {saving ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  </>
+                )}
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -2709,35 +2793,42 @@ export default function Warehouse2DView() {
                 { backgroundColor: colors.surface, borderColor: colors.outline },
               ]}
             >
-              <Text style={[styles.confirmTitle, { color: colors.text }]}>Salvar alterações?</Text>
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.confirmTitle, { color: colors.text }]}>Salvar alterações?</Text>
 
-              <Text style={[styles.confirmMessage, { color: colors.text }]}>
-                Você tem certeza que deseja salvar as alterações deste produto?
-              </Text>
+                <Text style={[styles.confirmMessage, { color: colors.text }]}>
+                  Você tem certeza que deseja salvar as alterações deste produto?
+                </Text>
 
-              <View style={styles.confirmActions}>
-                <Pressable
-                  onPress={closeConfirmSave}
-                  style={[styles.confirmButton, { borderColor: colors.outline }]}
-                >
-                  <Text style={[styles.confirmButtonText, { color: colors.text }]}>Cancelar</Text>
-                </Pressable>
+                <View style={styles.confirmActions}>
+                  <Pressable
+                    onPress={closeConfirmSave}
+                    style={[styles.confirmButton, { borderColor: colors.outline }]}
+                  >
+                    <Text style={[styles.confirmButtonText, { color: colors.text }]}>Cancelar</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={saveEdits}
-                  style={[
-                    styles.confirmButton,
-                    { backgroundColor: colors.primary, borderColor: colors.primary },
-                  ]}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Salvar</Text>
-                  )}
-                </Pressable>
-              </View>
+                  <Pressable
+                    onPress={saveEdits}
+                    style={[
+                      styles.confirmButton,
+                      { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={[styles.confirmButtonText, { color: '#fff' }]}>Salvar</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -2751,97 +2842,104 @@ export default function Warehouse2DView() {
                 { backgroundColor: colors.surface, borderColor: colors.outline },
               ]}
             >
-              <Text style={[styles.productTitle, { color: colors.primary }]} numberOfLines={2}>
-                {selectedGradeCtx?.label ?? 'Inserir item'}
-              </Text>
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.productTitle, { color: colors.primary }]} numberOfLines={2}>
+                  {selectedGradeCtx?.label ?? 'Inserir item'}
+                </Text>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Nome/Modelo</Text>
-                <TextInput
-                  value={addNomeModelo}
-                  onChangeText={setAddNomeModelo}
-                  placeholder="Nome / Modelo"
-                  placeholderTextColor="#888"
-                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Nome/Modelo</Text>
+                  <TextInput
+                    value={addNomeModelo}
+                    onChangeText={setAddNomeModelo}
+                    placeholder="Nome / Modelo"
+                    placeholderTextColor="#888"
+                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                  />
+                </View>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
-                <QuantityStepper
-                  value={addQuantidade}
-                  onChange={setAddQuantidade}
-                  min={1}
-                  max={999999}
-                  step={1}
-                  borderColor={colors.outline}
-                  textColor={colors.text}
-                  primaryColor={colors.primary}
-                  backgroundColor={colors.surface}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
+                  <QuantityStepper
+                    value={addQuantidade}
+                    onChange={setAddQuantidade}
+                    min={1}
+                    max={999999}
+                    step={1}
+                    borderColor={colors.outline}
+                    textColor={colors.text}
+                    primaryColor={colors.primary}
+                    backgroundColor={colors.surface}
+                  />
+                </View>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
-                <TextInput
-                  value={addCodigo}
-                  onChangeText={setAddCodigo}
-                  placeholder="Código Wester"
-                  placeholderTextColor="#888"
-                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
+                  <TextInput
+                    value={addCodigo}
+                    onChangeText={setAddCodigo}
+                    placeholder="Código Wester"
+                    placeholderTextColor="#888"
+                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                  />
+                </View>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
-                <TextInput
-                  value={addCor}
-                  onChangeText={setAddCor}
-                  placeholder="Cor"
-                  placeholderTextColor="#888"
-                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
+                  <TextInput
+                    value={addCor}
+                    onChangeText={setAddCor}
+                    placeholder="Cor"
+                    placeholderTextColor="#888"
+                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                  />
+                </View>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
-                <TextInput
-                  value={addDescricao}
-                  onChangeText={setAddDescricao}
-                  placeholder="Descrição"
-                  placeholderTextColor="#888"
-                  multiline
-                  style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
+                  <TextInput
+                    value={addDescricao}
+                    onChangeText={setAddDescricao}
+                    placeholder="Descrição"
+                    placeholderTextColor="#888"
+                    multiline
+                    style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
+                  />
+                </View>
 
-              <View style={styles.productActions}>
-                <Pressable
-                  onPress={closeAddItemModal}
-                  style={[styles.actionButton, { borderColor: colors.outline }]}
-                >
-                  <Text style={[styles.actionText, { color: colors.text }]}>Cancelar</Text>
-                </Pressable>
+                <View style={styles.productActions}>
+                  <Pressable
+                    onPress={closeAddItemModal}
+                    style={[styles.actionButton, { borderColor: colors.outline }]}
+                  >
+                    <Text style={[styles.actionText, { color: colors.text }]}>Cancelar</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={saveAddItem}
-                  disabled={addLoading}
-                  style={[
-                    styles.actionButton,
-                    {
-                      backgroundColor: colors.primary,
-                      borderColor: colors.primary,
-                      opacity: addLoading ? 0.6 : 1,
-                    },
-                  ]}
-                >
-                  {addLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
-                  )}
-                </Pressable>
-              </View>
+                  <Pressable
+                    onPress={saveAddItem}
+                    disabled={addLoading}
+                    style={[
+                      styles.actionButton,
+                      {
+                        backgroundColor: colors.primary,
+                        borderColor: colors.primary,
+                        opacity: addLoading ? 0.6 : 1,
+                      },
+                    ]}
+                  >
+                    {addLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -2855,97 +2953,104 @@ export default function Warehouse2DView() {
                 { backgroundColor: colors.surface, borderColor: colors.outline },
               ]}
             >
-              <Text style={[styles.productTitle, { color: colors.primary }]} numberOfLines={2}>
-                {selectedFileiraCtx?.label ?? 'Inserir item'}
-              </Text>
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.productTitle, { color: colors.primary }]} numberOfLines={2}>
+                  {selectedFileiraCtx?.label ?? 'Inserir item'}
+                </Text>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Nome / Modelo</Text>
-                <TextInput
-                  value={addGradeNomeModelo}
-                  onChangeText={setAddGradeNomeModelo}
-                  placeholder="Nome / Modelo"
-                  placeholderTextColor="#888"
-                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Nome / Modelo</Text>
+                  <TextInput
+                    value={addGradeNomeModelo}
+                    onChangeText={setAddGradeNomeModelo}
+                    placeholder="Nome / Modelo"
+                    placeholderTextColor="#888"
+                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                  />
+                </View>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
-                <QuantityStepper
-                  value={addGradeQuantidade}
-                  onChange={setAddGradeQuantidade}
-                  min={1}
-                  max={999999}
-                  step={1}
-                  borderColor={colors.outline}
-                  textColor={colors.text}
-                  primaryColor={colors.primary}
-                  backgroundColor={colors.surface}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Quantidade</Text>
+                  <QuantityStepper
+                    value={addGradeQuantidade}
+                    onChange={setAddGradeQuantidade}
+                    min={1}
+                    max={999999}
+                    step={1}
+                    borderColor={colors.outline}
+                    textColor={colors.text}
+                    primaryColor={colors.primary}
+                    backgroundColor={colors.surface}
+                  />
+                </View>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
-                <TextInput
-                  value={addGradeCodigo}
-                  onChangeText={setAddGradeCodigo}
-                  placeholder="Código Wester"
-                  placeholderTextColor="#888"
-                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Código Wester</Text>
+                  <TextInput
+                    value={addGradeCodigo}
+                    onChangeText={setAddGradeCodigo}
+                    placeholder="Código Wester"
+                    placeholderTextColor="#888"
+                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                  />
+                </View>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
-                <TextInput
-                  value={addGradeCor}
-                  onChangeText={setAddGradeCor}
-                  placeholder="Cor"
-                  placeholderTextColor="#888"
-                  style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Cor</Text>
+                  <TextInput
+                    value={addGradeCor}
+                    onChangeText={setAddGradeCor}
+                    placeholder="Cor"
+                    placeholderTextColor="#888"
+                    style={[styles.input, { color: colors.text, borderColor: colors.outline }]}
+                  />
+                </View>
 
-              <View style={[styles.formRow]}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
-                <TextInput
-                  value={addGradeDescricao}
-                  onChangeText={setAddGradeDescricao}
-                  placeholder="Descrição"
-                  placeholderTextColor="#888"
-                  multiline
-                  style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
-                />
-              </View>
+                <View style={[styles.formRow]}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Descrição</Text>
+                  <TextInput
+                    value={addGradeDescricao}
+                    onChangeText={setAddGradeDescricao}
+                    placeholder="Descrição"
+                    placeholderTextColor="#888"
+                    multiline
+                    style={[styles.textArea, { color: colors.text, borderColor: colors.outline }]}
+                  />
+                </View>
 
-              <View style={styles.productActions}>
-                <Pressable
-                  onPress={closeAddGradeModal}
-                  style={[styles.actionButton, { borderColor: colors.outline }]}
-                >
-                  <Text style={[styles.actionText, { color: colors.text }]}>Cancelar</Text>
-                </Pressable>
+                <View style={styles.productActions}>
+                  <Pressable
+                    onPress={closeAddGradeModal}
+                    style={[styles.actionButton, { borderColor: colors.outline }]}
+                  >
+                    <Text style={[styles.actionText, { color: colors.text }]}>Cancelar</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={saveAddGrade}
-                  disabled={addGradeLoading}
-                  style={[
-                    styles.actionButton,
-                    {
-                      backgroundColor: colors.primary,
-                      borderColor: colors.primary,
-                      opacity: addGradeLoading ? 0.6 : 1,
-                    },
-                  ]}
-                >
-                  {addGradeLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
-                  )}
-                </Pressable>
-              </View>
+                  <Pressable
+                    onPress={saveAddGrade}
+                    disabled={addGradeLoading}
+                    style={[
+                      styles.actionButton,
+                      {
+                        backgroundColor: colors.primary,
+                        borderColor: colors.primary,
+                        opacity: addGradeLoading ? 0.6 : 1,
+                      },
+                    ]}
+                  >
+                    {addGradeLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={[styles.actionText, { color: '#fff' }]}>Salvar</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -2960,25 +3065,36 @@ export default function Warehouse2DView() {
                 { backgroundColor: colors.surface, borderColor: successColor },
               ]}
             >
-              <Text style={[styles.confirmTitle, styles.feedbackTitle, { color: successColor }]}>
-                Sucesso
-              </Text>
-              <Text style={[styles.confirmMessage, styles.feedbackMessage, { color: colors.text }]}>
-                {successMessage}
-              </Text>
-
-              <View style={styles.confirmActions}>
-                <Pressable
-                  onPress={() => setSuccessVisible(false)}
-                  style={[
-                    styles.confirmButton,
-                    styles.feedbackButton,
-                    { backgroundColor: successColor, borderColor: successColor },
-                  ]}
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.confirmTitle, styles.feedbackTitle, { color: successColor }]}>
+                  Sucesso
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  style={[styles.confirmMessage, styles.feedbackMessage, { color: colors.text }]}
                 >
-                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>OK</Text>
-                </Pressable>
-              </View>
+                  {successMessage}
+                </Text>
+
+                <View style={styles.confirmActions}>
+                  <Pressable
+                    onPress={() => setSuccessVisible(false)}
+                    style={[
+                      styles.confirmButton,
+                      styles.feedbackButton,
+                      { backgroundColor: successColor, borderColor: successColor },
+                    ]}
+                  >
+                    <Text style={[styles.confirmButtonText, { color: '#fff' }]}>OK</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -2993,26 +3109,33 @@ export default function Warehouse2DView() {
                 { backgroundColor: colors.surface, borderColor: errorColor },
               ]}
             >
-              <Text style={[styles.confirmTitle, styles.feedbackTitle, { color: errorColor }]}>
-                Erro
-              </Text>
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.confirmTitle, styles.feedbackTitle, { color: errorColor }]}>
+                  Erro
+                </Text>
 
-              <Text style={[styles.confirmMessage, styles.feedbackMessage, { color: colors.text }]}>
-                {errorMessage}
-              </Text>
+                <Text style={[styles.confirmMessage, styles.feedbackMessage, { color: colors.text }]}>
+                  {errorMessage}
+                </Text>
 
-              <View style={styles.confirmActions}>
-                <Pressable
-                  onPress={() => setErrorVisible(false)}
-                  style={[
-                    styles.confirmButton,
-                    styles.feedbackButton,
-                    { backgroundColor: errorColor, borderColor: errorColor },
-                  ]}
-                >
-                  <Text style={[styles.confirmButtonText, { color: '#fff' }]}>OK</Text>
-                </Pressable>
-              </View>
+                <View style={styles.confirmActions}>
+                  <Pressable
+                    onPress={() => setErrorVisible(false)}
+                    style={[
+                      styles.confirmButton,
+                      styles.feedbackButton,
+                      { backgroundColor: errorColor, borderColor: errorColor },
+                    ]}
+                  >
+                    <Text style={[styles.confirmButtonText, { color: '#fff' }]}>OK</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -3089,11 +3212,21 @@ const styles = StyleSheet.create({
 
   searchInput: {
     flex: 1,
+    minWidth: 0,
     paddingVertical: 0,
     paddingHorizontal: 0,
     fontWeight: '700',
     fontSize: 13,
   },
+
+  searchInputWeb: IS_WEB
+    ? ({
+        outlineStyle: 'none',
+        outlineWidth: 0,
+        borderWidth: 0,
+        backgroundColor: 'transparent',
+      } as any)
+    : ({} as any),
 
   searchIconBtn: {
     width: 26,
@@ -3142,6 +3275,16 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
 
+  searchBoxCompactTight: {
+    paddingHorizontal: 8,
+    gap: 6,
+  },
+
+  searchInputTight: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
   webSearchRowCompact: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3177,7 +3320,7 @@ const styles = StyleSheet.create({
 
   webScroller: {
     flex: 1,
-    overflow: 'auto',
+    overflow: 'auto' as any,
   },
 
   webContent: {
@@ -3186,6 +3329,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     gap: 16,
+  },
+
+  emptyStateCard: {
+    width: 320,
+    minHeight: 180,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 18,
+    justifyContent: 'center',
+  },
+
+  webSearchIconButtonCompactTight: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
   },
 
   verticalContent: {
@@ -3200,6 +3359,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 16,
+  },
+
+  emptyStateCardMobile: {
+    width: 280,
+    minHeight: 180,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 18,
+    justifyContent: 'center',
   },
 
   fileiraContainer: {
@@ -3377,14 +3546,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
 
   confirmContainer: {
     width: '90%',
     maxWidth: 520,
+    maxHeight: '86%',
     borderRadius: 12,
     padding: 18,
     borderWidth: 1,
+    overflow: 'hidden',
   },
 
   confirmTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10 },
@@ -3402,6 +3575,7 @@ const styles = StyleSheet.create({
   },
 
   feedbackMessage: {
+    fontSize: 13,
     fontWeight: '500',
     marginBottom: 12,
   },
@@ -3429,9 +3603,11 @@ const styles = StyleSheet.create({
   productModalContainer: {
     width: '92%',
     maxWidth: 560,
+    maxHeight: '88%',
     borderRadius: 12,
     padding: 18,
     borderWidth: 1,
+    overflow: 'hidden',
   },
 
   productTitle: {
@@ -3533,9 +3709,19 @@ const styles = StyleSheet.create({
   searchResultsContainer: {
     width: '92%',
     maxWidth: 720,
+    maxHeight: '88%',
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
+    overflow: 'hidden',
+  },
+
+  modalScroll: {
+    maxHeight: '100%',
+  },
+
+  modalScrollContent: {
+    paddingRight: 4,
   },
 
   searchResultsHeader: {

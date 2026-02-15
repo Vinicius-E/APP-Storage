@@ -1,9 +1,18 @@
-﻿import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
+﻿import React, { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  FlatList,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Button,
   Chip,
+  IconButton,
   Modal,
   Portal,
   Snackbar,
@@ -11,8 +20,12 @@ import {
   Text,
   TextInput,
 } from 'react-native-paper';
+import { DatePickerModal, pt, registerTranslation } from 'react-native-paper-dates';
+import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
+import { API } from '../axios';
+import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
 import {
   HistoricoMovimentacaoFilterRequestDTO,
   HistoricoMovimentacaoResponseDTO,
@@ -40,16 +53,420 @@ type QuantityInfo = {
   nova: number;
   delta: number;
 };
+type LocationParts = {
+  fileira: string;
+  grade: string;
+  nivel: string;
+};
+type LocationByNivelId = Record<number, LocationParts>;
+type GradeLocation = {
+  fileira: string;
+  grade: string;
+};
+type GradeById = Record<number, GradeLocation>;
+type FileiraById = Record<number, string>;
+type ItemLocationById = Record<number, LocationParts>;
+type MinuteNivelLocationByKey = Record<string, LocationParts>;
+type EstoquePosicaoSnapshot = {
+  fileiraId?: number | null;
+  nivelId?: number | null;
+  gradeId?: number | null;
+  fileiraIdentificador?: string | null;
+  gradeIdentificador?: string | null;
+  nivelIdentificador?: string | null;
+};
 
+const AREA_ID = 1;
 const PAGE_SIZE = 20;
 const QUICK_FILTERS: Array<{ label: string; value: QuickType }> = [
   { label: 'Todos', value: '' },
-  { label: 'ENTRADA', value: 'ENTRADA' },
-  { label: 'SAÍDA', value: 'SAIDA' },
-  { label: 'MOVIMENTAÇÃO', value: 'MOVIMENTACAO' },
-  { label: 'AJUSTE', value: 'AJUSTE_QUANTIDADE' },
-  { label: 'REPOS.', value: 'RESEQUENCIAMENTO' },
+  { label: 'Entrada', value: 'ENTRADA' },
+  { label: 'Saída', value: 'SAIDA' },
+  //{ label: 'Movimentação', value: 'MOVIMENTACAO' },
+  { label: 'Ajuste', value: 'AJUSTE_QUANTIDADE' },
+  { label: 'Resequenciamento', value: 'RESEQUENCIAMENTO' },
 ];
+registerTranslation('pt-BR', pt);
+
+function normalizeLabel(value: string | null | undefined): string {
+  return (value ?? '').toString().trim();
+}
+
+function hasLocation(parts: Partial<LocationParts>): boolean {
+  return Boolean(
+    normalizeLabel(parts.fileira) || normalizeLabel(parts.grade) || normalizeLabel(parts.nivel)
+  );
+}
+
+function formatLocation(parts: Partial<LocationParts>): string {
+  const fileira = normalizeLabel(parts.fileira) || '-';
+  const grade = normalizeLabel(parts.grade) || '-';
+  const nivel = normalizeLabel(parts.nivel) || '-';
+  return `Fileira ${fileira} / Grade ${grade} / Nível ${nivel}`;
+}
+
+function formatKnownLocation(parts: Partial<LocationParts>): string {
+  const fileira = normalizeLabel(parts.fileira);
+  const grade = normalizeLabel(parts.grade);
+  const nivel = normalizeLabel(parts.nivel);
+
+  const tokens: string[] = [];
+  if (fileira) tokens.push(`Fileira ${fileira}`);
+  if (grade) tokens.push(`Grade ${grade}`);
+  if (nivel) tokens.push(`Nível ${nivel}`);
+  return tokens.join(' / ');
+}
+
+function hasFullLocation(parts: Partial<LocationParts>): boolean {
+  return Boolean(
+    normalizeLabel(parts.fileira) &&
+      normalizeLabel(parts.grade) &&
+      normalizeLabel(parts.nivel)
+  );
+}
+
+function mapByNivelId(
+  nivelId: number | null | undefined,
+  locationByNivelId: LocationByNivelId
+): LocationParts | undefined {
+  if (typeof nivelId !== 'number') {
+    return undefined;
+  }
+  return locationByNivelId[nivelId];
+}
+
+function mapByGradeId(
+  gradeId: number | null | undefined,
+  gradeById: GradeById
+): GradeLocation | undefined {
+  if (typeof gradeId !== 'number') {
+    return undefined;
+  }
+  return gradeById[gradeId];
+}
+
+function mapByFileiraId(
+  fileiraId: number | null | undefined,
+  fileiraById: FileiraById
+): string | undefined {
+  if (typeof fileiraId !== 'number') {
+    return undefined;
+  }
+  return fileiraById[fileiraId];
+}
+
+function cleanExtractedToken(value: string | undefined): string {
+  return normalizeLabel(value).replace(/[.,;:)\]]+$/g, '');
+}
+
+function parseLocationFromDetails(
+  details: string | null | undefined
+): Partial<LocationParts> {
+  const content = normalizeLabel(details);
+  if (!content) {
+    return {};
+  }
+
+  const fileiraMatch = content.match(/fileira\s+([A-Za-z0-9-]+)/i);
+  const gradeMatch = content.match(/grade\s+([A-Za-z0-9-]+)/i);
+  const nivelMatch = content.match(/n[íi]vel\s+([A-Za-z0-9-]+)/i);
+
+  return {
+    fileira: cleanExtractedToken(fileiraMatch?.[1]),
+    grade: cleanExtractedToken(gradeMatch?.[1]),
+    nivel: cleanExtractedToken(nivelMatch?.[1]),
+  };
+}
+
+function parseRemovedItemIdFromDetails(
+  details: string | null | undefined
+): number | undefined {
+  const content = normalizeLabel(details);
+  if (!content) {
+    return undefined;
+  }
+  const match = content.match(/item\s+removido\s+id:\s*(\d+)/i);
+  if (!match) {
+    return undefined;
+  }
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toMinuteNivelKey(
+  timestamp: string | null | undefined,
+  nivel: string | null | undefined
+): string {
+  const nivelLabel = normalizeLabel(nivel).toUpperCase();
+  if (!timestamp || !nivelLabel) {
+    return '';
+  }
+  const direct = timestamp.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+  if (direct?.[1]) {
+    return `${direct[1]}|${nivelLabel}`;
+  }
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hour}:${minute}|${nivelLabel}`;
+}
+
+function mergeLocationValues(
+  existing: LocationParts | undefined,
+  incoming: Partial<LocationParts>
+): LocationParts {
+  return {
+    fileira: normalizeLabel(existing?.fileira) || normalizeLabel(incoming.fileira),
+    grade: normalizeLabel(existing?.grade) || normalizeLabel(incoming.grade),
+    nivel: normalizeLabel(existing?.nivel) || normalizeLabel(incoming.nivel),
+  };
+}
+
+function mergeLocationForReference(
+  mapped: LocationByNivelId,
+  mappedGradeById: GradeById,
+  mappedFileiraById: FileiraById,
+  reference: {
+    fileiraId?: number | null;
+    gradeId?: number | null;
+    nivelId?: number | null;
+    fileira?: string | null;
+    grade?: string | null;
+    nivel?: string | null;
+  }
+): void {
+  const fileiraLabel = normalizeLabel(reference.fileira);
+  const gradeLabel = normalizeLabel(reference.grade);
+  const nivelLabel = normalizeLabel(reference.nivel);
+
+  if (typeof reference.fileiraId === 'number') {
+    mappedFileiraById[reference.fileiraId] =
+      normalizeLabel(mappedFileiraById[reference.fileiraId]) || fileiraLabel;
+  }
+  const fileiraFromId =
+    typeof reference.fileiraId === 'number'
+      ? normalizeLabel(mappedFileiraById[reference.fileiraId])
+      : '';
+
+  if (typeof reference.gradeId === 'number') {
+    const existingGrade = mappedGradeById[reference.gradeId];
+    mappedGradeById[reference.gradeId] = {
+      fileira: normalizeLabel(existingGrade?.fileira) || fileiraLabel || fileiraFromId,
+      grade: normalizeLabel(existingGrade?.grade) || gradeLabel,
+    };
+  }
+  const gradeFromId =
+    typeof reference.gradeId === 'number' ? mappedGradeById[reference.gradeId] : undefined;
+
+  if (typeof reference.nivelId === 'number') {
+    const existingLevel = mapped[reference.nivelId];
+    mapped[reference.nivelId] = {
+      fileira:
+        normalizeLabel(existingLevel?.fileira) ||
+        fileiraLabel ||
+        normalizeLabel(gradeFromId?.fileira) ||
+        fileiraFromId,
+      grade:
+        normalizeLabel(existingLevel?.grade) ||
+        gradeLabel ||
+        normalizeLabel(gradeFromId?.grade),
+      nivel: normalizeLabel(existingLevel?.nivel) || nivelLabel,
+    };
+  }
+}
+
+function resolveLocationFromReference(
+  reference: {
+    fileiraId?: number | null;
+    gradeId?: number | null;
+    nivelId?: number | null;
+    fileira?: string | null;
+    grade?: string | null;
+    nivel?: string | null;
+  },
+  mapped: LocationByNivelId,
+  mappedGradeById: GradeById,
+  mappedFileiraById: FileiraById
+): LocationParts {
+  const mappedLevel =
+    typeof reference.nivelId === 'number' ? mapped[reference.nivelId] : undefined;
+  const mappedGrade =
+    typeof reference.gradeId === 'number' ? mappedGradeById[reference.gradeId] : undefined;
+  const mappedFileira =
+    typeof reference.fileiraId === 'number'
+      ? normalizeLabel(mappedFileiraById[reference.fileiraId])
+      : '';
+
+  return {
+    fileira:
+      normalizeLabel(reference.fileira) ||
+      normalizeLabel(mappedLevel?.fileira) ||
+      normalizeLabel(mappedGrade?.fileira) ||
+      mappedFileira,
+    grade:
+      normalizeLabel(reference.grade) ||
+      normalizeLabel(mappedLevel?.grade) ||
+      normalizeLabel(mappedGrade?.grade),
+    nivel:
+      normalizeLabel(reference.nivel) ||
+      normalizeLabel(mappedLevel?.nivel),
+  };
+}
+
+function mergeLocationMapsFromHistoryItem(
+  item: HistoricoMovimentacaoResponseDTO,
+  mapped: LocationByNivelId,
+  mappedGradeById: GradeById,
+  mappedFileiraById: FileiraById,
+  mappedItemById: ItemLocationById,
+  mappedMinuteNivel: MinuteNivelLocationByKey
+): void {
+  const parsedFromDetails = parseLocationFromDetails(item.detalhesAlteracao);
+  const currentRef = {
+    fileiraId: item.fileiraId,
+    gradeId: item.gradeId,
+    nivelId: item.nivelId,
+    fileira: item.fileiraIdentificador ?? parsedFromDetails.fileira,
+    grade: item.gradeIdentificador ?? parsedFromDetails.grade,
+    nivel: item.nivelIdentificador ?? parsedFromDetails.nivel,
+  };
+  const originRef = {
+    fileiraId: item.fileiraOrigemId,
+    gradeId: item.gradeOrigemId,
+    nivelId: item.nivelOrigemId,
+    fileira: item.fileiraOrigemIdentificador ?? parsedFromDetails.fileira,
+    grade: item.gradeOrigemIdentificador ?? parsedFromDetails.grade,
+    nivel: item.nivelOrigemIdentificador ?? parsedFromDetails.nivel,
+  };
+  const destinationRef = {
+    fileiraId: item.fileiraDestinoId,
+    gradeId: item.gradeDestinoId,
+    nivelId: item.nivelDestinoId,
+    fileira: item.fileiraDestinoIdentificador ?? parsedFromDetails.fileira,
+    grade: item.gradeDestinoIdentificador ?? parsedFromDetails.grade,
+    nivel: item.nivelDestinoIdentificador ?? parsedFromDetails.nivel,
+  };
+
+  mergeLocationForReference(mapped, mappedGradeById, mappedFileiraById, currentRef);
+  mergeLocationForReference(mapped, mappedGradeById, mappedFileiraById, originRef);
+  mergeLocationForReference(mapped, mappedGradeById, mappedFileiraById, destinationRef);
+
+  const resolvedCurrent = resolveLocationFromReference(
+    currentRef,
+    mapped,
+    mappedGradeById,
+    mappedFileiraById
+  );
+  const resolvedOrigin = resolveLocationFromReference(
+    originRef,
+    mapped,
+    mappedGradeById,
+    mappedFileiraById
+  );
+  const resolvedDestination = resolveLocationFromReference(
+    destinationRef,
+    mapped,
+    mappedGradeById,
+    mappedFileiraById
+  );
+
+  if (typeof item.itemEstoqueId === 'number') {
+    const current = mappedItemById[item.itemEstoqueId];
+    mappedItemById[item.itemEstoqueId] = mergeLocationValues(
+      current,
+      hasLocation(resolvedCurrent)
+        ? resolvedCurrent
+        : hasLocation(resolvedOrigin)
+          ? resolvedOrigin
+          : resolvedDestination
+    );
+  }
+
+  const removedItemId = parseRemovedItemIdFromDetails(item.detalhesAlteracao);
+  if (typeof removedItemId === 'number') {
+    const current = mappedItemById[removedItemId];
+    mappedItemById[removedItemId] = mergeLocationValues(
+      current,
+      hasLocation(resolvedCurrent)
+        ? resolvedCurrent
+        : hasLocation(resolvedOrigin)
+          ? resolvedOrigin
+          : resolvedDestination
+    );
+  }
+
+  const detailMinuteKey = toMinuteNivelKey(item.timestamp, parsedFromDetails.nivel);
+  if (
+    detailMinuteKey &&
+    normalizeLabel(parsedFromDetails.fileira) &&
+    normalizeLabel(parsedFromDetails.grade) &&
+    normalizeLabel(parsedFromDetails.nivel)
+  ) {
+    mappedMinuteNivel[detailMinuteKey] = mergeLocationValues(mappedMinuteNivel[detailMinuteKey], {
+      fileira: parsedFromDetails.fileira,
+      grade: parsedFromDetails.grade,
+      nivel: parsedFromDetails.nivel,
+    });
+  }
+
+  const currentMinuteKey = toMinuteNivelKey(item.timestamp, resolvedCurrent.nivel);
+  if (currentMinuteKey && hasFullLocation(resolvedCurrent)) {
+    mappedMinuteNivel[currentMinuteKey] = mergeLocationValues(
+      mappedMinuteNivel[currentMinuteKey],
+      resolvedCurrent
+    );
+  }
+}
+
+function toIsoDate(date: Date | undefined): string {
+  if (!date) {
+    return '';
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toDisplayDate(date: Date | undefined): string {
+  if (!date) {
+    return '';
+  }
+  return date.toLocaleDateString('pt-BR');
+}
+
+function toShortDisplayDate(date: Date | undefined): string {
+  if (!date) {
+    return '';
+  }
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
+function dateRangeLabel(startDate: Date | undefined, endDate: Date | undefined): string {
+  if (startDate && endDate) {
+    return `${toDisplayDate(startDate)} até ${toDisplayDate(endDate)}`;
+  }
+  if (startDate) {
+    return `${toDisplayDate(startDate)} até ...`;
+  }
+  return 'Selecionar período';
+}
+
+function dateRangeLabelCompact(startDate: Date | undefined, endDate: Date | undefined): string {
+  if (startDate && endDate) {
+    return `${toShortDisplayDate(startDate)} até ${toShortDisplayDate(endDate)}`;
+  }
+  if (startDate) {
+    return `Início: ${toShortDisplayDate(startDate)}`;
+  }
+  return 'Selecionar período';
+}
 
 function hasActiveFilters(filter: HistoricoMovimentacaoFilterRequestDTO): boolean {
   return Boolean(
@@ -78,7 +495,7 @@ function opLabel(tipoOperacao: string | null | undefined): string {
   const key = (tipoOperacao ?? '').toUpperCase();
   if (key === 'ENTRADA') return 'Entrada de estoque';
   if (key === 'SAIDA') return 'Saída de estoque';
-  if (key === 'MOVIMENTACAO') return 'Movimentação interna';
+  //if (key === 'MOVIMENTACAO') return 'Movimentação interna';
   if (key === 'AJUSTE_QUANTIDADE') return 'Ajuste de quantidade';
   if (key === 'RESEQUENCIAMENTO') return 'Reposicionamento automático';
   return key || 'Operação';
@@ -212,29 +629,143 @@ function qtyDetail(item: HistoricoMovimentacaoResponseDTO): string {
   return 'Sem alteração líquida.';
 }
 
-function locationLabel(item: HistoricoMovimentacaoResponseDTO): string {
-  const nivel = item.nivelIdentificador ?? '';
-  const origem = item.nivelOrigemIdentificador ?? '';
-  const destino = item.nivelDestinoIdentificador ?? '';
-  if (origem && destino) return `${origem} → ${destino}`;
-  if (nivel) return `Nível ${nivel}`;
-  if (origem) return `Origem ${origem}`;
-  if (destino) return `Destino ${destino}`;
-  return 'Nível não informado';
+function locationLabel(
+  item: HistoricoMovimentacaoResponseDTO,
+  locationByNivelId: LocationByNivelId,
+  gradeById: GradeById,
+  fileiraById: FileiraById,
+  itemLocationById: ItemLocationById,
+  minuteNivelLocationByKey: MinuteNivelLocationByKey
+): string {
+  const operation = normalizeOperation(item.tipoOperacao);
+  const parsedFromDetails = parseLocationFromDetails(item.detalhesAlteracao);
+  const removedItemId = parseRemovedItemIdFromDetails(item.detalhesAlteracao);
+  const mappedByItemId =
+    typeof item.itemEstoqueId === 'number' ? itemLocationById[item.itemEstoqueId] : undefined;
+  const mappedByRemovedItemId =
+    typeof removedItemId === 'number' ? itemLocationById[removedItemId] : undefined;
+  const mappedByMinuteNivel = minuteNivelLocationByKey[
+    toMinuteNivelKey(item.timestamp, parsedFromDetails.nivel)
+  ];
+  const mappedCurrent = mapByNivelId(item.nivelId, locationByNivelId);
+  const mappedOrigin = mapByNivelId(item.nivelOrigemId, locationByNivelId);
+  const mappedDestination = mapByNivelId(item.nivelDestinoId, locationByNivelId);
+  const mappedCurrentGrade = mapByGradeId(item.gradeId, gradeById);
+  const mappedOriginGrade = mapByGradeId(item.gradeOrigemId, gradeById);
+  const mappedDestinationGrade = mapByGradeId(item.gradeDestinoId, gradeById);
+  const mappedCurrentFileira = mapByFileiraId(item.fileiraId, fileiraById);
+  const mappedOriginFileira = mapByFileiraId(item.fileiraOrigemId, fileiraById);
+  const mappedDestinationFileira = mapByFileiraId(item.fileiraDestinoId, fileiraById);
+  const hasOriginReference = Boolean(
+    item.nivelOrigemId ||
+      normalizeLabel(item.nivelOrigemIdentificador) ||
+      item.gradeOrigemId ||
+      normalizeLabel(item.gradeOrigemIdentificador) ||
+      item.fileiraOrigemId ||
+      normalizeLabel(item.fileiraOrigemIdentificador)
+  );
+  const hasDestinationReference = Boolean(
+    item.nivelDestinoId ||
+      normalizeLabel(item.nivelDestinoIdentificador) ||
+      item.gradeDestinoId ||
+      normalizeLabel(item.gradeDestinoIdentificador) ||
+      item.fileiraDestinoId ||
+      normalizeLabel(item.fileiraDestinoIdentificador)
+  );
+
+  const current = {
+    fileira:
+      normalizeLabel(item.fileiraIdentificador) ||
+      normalizeLabel(mappedCurrent?.fileira) ||
+      normalizeLabel(mappedCurrentGrade?.fileira) ||
+      normalizeLabel(mappedCurrentFileira) ||
+      normalizeLabel(mappedByItemId?.fileira) ||
+      normalizeLabel(mappedByRemovedItemId?.fileira) ||
+      normalizeLabel(mappedByMinuteNivel?.fileira) ||
+      normalizeLabel(parsedFromDetails.fileira),
+    grade:
+      normalizeLabel(item.gradeIdentificador) ||
+      normalizeLabel(mappedCurrent?.grade) ||
+      normalizeLabel(mappedCurrentGrade?.grade) ||
+      normalizeLabel(mappedByItemId?.grade) ||
+      normalizeLabel(mappedByRemovedItemId?.grade) ||
+      normalizeLabel(mappedByMinuteNivel?.grade) ||
+      normalizeLabel(parsedFromDetails.grade),
+    nivel:
+      normalizeLabel(item.nivelIdentificador) ||
+      normalizeLabel(mappedCurrent?.nivel) ||
+      normalizeLabel(mappedByItemId?.nivel) ||
+      normalizeLabel(mappedByRemovedItemId?.nivel) ||
+      normalizeLabel(mappedByMinuteNivel?.nivel) ||
+      normalizeLabel(parsedFromDetails.nivel),
+  };
+
+  const origin = {
+    fileira:
+      normalizeLabel(item.fileiraOrigemIdentificador) ||
+      normalizeLabel(mappedOrigin?.fileira) ||
+      normalizeLabel(mappedOriginGrade?.fileira) ||
+      normalizeLabel(mappedOriginFileira),
+    grade:
+      normalizeLabel(item.gradeOrigemIdentificador) ||
+      normalizeLabel(mappedOrigin?.grade) ||
+      normalizeLabel(mappedOriginGrade?.grade),
+    nivel:
+      normalizeLabel(item.nivelOrigemIdentificador) ||
+      normalizeLabel(mappedOrigin?.nivel),
+  };
+
+  const destination = {
+    fileira:
+      normalizeLabel(item.fileiraDestinoIdentificador) ||
+      normalizeLabel(mappedDestination?.fileira) ||
+      normalizeLabel(mappedDestinationGrade?.fileira) ||
+      normalizeLabel(mappedDestinationFileira),
+    grade:
+      normalizeLabel(item.gradeDestinoIdentificador) ||
+      normalizeLabel(mappedDestination?.grade) ||
+      normalizeLabel(mappedDestinationGrade?.grade),
+    nivel:
+      normalizeLabel(item.nivelDestinoIdentificador) ||
+      normalizeLabel(mappedDestination?.nivel),
+  };
+
+  const canShowRoute =
+    (operation === 'MOVIMENTACAO' || operation === 'RESEQUENCIAMENTO') &&
+    hasOriginReference &&
+    hasDestinationReference &&
+    hasFullLocation(origin) &&
+    hasFullLocation(destination);
+
+  if (canShowRoute) {
+    return `${formatKnownLocation(origin)} → ${formatKnownLocation(destination)}`;
+  }
+  if (hasLocation(current)) {
+    return formatKnownLocation(current);
+  }
+  if (hasLocation(origin)) {
+    return `Origem: ${formatKnownLocation(origin)}`;
+  }
+  if (hasLocation(destination)) {
+    return `Destino: ${formatKnownLocation(destination)}`;
+  }
+  return 'Localização não informada';
 }
 
 export default function HistoryScreen() {
   const { theme } = useThemeContext();
   const { width } = useWindowDimensions();
   const isCompact = width < 820;
-  const frameWidth = Math.min(Math.max(width - 24, 280), 1420);
+  const isCompactDatePicker = width < 560;
   const colors = theme.colors as typeof theme.colors & { textSecondary?: string };
   const textSecondary = colors.textSecondary ?? theme.colors.onSurfaceVariant;
 
   const [search, setSearch] = useState('');
   const [operationFilter, setOperationFilter] = useState<QuickType>('');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [isDateRangePickerOpen, setIsDateRangePickerOpen] = useState(false);
+  const [compactDateStep, setCompactDateStep] = useState<'start' | 'end'>('start');
+  const [rangeStartDate, setRangeStartDate] = useState<Date | undefined>(undefined);
+  const [rangeEndDate, setRangeEndDate] = useState<Date | undefined>(undefined);
   const [items, setItems] = useState<HistoricoMovimentacaoResponseDTO[]>([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -243,16 +774,134 @@ export default function HistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [selected, setSelected] = useState<HistoricoMovimentacaoResponseDTO | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [locationByNivelId, setLocationByNivelId] = useState<LocationByNivelId>({});
+  const [gradeById, setGradeById] = useState<GradeById>({});
+  const [fileiraById, setFileiraById] = useState<FileiraById>({});
+  const [itemLocationById, setItemLocationById] = useState<ItemLocationById>({});
+  const [minuteNivelLocationByKey, setMinuteNivelLocationByKey] =
+    useState<MinuteNivelLocationByKey>({});
+  const locationByNivelIdRef = useRef<LocationByNivelId>({});
+  const gradeByIdRef = useRef<GradeById>({});
+  const fileiraByIdRef = useRef<FileiraById>({});
+  const itemLocationByIdRef = useRef<ItemLocationById>({});
+  const minuteNivelLocationByKeyRef = useRef<MinuteNivelLocationByKey>({});
+
+  const selectedDateRangeLabel = useMemo(
+    () => dateRangeLabel(rangeStartDate, rangeEndDate),
+    [rangeEndDate, rangeStartDate]
+  );
+  const selectedDateRangeLabelCompact = useMemo(
+    () => dateRangeLabelCompact(rangeStartDate, rangeEndDate),
+    [rangeEndDate, rangeStartDate]
+  );
 
   const filterDto = useMemo<HistoricoMovimentacaoFilterRequestDTO>(() => {
     const dto: HistoricoMovimentacaoFilterRequestDTO = {};
     if (search.trim()) dto.textoLivre = search.trim();
     if (operationFilter) dto.tipoOperacao = operationFilter;
-    if (dataInicio.trim()) dto.dataInicio = dataInicio.trim();
-    if (dataFim.trim()) dto.dataFim = dataFim.trim();
+    if (rangeStartDate) dto.dataInicio = toIsoDate(rangeStartDate);
+    if (rangeEndDate) dto.dataFim = toIsoDate(rangeEndDate);
     return dto;
-  }, [dataFim, dataInicio, operationFilter, search]);
+  }, [operationFilter, rangeEndDate, rangeStartDate, search]);
+
+  const hasFilters = useMemo(() => hasActiveFilters(filterDto), [filterDto]);
+  const historyEmptyCopy = useMemo(() => getApiEmptyCopy('history', hasFilters), [hasFilters]);
+
+  const commitLocationMaps = useCallback(
+    (
+      nextByNivel: LocationByNivelId,
+      nextByGrade: GradeById,
+      nextByFileira: FileiraById,
+      nextByItem: ItemLocationById,
+      nextByMinuteNivel: MinuteNivelLocationByKey
+    ) => {
+      locationByNivelIdRef.current = nextByNivel;
+      gradeByIdRef.current = nextByGrade;
+      fileiraByIdRef.current = nextByFileira;
+      itemLocationByIdRef.current = nextByItem;
+      minuteNivelLocationByKeyRef.current = nextByMinuteNivel;
+      setLocationByNivelId(nextByNivel);
+      setGradeById(nextByGrade);
+      setFileiraById(nextByFileira);
+      setItemLocationById(nextByItem);
+      setMinuteNivelLocationByKey(nextByMinuteNivel);
+    },
+    []
+  );
+
+  const mergeLocationHintsFromRows = useCallback(
+    (rows: HistoricoMovimentacaoResponseDTO[]) => {
+      if (!rows.length) {
+        return;
+      }
+
+      const nextByNivel = { ...locationByNivelIdRef.current };
+      const nextByGrade = { ...gradeByIdRef.current };
+      const nextByFileira = { ...fileiraByIdRef.current };
+      const nextByItem = { ...itemLocationByIdRef.current };
+      const nextByMinuteNivel = { ...minuteNivelLocationByKeyRef.current };
+
+      for (const row of rows) {
+        mergeLocationMapsFromHistoryItem(
+          row,
+          nextByNivel,
+          nextByGrade,
+          nextByFileira,
+          nextByItem,
+          nextByMinuteNivel
+        );
+      }
+
+      commitLocationMaps(
+        nextByNivel,
+        nextByGrade,
+        nextByFileira,
+        nextByItem,
+        nextByMinuteNivel
+      );
+    },
+    [commitLocationMaps]
+  );
+
+  const loadLocationIndex = useCallback(async () => {
+    try {
+      const mapped: LocationByNivelId = {};
+      const mappedGradeById: GradeById = {};
+      const mappedFileiraById: FileiraById = {};
+      const positionResponse = await API.get<EstoquePosicaoSnapshot[]>(
+        `/api/estoque/posicoes/area/${AREA_ID}`
+      );
+      const positions = Array.isArray(positionResponse.data) ? positionResponse.data : [];
+
+      for (const row of positions) {
+        mergeLocationForReference(mapped, mappedGradeById, mappedFileiraById, {
+          fileiraId: row.fileiraId,
+          gradeId: row.gradeId,
+          nivelId: row.nivelId,
+          fileira: row.fileiraIdentificador,
+          grade: row.gradeIdentificador,
+          nivel: row.nivelIdentificador,
+        });
+      }
+
+      const nextByNivel = { ...locationByNivelIdRef.current, ...mapped };
+      const nextByGrade = { ...gradeByIdRef.current, ...mappedGradeById };
+      const nextByFileira = { ...fileiraByIdRef.current, ...mappedFileiraById };
+      const nextByItem = { ...itemLocationByIdRef.current };
+      const nextByMinuteNivel = { ...minuteNivelLocationByKeyRef.current };
+      commitLocationMaps(
+        nextByNivel,
+        nextByGrade,
+        nextByFileira,
+        nextByItem,
+        nextByMinuteNivel
+      );
+    } catch {
+      // Mantém o último índice válido para evitar regressão visual em falha temporária.
+    }
+  }, [commitLocationMaps]);
 
   const fetchPage = useCallback(
     async (
@@ -263,6 +912,7 @@ export default function HistoryScreen() {
       if (trigger === 'initial') setLoading(true);
       if (trigger === 'refresh') setRefreshing(true);
       if (trigger === 'more') setLoadingMore(true);
+      if (!append) setErrorMessage('');
 
       try {
         const response = hasActiveFilters(filterDto)
@@ -270,17 +920,22 @@ export default function HistoryScreen() {
           : await listarHistorico(targetPage, PAGE_SIZE);
 
         const content = Array.isArray(response.content) ? response.content : [];
+        mergeLocationHintsFromRows(content);
         setItems((prev) => (append ? [...prev, ...content] : content));
         setPage(response.number ?? targetPage);
         setHasMore(Boolean(!response.last));
       } catch (error: any) {
-        const fallback = 'Não foi possível carregar o histórico.';
+        const fallback = API_STATE_MESSAGES.history.error.description;
         const backendMessage =
           typeof error?.response?.data === 'string'
             ? error.response.data
             : (error?.response?.data?.message ?? '');
-        setSnackbarMessage(backendMessage || fallback);
-        if (!append) {
+        const resolvedMessage = backendMessage || fallback;
+
+        if (append) {
+          setSnackbarMessage(resolvedMessage);
+        } else {
+          setErrorMessage(resolvedMessage);
           setItems([]);
           setHasMore(false);
         }
@@ -290,7 +945,7 @@ export default function HistoryScreen() {
         setLoadingMore(false);
       }
     },
-    [filterDto]
+    [filterDto, mergeLocationHintsFromRows]
   );
 
   const loadFirstPage = useCallback(async () => {
@@ -299,17 +954,74 @@ export default function HistoryScreen() {
     await fetchPage(0, false, 'initial');
   }, [fetchPage]);
 
+  const openDatePicker = useCallback(() => {
+    if (isCompactDatePicker) {
+      setCompactDateStep('start');
+    }
+    setIsDateRangePickerOpen(true);
+  }, [isCompactDatePicker]);
+
+  const dismissDatePicker = useCallback(() => {
+    setIsDateRangePickerOpen(false);
+    setCompactDateStep('start');
+  }, []);
+
+  const handleCompactDateConfirm = useCallback(
+    ({ date }: { date: Date | undefined }) => {
+      setIsDateRangePickerOpen(false);
+
+      if (compactDateStep === 'start') {
+        const nextStart = date ?? undefined;
+        setRangeStartDate(nextStart);
+
+        if (!nextStart) {
+          setRangeEndDate(undefined);
+          setCompactDateStep('start');
+          return;
+        }
+
+        if (rangeEndDate && rangeEndDate < nextStart) {
+          setRangeEndDate(undefined);
+        }
+
+        setCompactDateStep('end');
+        setTimeout(() => {
+          setIsDateRangePickerOpen(true);
+        }, 0);
+        return;
+      }
+
+      const nextEnd = date ?? undefined;
+      if (!nextEnd) {
+        setRangeEndDate(undefined);
+        setCompactDateStep('start');
+        return;
+      }
+
+      if (rangeStartDate && nextEnd < rangeStartDate) {
+        setRangeStartDate(nextEnd);
+        setRangeEndDate(rangeStartDate);
+      } else {
+        setRangeEndDate(nextEnd);
+      }
+
+      setCompactDateStep('start');
+    },
+    [compactDateStep, rangeEndDate, rangeStartDate]
+  );
+
   useFocusEffect(
     useCallback(() => {
       void loadFirstPage();
-    }, [loadFirstPage])
+      void loadLocationIndex();
+    }, [loadFirstPage, loadLocationIndex])
   );
 
   const clearFilters = useCallback(async () => {
     setSearch('');
     setOperationFilter('');
-    setDataInicio('');
-    setDataFim('');
+    setRangeStartDate(undefined);
+    setRangeEndDate(undefined);
     await loadFirstPage();
   }, [loadFirstPage]);
 
@@ -322,6 +1034,7 @@ export default function HistoryScreen() {
     setDetailLoading(true);
     try {
       const detail = await buscarHistoricoPorId(id);
+      mergeLocationHintsFromRows([detail]);
       setSelected(detail);
     } catch (error: any) {
       const fallback = 'Não foi possível carregar os detalhes.';
@@ -333,7 +1046,7 @@ export default function HistoryScreen() {
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [mergeLocationHintsFromRows]);
 
   const renderItem = ({ item }: { item: HistoricoMovimentacaoResponseDTO }) => {
     const tone = operationTone(item.tipoOperacao);
@@ -341,7 +1054,7 @@ export default function HistoryScreen() {
     const detailLabel = qtyDetail(item);
 
     return (
-      <View style={[styles.frame, { width: frameWidth }]}>
+      <View style={styles.frame}>
         <Surface
           style={[
             styles.card,
@@ -349,8 +1062,8 @@ export default function HistoryScreen() {
           ]}
           elevation={0}
         >
-          <View style={styles.top}>
-            <View style={styles.leftArea}>
+          <View style={[styles.top, isCompact && styles.topCompact]}>
+            <View style={[styles.leftArea, isCompact && styles.leftAreaCompact]}>
               <View style={[styles.badge, { backgroundColor: tone.bg, borderColor: tone.border }]}>
                 <Text style={[styles.badgeText, { color: tone.text }]}>
                   {opAbbr(item.tipoOperacao)}
@@ -366,14 +1079,24 @@ export default function HistoryScreen() {
                 <Text style={[styles.info, { color: textSecondary }]}>
                   Usuário: {item.usuarioNome ?? item.usuarioLogin ?? 'Não identificado'}
                 </Text>
-                <Text style={[styles.info, { color: textSecondary }]}>{locationLabel(item)}</Text>
+                <Text style={[styles.info, { color: textSecondary }]}>
+                  {locationLabel(
+                    item,
+                    locationByNivelId,
+                    gradeById,
+                    fileiraById,
+                    itemLocationById,
+                    minuteNivelLocationByKey
+                  )}
+                </Text>
               </View>
             </View>
 
-            <View style={styles.rightPanel}>
+            <View style={[styles.rightPanel, isCompact && styles.rightPanelCompact]}>
               <View
                 style={[
                   styles.operationTag,
+                  isCompact && styles.operationTagCompact,
                   { backgroundColor: tone.bg, borderColor: tone.border },
                 ]}
               >
@@ -402,6 +1125,7 @@ export default function HistoryScreen() {
               mode="outlined"
               icon="text-box-search-outline"
               onPress={() => void openDetails(item.id)}
+              accessibilityLabel={`action-historico-detalhes-${item.id}`}
               contentStyle={styles.detailsButtonContent}
               style={[styles.detailsButton, isCompact && styles.detailsButtonCompact]}
             >
@@ -423,22 +1147,7 @@ export default function HistoryScreen() {
         onEndReachedThreshold={0.3}
         onEndReached={() => void loadMore()}
         ListHeaderComponent={
-          <View style={[styles.frame, { width: frameWidth, gap: 12 }]}>
-            <Surface
-              style={[
-                styles.section,
-                { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-              ]}
-              elevation={0}
-            >
-              <Text style={[styles.title, { color: theme.colors.text }]}>
-                Histórico de Movimentação
-              </Text>
-              <Text style={[styles.subtitle, { color: textSecondary }]}>
-                Auditoria completa de entrada, saída, movimentação e ajustes.
-              </Text>
-            </Surface>
-
+          <View style={[styles.frame, styles.headerFrame]}>
             <Surface
               style={[
                 styles.section,
@@ -454,47 +1163,73 @@ export default function HistoryScreen() {
                 style={styles.input}
               />
 
-              <View style={styles.chipsRow}>
-                {QUICK_FILTERS.map((opt) => (
-                  <Chip
-                    key={opt.value || 'todos'}
-                    selected={operationFilter === opt.value}
-                    onPress={() => setOperationFilter(opt.value)}
-                  >
-                    {opt.label}
-                  </Chip>
-                ))}
-              </View>
+              <View style={styles.filtersStack}>
+                <View style={styles.chipsRow}>
+                  {QUICK_FILTERS.map((opt) => (
+                    <Chip
+                      key={opt.value || 'todos'}
+                      selected={operationFilter === opt.value}
+                      onPress={() => setOperationFilter(opt.value)}
+                      accessibilityLabel={`action-historico-tipo-${(
+                        opt.value || 'todos'
+                      ).toLowerCase()}`}
+                      selectedColor="#000000"
+                      textStyle={{ color: '#000000' }}
+                    >
+                      {opt.label}
+                    </Chip>
+                  ))}
+                </View>
+                <View style={[styles.filtersFooter, isCompact && styles.filtersFooterCompact]}>
+                  <View style={[styles.rangeRow, isCompact && styles.rangeRowCompact]}>
+                    <Button
+                      mode="outlined"
+                      icon="calendar-range"
+                      onPress={openDatePicker}
+                      accessibilityLabel="action-historico-periodo"
+                      style={[
+                        styles.rangePickerButton,
+                        isCompact && styles.rangePickerButtonCompact,
+                      ]}
+                      contentStyle={styles.rangePickerContent}
+                      labelStyle={styles.rangePickerLabel}
+                    >
+                      {isCompact ? selectedDateRangeLabelCompact : selectedDateRangeLabel}
+                    </Button>
+                  </View>
 
-              <View style={[styles.dateRow, isCompact && styles.dateRowCompact]}>
-                <AppTextInput
-                  label="Data início (YYYY-MM-DD)"
-                  value={dataInicio}
-                  onChangeText={setDataInicio}
-                  style={[styles.dateInput, isCompact && styles.dateInputCompact]}
-                />
-                <AppTextInput
-                  label="Data fim (YYYY-MM-DD)"
-                  value={dataFim}
-                  onChangeText={setDataFim}
-                  style={[styles.dateInput, isCompact && styles.dateInputCompact]}
-                />
-              </View>
-
-              <View style={styles.actions}>
-                <Button mode="outlined" onPress={() => void clearFilters()}>
-                  Limpar
-                </Button>
-                <Button mode="contained" onPress={() => void loadFirstPage()}>
-                  Aplicar filtros
-                </Button>
+                  <View style={[styles.headerActions, isCompact && styles.headerActionsCompact]}>
+                    <Button
+                      mode="outlined"
+                      onPress={() => void clearFilters()}
+                      accessibilityLabel="action-historico-limpar"
+                      style={[
+                        styles.headerActionButton,
+                        isCompact && styles.headerActionButtonCompact,
+                      ]}
+                    >
+                      Limpar
+                    </Button>
+                    <Button
+                      mode="contained"
+                      onPress={() => void loadFirstPage()}
+                      accessibilityLabel="action-historico-aplicar"
+                      style={[
+                        styles.headerActionButton,
+                        isCompact && styles.headerActionButtonCompact,
+                      ]}
+                    >
+                      Aplicar filtros
+                    </Button>
+                  </View>
+                </View>
               </View>
             </Surface>
           </View>
         }
         ListEmptyComponent={
           loading ? (
-            <View style={[styles.frame, { width: frameWidth }]}>
+            <View style={styles.frame}>
               <Surface
                 style={[
                   styles.empty,
@@ -508,8 +1243,8 @@ export default function HistoryScreen() {
                 <AppLoadingState message="Carregando histórico..." style={styles.loadingCard} />
               </Surface>
             </View>
-          ) : (
-            <View style={[styles.frame, { width: frameWidth }]}>
+          ) : errorMessage ? (
+            <View style={styles.frame}>
               <Surface
                 style={[
                   styles.empty,
@@ -520,10 +1255,31 @@ export default function HistoryScreen() {
                 ]}
                 elevation={0}
               >
-                <Text style={[styles.name, { color: theme.colors.text }]}>Sem registros</Text>
-                <Text style={[styles.info, { color: textSecondary }]}>
-                  Ajuste os filtros ou realize novas movimentações.
-                </Text>
+                <AppEmptyState
+                  title={API_STATE_MESSAGES.history.error.title}
+                  description={errorMessage}
+                  icon="alert-circle-outline"
+                  tone="error"
+                />
+              </Surface>
+            </View>
+          ) : (
+            <View style={styles.frame}>
+              <Surface
+                style={[
+                  styles.empty,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.outlineVariant,
+                  },
+                ]}
+                elevation={0}
+              >
+                <AppEmptyState
+                  title={historyEmptyCopy.title}
+                  description={historyEmptyCopy.description}
+                  icon="history"
+                />
               </Surface>
             </View>
           )
@@ -551,6 +1307,47 @@ export default function HistoryScreen() {
         }
       />
 
+      {isCompactDatePicker ? (
+        <DatePickerModal
+          key={`history-compact-${compactDateStep}-${isDateRangePickerOpen ? 'open' : 'closed'}`}
+          locale="pt-BR"
+          mode="single"
+          visible={isDateRangePickerOpen}
+          onDismiss={dismissDatePicker}
+          date={compactDateStep === 'start' ? rangeStartDate : rangeEndDate}
+          onConfirm={handleCompactDateConfirm}
+          saveLabel={compactDateStep === 'start' ? 'Próximo' : 'Confirmar'}
+          label={compactDateStep === 'start' ? 'Selecionar início' : 'Selecionar fim'}
+          presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'overFullScreen'}
+          disableStatusBarPadding
+          allowEditing={false}
+          inputEnabled={false}
+        />
+      ) : (
+        <DatePickerModal
+          key={`history-range-${isDateRangePickerOpen ? 'open' : 'closed'}`}
+          locale="pt-BR"
+          mode="range"
+          visible={isDateRangePickerOpen}
+          onDismiss={() => setIsDateRangePickerOpen(false)}
+          startDate={rangeStartDate}
+          endDate={rangeEndDate}
+          onConfirm={({ startDate, endDate }) => {
+            setIsDateRangePickerOpen(false);
+            setRangeStartDate(startDate ?? undefined);
+            setRangeEndDate(endDate ?? undefined);
+          }}
+          saveLabel="Confirmar"
+          label="Selecionar período"
+          startLabel="Início"
+          endLabel="Fim"
+          presentationStyle="overFullScreen"
+          disableStatusBarPadding
+          allowEditing={false}
+          inputEnabled={false}
+        />
+      )}
+
       <Portal>
         <Modal
           visible={selected !== null || detailLoading}
@@ -558,113 +1355,146 @@ export default function HistoryScreen() {
             setSelected(null);
             setDetailLoading(false);
           }}
-          contentContainerStyle={[
-            styles.modal,
-            { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-          ]}
+          contentContainerStyle={styles.modalFrame}
         >
-          {detailLoading ? (
-            <AppLoadingState message="Carregando detalhes..." style={styles.loadingCard} />
-          ) : (
-            <>
-              <View style={[styles.modalHeader, isCompact && styles.modalHeaderCompact]}>
-                <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                  Detalhes da movimentação
-                </Text>
-                {selected ? (
-                  <View
-                    style={[
-                      styles.operationTag,
-                      styles.modalOperationTag,
-                      {
-                        backgroundColor: operationTone(selected.tipoOperacao).bg,
-                        borderColor: operationTone(selected.tipoOperacao).border,
-                      },
-                    ]}
-                  >
-                    <Text
+          <View
+            style={[
+              styles.modal,
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
+            ]}
+          >
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+            >
+              {detailLoading ? (
+                <AppLoadingState message="Carregando detalhes..." style={styles.loadingCard} />
+              ) : (
+                <>
+                  <View style={[styles.modalHeader, isCompact && styles.modalHeaderCompact]}>
+                    <View style={styles.modalTitleRow}>
+                      <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+                        Detalhes da movimentação
+                      </Text>
+                      <IconButton
+                        icon="close"
+                        size={20}
+                        onPress={() => setSelected(null)}
+                        iconColor={theme.colors.primary}
+                        accessibilityLabel="action-historico-fechar-detalhes"
+                        style={[
+                          styles.modalCloseButton,
+                          { borderColor: theme.colors.outlineVariant },
+                        ]}
+                      />
+                    </View>
+                    {selected ? (
+                      <View
+                        style={[
+                          styles.operationTag,
+                          styles.modalOperationTag,
+                          {
+                            backgroundColor: operationTone(selected.tipoOperacao).bg,
+                            borderColor: operationTone(selected.tipoOperacao).border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.operationTagText,
+                            { color: operationTone(selected.tipoOperacao).text },
+                          ]}
+                        >
+                          {opLabel(selected.tipoOperacao)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={[styles.date, { color: textSecondary }]}>
+                    Registrado em {fmtDate(selected?.timestamp)}
+                  </Text>
+                  {selected ? (
+                    <View
                       style={[
-                        styles.operationTagText,
-                        { color: operationTone(selected.tipoOperacao).text },
+                        styles.summaryBox,
+                        {
+                          backgroundColor: operationTone(selected.tipoOperacao).bg,
+                          borderColor: operationTone(selected.tipoOperacao).border,
+                        },
                       ]}
                     >
-                      {opLabel(selected.tipoOperacao)}
+                      <Text
+                        style={[
+                          styles.summaryTitle,
+                          { color: operationTone(selected.tipoOperacao).text },
+                        ]}
+                      >
+                        {qtyDetail(selected)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.summarySub,
+                          { color: operationTone(selected.tipoOperacao).softText },
+                        ]}
+                      >
+                        Quantidade: {quantityFlowLabel(selected)}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={[styles.detailGrid, isCompact && styles.detailGridCompact]}>
+                    <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
+                      <Text style={[styles.detailLabel, { color: textSecondary }]}>Produto</Text>
+                      <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                        {selected?.produtoNomeModelo ?? 'Não informado'}
+                      </Text>
+                    </View>
+                    <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
+                      <Text style={[styles.detailLabel, { color: textSecondary }]}>Usuário</Text>
+                      <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                        {selected?.usuarioNome ?? selected?.usuarioLogin ?? 'Não identificado'}
+                      </Text>
+                    </View>
+                    <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
+                      <Text style={[styles.detailLabel, { color: textSecondary }]}>
+                        Localização
+                      </Text>
+                      <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                        {selected
+                          ? locationLabel(
+                              selected,
+                              locationByNivelId,
+                              gradeById,
+                              fileiraById,
+                              itemLocationById,
+                              minuteNivelLocationByKey
+                            )
+                          : 'Fileira - / Grade - / Nível -'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.detailLabel, { color: textSecondary }]}>
+                    Detalhes técnicos
+                  </Text>
+                  <View
+                    style={[styles.detailTextBox, { borderColor: theme.colors.outlineVariant }]}
+                  >
+                    <Text style={[styles.details, { color: textSecondary }]}>
+                      {selected?.detalhesAlteracao?.trim()
+                        ? selected.detalhesAlteracao.trim()
+                        : 'Sem detalhes adicionais.'}
                     </Text>
                   </View>
-                ) : null}
-              </View>
-              <Text style={[styles.date, { color: textSecondary }]}>
-                Registrado em {fmtDate(selected?.timestamp)}
-              </Text>
-              {selected ? (
-                <View
-                  style={[
-                    styles.summaryBox,
-                    {
-                      backgroundColor: operationTone(selected.tipoOperacao).bg,
-                      borderColor: operationTone(selected.tipoOperacao).border,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.summaryTitle,
-                      { color: operationTone(selected.tipoOperacao).text },
-                    ]}
-                  >
-                    {qtyDetail(selected)}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.summarySub,
-                      { color: operationTone(selected.tipoOperacao).softText },
-                    ]}
-                  >
-                    Quantidade: {quantityFlowLabel(selected)}
-                  </Text>
-                </View>
-              ) : null}
-              <View style={[styles.detailGrid, isCompact && styles.detailGridCompact]}>
-                <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
-                  <Text style={[styles.detailLabel, { color: textSecondary }]}>Produto</Text>
-                  <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                    {selected?.produtoNomeModelo ?? 'Não informado'}
-                  </Text>
-                </View>
-                <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
-                  <Text style={[styles.detailLabel, { color: textSecondary }]}>Usuário</Text>
-                  <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                    {selected?.usuarioNome ?? selected?.usuarioLogin ?? 'Não identificado'}
-                  </Text>
-                </View>
-                <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
-                  <Text style={[styles.detailLabel, { color: textSecondary }]}>Localização</Text>
-                  <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                    {selected ? locationLabel(selected) : 'Nível não informado'}
-                  </Text>
-                </View>
-                <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
-                  <Text style={[styles.detailLabel, { color: textSecondary }]}>Quantidade</Text>
-                  <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                    {selected ? quantityFlowLabel(selected) : '—'}
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.detailLabel, { color: textSecondary }]}>Detalhes técnicos</Text>
-              <View style={[styles.detailTextBox, { borderColor: theme.colors.outlineVariant }]}>
-                <Text style={[styles.details, { color: textSecondary }]}>
-                  {selected?.detalhesAlteracao?.trim()
-                    ? selected.detalhesAlteracao.trim()
-                    : 'Sem detalhes adicionais.'}
-                </Text>
-              </View>
-              <View style={styles.actions}>
-                <Button mode="contained" onPress={() => setSelected(null)}>
-                  Fechar
-                </Button>
-              </View>
-            </>
-          )}
+                  <View style={styles.actions}>
+                    <Button mode="contained" onPress={() => setSelected(null)}>
+                      Fechar
+                    </Button>
+                  </View>
+                </>
+              )}
+            </ScrollView>
+          </View>
         </Modal>
       </Portal>
 
@@ -681,20 +1511,37 @@ export default function HistoryScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 12, paddingBottom: 28 },
-  frame: { alignSelf: 'center' },
+  frame: { width: '100%' },
+  headerFrame: { gap: 12 },
   section: { borderRadius: 16, borderWidth: 1, padding: 14 },
-  title: { fontSize: 24, fontWeight: '800' },
-  subtitle: { marginTop: 4, fontSize: 13, fontWeight: '600' },
   input: { marginBottom: 8 },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  dateRow: { flexDirection: 'row', gap: 10 },
-  dateRowCompact: { flexDirection: 'column', gap: 0 },
-  dateInput: { flex: 1 },
-  dateInputCompact: { width: '100%' },
+  filtersStack: { flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 8 },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, width: '100%' },
+  filtersFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  filtersFooterCompact: { alignItems: 'stretch' },
+  rangeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 240 },
+  rangeRowCompact: { width: '100%', minWidth: 0, flexDirection: 'column', alignItems: 'stretch' },
+  rangePickerButton: { borderRadius: 12, flex: 1, minWidth: 0 },
+  rangePickerButtonCompact: { width: '100%' },
+  rangePickerContent: { minHeight: 40, justifyContent: 'flex-start' },
+  rangePickerLabel: { fontSize: 14, fontWeight: '700' },
+  headerActions: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  headerActionsCompact: { marginLeft: 0, width: '100%' },
+  headerActionButton: { minWidth: 96 },
+  headerActionButtonCompact: { flex: 1, minWidth: 0 },
   actions: { marginTop: 8, flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   card: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 10 },
   top: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
+  topCompact: { flexDirection: 'column', alignItems: 'stretch' },
   leftArea: { flexDirection: 'row', gap: 10, flex: 1, display: 'flex', alignItems: 'center' },
+  leftAreaCompact: { width: '100%', alignItems: 'flex-start' },
   badge: {
     width: 42,
     height: 42,
@@ -704,8 +1551,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeText: { fontSize: 14, fontWeight: '800' },
-  meta: { flex: 1, gap: 3 },
+  meta: { flex: 1, gap: 3, minWidth: 0 },
   rightPanel: { alignItems: 'flex-end', justifyContent: 'center', gap: 10, flexShrink: 0 },
+  rightPanelCompact: { width: '100%', alignItems: 'flex-start' },
   operationTag: {
     borderWidth: 1,
     borderRadius: 14,
@@ -717,6 +1565,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  operationTagCompact: {
+    alignSelf: 'flex-start',
+    minHeight: 38,
+    height: 'auto',
+    maxWidth: '100%',
+    paddingVertical: 8,
   },
   operationTagText: {
     fontSize: 13,
@@ -742,32 +1597,52 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   metricValue: { fontSize: 16, fontWeight: '800' },
   metricHint: { fontSize: 14, fontWeight: '800' },
-  detailsButton: { alignSelf: 'stretch', justifyContent: 'center' },
+  detailsButton: { borderRadius: 999 },
   detailsButtonCompact: { width: '100%' },
   detailsButtonContent: { height: 38 },
   empty: { borderRadius: 14, borderWidth: 1, padding: 16, alignItems: 'center', gap: 6 },
   loadingCard: { minHeight: 132 },
   footer: { paddingVertical: 8, alignItems: 'center', gap: 6 },
   inlineLoading: { minHeight: 32 },
+  modalFrame: {
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+  },
   modal: {
-    marginHorizontal: 16,
     borderRadius: 18,
     borderWidth: 1,
-    padding: 16,
+    maxHeight: '90%',
     maxWidth: 860,
     alignSelf: 'center',
     width: '100%',
+    overflow: 'hidden',
+  },
+  modalScroll: { maxHeight: '100%' },
+  modalScrollContent: {
+    padding: 16,
     gap: 10,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
     gap: 10,
   },
   modalHeaderCompact: { flexDirection: 'column', alignItems: 'flex-start' },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  modalCloseButton: {
+    margin: 0,
+    borderWidth: 1,
+    borderRadius: 999,
+  },
   modalOperationTag: { alignSelf: 'flex-start' },
   summaryBox: {
+    width: '100%',
+    alignSelf: 'stretch',
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 12,
@@ -776,12 +1651,12 @@ const styles = StyleSheet.create({
   },
   summaryTitle: { fontSize: 15, fontWeight: '800' },
   summarySub: { fontSize: 13, fontWeight: '700' },
-  detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  detailGrid: { width: '100%', flexDirection: 'column', gap: 10 },
   detailGridCompact: { flexDirection: 'column' },
   detailCard: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 220,
+    width: '100%',
+    alignSelf: 'stretch',
+    minWidth: 0,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 10,
@@ -791,6 +1666,8 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   detailValue: { fontSize: 17, fontWeight: '800' },
   detailTextBox: {
+    width: '100%',
+    alignSelf: 'stretch',
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
@@ -799,3 +1676,4 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 22, fontWeight: '900' },
   details: { fontSize: 14, lineHeight: 22, fontWeight: '600' },
 });
+

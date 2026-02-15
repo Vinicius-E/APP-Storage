@@ -6,9 +6,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import Feather from '@expo/vector-icons/Feather';
 
 type PaperIconProps = {
-  name: string;
-  color: string;
-  size: number;
+  name?: string;
+  color?: string;
+  size?: number;
   direction?: 'ltr' | 'rtl';
   testID?: string;
 };
@@ -24,7 +24,7 @@ if (antGlyphMapCompat) {
 }
 
 export function PaperIcon(props: PaperIconProps) {
-  const { name, color, size, testID } = props;
+  const { name = 'help-circle-outline', color = '#5B4633', size = 20, testID } = props;
 
   const materialMap = (MaterialCommunityIcons as any).glyphMap as Record<string, number> | undefined;
   const antMap = (AntDesign as any).glyphMap as Record<string, number> | undefined;

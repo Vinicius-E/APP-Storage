@@ -15,6 +15,8 @@ const warehouseThemes = {
 
       primary: '#9C5B17',
       onPrimary: '#FFFFFF',
+      primaryContainer: '#F3E4CF',
+      onPrimaryContainer: '#5E3B14',
       secondary: '#B3742A',
       onSecondary: '#FFFFFF',
       secondaryContainer: '#F3DFC4',
@@ -48,6 +50,8 @@ const warehouseThemes = {
 
       primary: '#7A4A21',
       onPrimary: '#FFFFFF',
+      primaryContainer: '#EED9BC',
+      onPrimaryContainer: '#4C2F10',
       secondary: '#9A6127',
       onSecondary: '#FFFFFF',
       secondaryContainer: '#EED9BC',
@@ -81,6 +85,8 @@ const warehouseThemes = {
 
       primary: '#99FF14',
       onPrimary: '#07120B',
+      primaryContainer: '#223E16',
+      onPrimaryContainer: '#DFF7CD',
       secondary: '#7EDB1A',
       onSecondary: '#07120B',
       secondaryContainer: '#223E16',

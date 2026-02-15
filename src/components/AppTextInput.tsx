@@ -1,4 +1,5 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
 import { TextInput, TextInputProps } from 'react-native-paper';
 import { useThemeContext } from '../theme/ThemeContext';
@@ -32,29 +33,48 @@ export default function AppTextInput({
   const colors = theme.colors as typeof theme.colors & { text?: string; textSecondary?: string };
   const textColor = colors.text ?? theme.colors.onSurface;
   const secondaryText = colors.textSecondary ?? theme.colors.onSurfaceVariant;
+  const accent = theme.colors.primary;
+  const assistiveTextColor = Platform.OS === 'web' ? accent : secondaryText;
   const background = theme.colors.surfaceVariant;
+  const webInputStyle =
+    Platform.OS === 'web'
+      ? ({
+          outlineStyle: 'none',
+          outlineWidth: 0,
+          borderWidth: 0,
+          boxShadow: 'none',
+          backgroundColor: 'transparent',
+        } as any)
+      : null;
 
   return (
     <TextInput
       {...rest}
       mode={mode}
+      theme={{
+        ...theme,
+        colors: {
+          ...theme.colors,
+          onSurfaceVariant: assistiveTextColor,
+        },
+      }}
       textColor={textColor}
       cursorColor={theme.colors.primary}
       selectionColor={theme.colors.primary}
-      placeholderTextColor={secondaryText}
+      placeholderTextColor={assistiveTextColor}
       activeOutlineColor={theme.colors.primary}
-      outlineColor={theme.colors.outline}
+      outlineColor={accent}
       style={[styles.input, { backgroundColor: background }, style]}
       outlineStyle={[
         styles.outline,
         {
-          borderColor: theme.colors.outline,
+          borderColor: accent,
         },
         outlineStyle,
       ]}
-      contentStyle={[styles.content, contentStyle]}
-      left={withAdornmentSpacing(left, secondaryText)}
-      right={withAdornmentSpacing(right, secondaryText)}
+      contentStyle={[styles.content, webInputStyle, contentStyle]}
+      left={withAdornmentSpacing(left, accent)}
+      right={withAdornmentSpacing(right, accent)}
     />
   );
 }
@@ -62,10 +82,16 @@ export default function AppTextInput({
 const styles = StyleSheet.create({
   input: {
     minHeight: 52,
+    width: '100%',
+    minWidth: 0,
+    alignSelf: 'stretch',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   outline: {
     borderRadius: 12,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   content: {
     paddingVertical: 11,

@@ -9,12 +9,16 @@ import {
   useWindowDimensions,
   RefreshControl,
 } from 'react-native';
+import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
 import { Button, Chip, Text, TextInput } from 'react-native-paper';
-import AntDesign from '@expo/vector-icons/AntDesign';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
+import DashboardQuickActions from '../components/DashboardQuickActions';
+import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
+import { useAuth } from '../auth/AuthContext';
 import { useThemeContext } from '../theme/ThemeContext';
 import { API } from '../axios';
 
@@ -164,7 +168,9 @@ function buildStockReportHtml(
 
 export default function DashboardScreen() {
   const { theme } = useThemeContext();
+  const { user } = useAuth();
   const { width } = useWindowDimensions();
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
 
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<keyof StockRow>('produto');
@@ -176,6 +182,7 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [rows, setRows] = useState<StockRow[]>([]);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [summary, setSummary] = useState({
     fileiras: 0,
     grades: 0,
@@ -232,6 +239,8 @@ export default function DashboardScreen() {
   };
 
   const loadDashboard = useCallback(async (isRefresh: boolean) => {
+    setLoadErrorMessage('');
+
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -342,6 +351,7 @@ export default function DashboardScreen() {
     } catch (e: any) {
       setRows([]);
       setSummary({ fileiras: 0, grades: 0, niveis: 0, itens: 0, vazios: 0 });
+      setLoadErrorMessage(API_STATE_MESSAGES.dashboard.error.description);
     } finally {
       if (isRefresh) {
         setRefreshing(false);
@@ -359,15 +369,6 @@ export default function DashboardScreen() {
     void loadDashboard(true);
   }, [loadDashboard]);
 
-  const SUMMARY_CARDS = useMemo(() => {
-    return [
-      { label: 'Fileiras', value: String(summary.fileiras) },
-      { label: 'Grades', value: String(summary.grades) },
-      { label: 'Níveis', value: String(summary.niveis) },
-      { label: 'Itens', value: String(summary.itens) },
-      { label: 'Vazios', value: String(summary.vazios) },
-    ];
-  }, [summary]);
 
   const filteredRows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -389,6 +390,8 @@ export default function DashboardScreen() {
       return haystack.includes(needle);
     });
   }, [filter, rows]);
+  const hasDashboardFilters = filter.trim() !== '';
+  const dashboardEmptyCopy = getApiEmptyCopy('dashboard', hasDashboardFilters);
 
   const sortedRows = useMemo(() => {
     const sorted = [...filteredRows];
@@ -480,8 +483,18 @@ export default function DashboardScreen() {
           String(row.quantidade),
         ]);
 
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const tableMarginX = 32;
+        const usableTableWidth = pageWidth - tableMarginX * 2;
+        const productColWidth = Math.floor(usableTableWidth * 0.28);
+        const locationColWidth = Math.floor(usableTableWidth * 0.44);
+        const statusColWidth = Math.floor(usableTableWidth * 0.14);
+        const qtyColWidth =
+          usableTableWidth - productColWidth - locationColWidth - statusColWidth;
+
         autoTable(doc, {
           startY: 100,
+          margin: { left: tableMarginX, right: tableMarginX, top: 24, bottom: 24 },
           head: [['Produto', 'Localização', 'Status', 'Quantidade']],
           body: tableRows,
           theme: 'grid',
@@ -489,6 +502,7 @@ export default function DashboardScreen() {
             fontSize: 10,
             cellPadding: 6,
             textColor: [42, 28, 17],
+            overflow: 'linebreak',
           },
           headStyles: {
             fillColor: [156, 91, 23],
@@ -499,21 +513,21 @@ export default function DashboardScreen() {
             fillColor: [251, 244, 235],
           },
           columnStyles: {
-            0: { cellWidth: 170 },
-            1: { cellWidth: 220 },
-            2: { cellWidth: 90 },
-            3: { cellWidth: 80, halign: 'right' },
+            0: { cellWidth: productColWidth },
+            1: { cellWidth: locationColWidth },
+            2: { cellWidth: statusColWidth },
+            3: { cellWidth: qtyColWidth, halign: 'right' },
           },
         });
 
         const pageCount = doc.getNumberOfPages();
         for (let page = 1; page <= pageCount; page += 1) {
           doc.setPage(page);
-          const pageWidth = doc.internal.pageSize.getWidth();
+          const footerPageWidth = doc.internal.pageSize.getWidth();
           const pageHeight = doc.internal.pageSize.getHeight();
           doc.setFontSize(9);
           doc.setTextColor(100);
-          doc.text(`Página ${page}/${pageCount}`, pageWidth - 40, pageHeight - 18, {
+          doc.text(`Pagina ${page}/${pageCount}`, footerPageWidth - 40, pageHeight - 18, {
             align: 'right',
           });
         }
@@ -563,31 +577,7 @@ export default function DashboardScreen() {
       contentContainerStyle={[styles.container, { backgroundColor: theme.colors.background }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
-      <View style={styles.cardsRow}>
-        {SUMMARY_CARDS.map((card) => (
-          <View
-            key={card.label}
-            style={[
-              styles.card,
-              {
-                backgroundColor: theme.colors.surface,
-                borderColor: theme.colors.outlineVariant,
-                shadowColor: theme.colors.text,
-              },
-            ]}
-          >
-            <Text style={[styles.cardValue, { color: theme.colors.text }]}>{card.value}</Text>
-            <Text
-              style={[
-                styles.cardLabel,
-                { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-              ]}
-            >
-              {card.label}
-            </Text>
-          </View>
-        ))}
-      </View>
+      <DashboardQuickActions navigation={navigation} isWide={isWide} user={user} />
 
       <View
         style={[
@@ -624,7 +614,7 @@ export default function DashboardScreen() {
           </Button>
         </View>
 
-        <View style={styles.filtersRow}>
+        <View style={[styles.filtersRow, !isWide && styles.filtersRowMobile]}>
           <AppTextInput
             label="Filtrar por produto, fileira, grade, nível"
             value={filter}
@@ -632,7 +622,7 @@ export default function DashboardScreen() {
               setFilter(value);
               setPage(0);
             }}
-            style={styles.filterInput}
+            style={[styles.filterInput, !isWide && styles.filterInputMobile]}
             left={<TextInput.Icon icon="magnify" />}
           />
 
@@ -813,85 +803,89 @@ export default function DashboardScreen() {
 
               {pagedRows.length === 0 ? (
                 <View style={styles.emptyBox}>
-                  <AntDesign
-                    name="inbox"
-                    size={28}
-                    color={(theme.colors as any).textSecondary ?? theme.colors.text}
-                  />
-                  <Text
-                    style={[
-                      styles.emptyText,
-                      { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-                    ]}
-                  >
-                    Nenhum item encontrado.
-                  </Text>
+                  {loadErrorMessage ? (
+                    <AppEmptyState
+                      title={API_STATE_MESSAGES.dashboard.error.title}
+                      description={loadErrorMessage}
+                      icon="alert-circle-outline"
+                      tone="error"
+                    />
+                  ) : (
+                    <AppEmptyState
+                      title={dashboardEmptyCopy.title}
+                      description={dashboardEmptyCopy.description}
+                      icon="inbox-outline"
+                    />
+                  )}
                 </View>
               ) : null}
             </View>
 
-            <View style={styles.paginationRow}>
-              <Text
-                style={[
-                  styles.paginationLabel,
-                  { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-                ]}
-              >
-                {rangeStart}-{rangeEnd} de {totalItems}
-              </Text>
-
-              <View style={styles.paginationControls}>
-                <Button
-                  mode="outlined"
-                  onPress={() => setPage((prev) => Math.max(0, prev - 1))}
-                  disabled={page === 0}
-                  accessibilityLabel="action-dashboard-page-prev"
-                  compact
+            {totalItems > 0 ? (
+              <View style={[styles.paginationRow, !isWide && styles.paginationRowMobile]}>
+                <Text
+                  style={[
+                    styles.paginationLabel,
+                    !isWide && styles.paginationLabelMobile,
+                    { color: (theme.colors as any).textSecondary ?? theme.colors.text },
+                  ]}
                 >
-                  Anterior
-                </Button>
+                  {rangeStart}-{rangeEnd} de {totalItems}
+                </Text>
 
-                <Button
-                  mode="outlined"
-                  onPress={() =>
-                    setPage((prev) => Math.min(prev + 1, Math.ceil(totalItems / itemsPerPage) - 1))
-                  }
-                  disabled={rangeEnd >= totalItems}
-                  accessibilityLabel="action-dashboard-page-next"
-                  compact
-                >
-                  Próximo
-                </Button>
+                <View style={[styles.paginationControls, !isWide && styles.paginationControlsMobile]}>
+                  <Button
+                    mode="outlined"
+                    onPress={() => setPage((prev) => Math.max(0, prev - 1))}
+                    disabled={page === 0}
+                    accessibilityLabel="action-dashboard-page-prev"
+                    compact
+                  >
+                    Anterior
+                  </Button>
 
-                <View style={styles.itemsPerPage}>
-                  {[5, 8, 10].map((size) => (
-                    <Chip
-                      key={size}
-                      compact
-                      onPress={() => {
-                        setItemsPerPage(size);
-                        setPage(0);
-                      }}
-                      accessibilityLabel={`action-dashboard-page-size-${size}`}
-                      style={[
-                        styles.pageChip,
-                        {
-                          backgroundColor:
-                            itemsPerPage === size
-                              ? theme.colors.primary
-                              : theme.colors.surfaceVariant,
-                        },
-                      ]}
-                      textStyle={{
-                        color: itemsPerPage === size ? theme.colors.onPrimary : theme.colors.text,
-                      }}
-                    >
-                      {size}
-                    </Chip>
-                  ))}
+                  <Button
+                    mode="outlined"
+                    onPress={() =>
+                      setPage((prev) => Math.min(prev + 1, Math.ceil(totalItems / itemsPerPage) - 1))
+                    }
+                    disabled={rangeEnd >= totalItems}
+                    accessibilityLabel="action-dashboard-page-next"
+                    compact
+                  >
+                    Próximo
+                  </Button>
+
+                  <View style={[styles.itemsPerPage, !isWide && styles.itemsPerPageMobile]}>
+                    {[5, 8, 10].map((size) => (
+                      <Chip
+                        key={size}
+                        compact
+                        onPress={() => {
+                          setItemsPerPage(size);
+                          setPage(0);
+                        }}
+                        accessibilityLabel={`action-dashboard-page-size-${size}`}
+                        style={[
+                          styles.pageChip,
+                          {
+                            backgroundColor:
+                              itemsPerPage === size
+                                ? theme.colors.primary
+                                : theme.colors.surfaceVariant,
+                          },
+                        ]}
+                        textStyle={{
+                          color: itemsPerPage === size ? theme.colors.onPrimary : theme.colors.text,
+                        }}
+                      >
+                        {size}
+                      </Chip>
+                    ))}
+                  </View>
                 </View>
               </View>
-            </View>
+            ) : null}
           </>
         )}
       </View>
@@ -901,24 +895,6 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20, gap: 20 },
-  cardsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  card: {
-    flexGrow: 1,
-    flexBasis: 180,
-    minWidth: 160,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 2,
-  },
-  cardValue: { fontSize: 22, fontWeight: '800' },
-  cardLabel: { marginTop: 6, fontSize: 12, fontWeight: '600' },
   tableCard: { borderRadius: 18, borderWidth: 1, padding: 16 },
   tableHeader: {
     flexDirection: 'row',
@@ -939,7 +915,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 12,
   },
+  filtersRowMobile: { alignItems: 'stretch' },
   filterInput: { flexGrow: 1, minWidth: 220, borderRadius: 10, overflow: 'hidden' },
+  filterInputMobile: { minWidth: 0, width: '100%' },
   sortRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   sortRowMobile: { flexBasis: '100%', maxWidth: '100%' },
   sortLabel: { fontSize: 12, fontWeight: '700' },
@@ -988,11 +966,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  paginationRowMobile: { flexDirection: 'column', alignItems: 'flex-start' },
   paginationLabel: { fontSize: 12, fontWeight: '600' },
+  paginationLabelMobile: { marginBottom: 2 },
   paginationControls: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  paginationControlsMobile: { width: '100%' },
   itemsPerPage: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  itemsPerPageMobile: { marginLeft: 0 },
   pageChip: { borderRadius: 999 },
   loadingBox: { marginTop: 8, minHeight: 188 },
   emptyBox: { paddingVertical: 24, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyText: { fontWeight: '700' },
 });
+
+
+
+

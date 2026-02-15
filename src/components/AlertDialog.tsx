@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, StyleSheet, Text, Pressable } from 'react-native';
+import { Modal, View, StyleSheet, Text, Pressable, ScrollView } from 'react-native';
 
 interface Props {
   visible: boolean;
@@ -41,7 +41,13 @@ export default function AlertDialog({ visible, message, type, onDismiss }: Props
           ]}
         >
           <Text style={[styles.title, { color: tone.accent }]}>{getTitle()}</Text>
-          <Text style={styles.message}>{message}</Text>
+          <ScrollView
+            style={styles.messageScroll}
+            contentContainerStyle={styles.messageScrollContent}
+            showsVerticalScrollIndicator
+          >
+            <Text style={styles.message}>{message}</Text>
+          </ScrollView>
 
           <Pressable
             style={[styles.button, { backgroundColor: tone.accent }]}
@@ -63,11 +69,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
+    paddingVertical: 20,
   },
 
   modalContainer: {
     width: '92%',
     maxWidth: 520, // melhor proporcional com sua UI
+    maxHeight: '84%',
     backgroundColor: '#fff',
     borderRadius: 18,
     paddingVertical: 28,
@@ -78,6 +86,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 8,
+  },
+
+  messageScroll: {
+    maxHeight: 320,
+    marginBottom: 22,
+  },
+
+  messageScrollContent: {
+    paddingRight: 4,
   },
 
   title: {
@@ -92,7 +109,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     color: '#1a1a1a',
-    marginBottom: 28,
   },
 
   button: {

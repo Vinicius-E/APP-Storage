@@ -227,6 +227,8 @@ const styles = StyleSheet.create({
 
   input: {
     marginBottom: 14,
+    width: '100%',
+    alignSelf: 'stretch',
   },
 
   button: {

@@ -48,9 +48,7 @@ function AppWithTheme() {
 
     const iconAsset = require('./assets/favicon.png') as any;
     const rawUri =
-      typeof iconAsset === 'string'
-        ? iconAsset
-        : iconAsset?.default ?? iconAsset?.uri ?? null;
+      typeof iconAsset === 'string' ? iconAsset : (iconAsset?.default ?? iconAsset?.uri ?? null);
 
     if (!rawUri) {
       return;
@@ -143,6 +141,7 @@ function AppWithTheme() {
       button[aria-label="action-dashboard-page-prev"],
       button[aria-label="action-dashboard-page-next"],
       button[aria-label^="action-historico-detalhes-"],
+      button[aria-label="action-historico-periodo"],
       button[aria-label="action-historico-limpar"],
       button[aria-label="action-historico-aplicar"],
       [role="button"][aria-label="action-reload-users"],
@@ -154,8 +153,10 @@ function AppWithTheme() {
       [role="button"][aria-label="action-dashboard-page-prev"],
       [role="button"][aria-label="action-dashboard-page-next"],
       [role="button"][aria-label^="action-historico-detalhes-"],
+      [role="button"][aria-label="action-historico-periodo"],
       [role="button"][aria-label="action-historico-limpar"],
       [role="button"][aria-label="action-historico-aplicar"],
+      [aria-label^="action-historico-detalhes-"],
       [aria-label^="action-users-filter-"],
       [aria-label^="action-historico-tipo-"],
       [aria-label^="action-dashboard-sort-"],
@@ -173,6 +174,9 @@ function AppWithTheme() {
       [role="button"][aria-label="action-dashboard-page-next"]:not([disabled]):not([aria-disabled="true"]):hover,
       button[aria-label^="action-historico-detalhes-"]:not([disabled]):not([aria-disabled="true"]):hover,
       [role="button"][aria-label^="action-historico-detalhes-"]:not([disabled]):not([aria-disabled="true"]):hover,
+      [aria-label^="action-historico-detalhes-"]:not([disabled]):not([aria-disabled="true"]):hover,
+      button[aria-label="action-historico-periodo"]:not([disabled]):not([aria-disabled="true"]):hover,
+      [role="button"][aria-label="action-historico-periodo"]:not([disabled]):not([aria-disabled="true"]):hover,
       button[aria-label="action-historico-limpar"]:not([disabled]):not([aria-disabled="true"]):hover,
       [role="button"][aria-label="action-historico-limpar"]:not([disabled]):not([aria-disabled="true"]):hover {
         border-color: ${primary} !important;
@@ -260,6 +264,9 @@ function AppWithTheme() {
       [role="button"][aria-label="action-dashboard-page-next"]:not([disabled]):not([aria-disabled="true"]):active,
       button[aria-label^="action-historico-detalhes-"]:not([disabled]):not([aria-disabled="true"]):active,
       [role="button"][aria-label^="action-historico-detalhes-"]:not([disabled]):not([aria-disabled="true"]):active,
+      [aria-label^="action-historico-detalhes-"]:not([disabled]):not([aria-disabled="true"]):active,
+      button[aria-label="action-historico-periodo"]:not([disabled]):not([aria-disabled="true"]):active,
+      [role="button"][aria-label="action-historico-periodo"]:not([disabled]):not([aria-disabled="true"]):active,
       button[aria-label="action-historico-limpar"]:not([disabled]):not([aria-disabled="true"]):active,
       [role="button"][aria-label="action-historico-limpar"]:not([disabled]):not([aria-disabled="true"]):active,
       button[aria-label="action-historico-aplicar"]:not([disabled]):not([aria-disabled="true"]):active,
@@ -301,6 +308,8 @@ function AppWithTheme() {
         -webkit-box-shadow: 0 0 0 1000px ${inputFill} inset !important;
         box-shadow: 0 0 0 1000px ${inputFill} inset !important;
         border-color: ${outline} !important;
+        border-radius: 12px !important;
+        -webkit-background-clip: padding-box !important;
         transition: background-color 9999s ease-out 0s;
       }
     `;
