@@ -1,12 +1,17 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  Platform,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   View,
   useWindowDimensions,
+  type PressableStateCallbackType,
 } from 'react-native';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Button, Chip, Divider, Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
 import AlertDialog from '../components/AlertDialog';
 import AppEmptyState from '../components/AppEmptyState';
@@ -26,6 +31,8 @@ import { useThemeContext } from '../theme/ThemeContext';
 type UserRole = 'Administrador' | 'Leitura';
 type UserStatus = 'active' | 'inactive';
 type StatusFilter = 'all' | 'active' | 'inactive';
+type RoleFilter = 'Todos' | UserRole;
+type FilterDropdownKey = 'status' | 'role';
 type PermissionKey = 'dashboard:view' | 'warehouse:read' | 'warehouse:update' | 'users:update';
 type PermissionState = Record<PermissionKey, boolean>;
 
@@ -67,8 +74,46 @@ type StatusFeedback = {
 const SUCCESS_ACTION_COLOR = '#2E7D32';
 const DANGER_ACTION_COLOR = '#B3261E';
 
+type InteractiveVariant = 'neutral' | 'contained' | 'danger' | 'success';
+
+type InteractivePalette = {
+  baseBackground: string;
+  hoverBackground: string;
+  pressedBackground: string;
+  baseBorder: string;
+  activeBorder: string;
+  baseText: string;
+  activeText: string;
+  shadowColor: string;
+};
+
+type HoverablePressableState = PressableStateCallbackType & { hovered?: boolean };
+
 const ROLE_OPTIONS: UserRole[] = ['Administrador', 'Leitura'];
-const FILTER_ROLES: Array<'Todos' | UserRole> = ['Todos', ...ROLE_OPTIONS];
+
+const STATUS_FILTER_OPTIONS: Array<{
+  value: StatusFilter;
+  label: string;
+  accessibilityLabel: string;
+}> = [
+  { value: 'all', label: 'Todos', accessibilityLabel: 'action-users-filter-status-all' },
+  { value: 'active', label: 'Ativos', accessibilityLabel: 'action-users-filter-status-active' },
+  { value: 'inactive', label: 'Inativos', accessibilityLabel: 'action-users-filter-status-inactive' },
+];
+
+const ROLE_FILTER_OPTIONS: Array<{
+  value: RoleFilter;
+  label: string;
+  accessibilityLabel: string;
+}> = [
+  { value: 'Todos', label: 'Todos', accessibilityLabel: 'action-users-filter-role-todos' },
+  {
+    value: 'Administrador',
+    label: 'Administrador',
+    accessibilityLabel: 'action-users-filter-role-administrador',
+  },
+  { value: 'Leitura', label: 'Leitura', accessibilityLabel: 'action-users-filter-role-leitura' },
+];
 
 const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: string }> = [
   {
@@ -191,6 +236,41 @@ function resolveRequestErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function withAlpha(color: string, alpha: number): string {
+  const clamped = Math.max(0, Math.min(1, alpha));
+  const hexAlpha = Math.round(clamped * 255)
+    .toString(16)
+    .padStart(2, '0');
+
+  if (/^#[0-9a-f]{3}$/i.test(color)) {
+    const expanded = color.replace(
+      /^#(.)(.)(.)$/i,
+      (_match, r: string, g: string, b: string) => `#${r}${r}${g}${g}${b}${b}`
+    );
+    return `${expanded}${hexAlpha}`;
+  }
+
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    return `${color}${hexAlpha}`;
+  }
+
+  const rgbMatch = color.match(/^rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)$/i);
+  if (rgbMatch) {
+    const [, r, g, b] = rgbMatch;
+    return `rgba(${r}, ${g}, ${b}, ${clamped})`;
+  }
+
+  const rgbaMatch = color.match(
+    /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i
+  );
+  if (rgbaMatch) {
+    const [, r, g, b] = rgbaMatch;
+    return `rgba(${r}, ${g}, ${b}, ${clamped})`;
+  }
+
+  return color;
+}
+
 export default function UserScreen() {
   const { theme } = useThemeContext();
   const { width } = useWindowDimensions();
@@ -202,7 +282,8 @@ export default function UserScreen() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [roleFilter, setRoleFilter] = useState<'Todos' | UserRole>('Todos');
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('Todos');
+  const [openDropdown, setOpenDropdown] = useState<FilterDropdownKey | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -222,6 +303,156 @@ export default function UserScreen() {
   const [showConfirmarNovaSenha, setShowConfirmarNovaSenha] = useState(false);
   const [statusConfirmTarget, setStatusConfirmTarget] = useState<StatusConfirmTarget | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<StatusFeedback | null>(null);
+
+  const actionTransitionStyle = Platform.OS === 'web' ? styles.interactiveWeb : undefined;
+  const actionBusy = submitting || savingPassword;
+  const reloadBusy = loading || refreshing;
+
+  const getInteractivePalette = useCallback(
+    (variant: InteractiveVariant): InteractivePalette => {
+      switch (variant) {
+        case 'contained':
+          return {
+            baseBackground: theme.colors.primary,
+            hoverBackground: withAlpha(theme.colors.primary, 0.92),
+            pressedBackground: withAlpha(theme.colors.primary, 0.84),
+            baseBorder: theme.colors.primary,
+            activeBorder: withAlpha(theme.colors.primary, 0.95),
+            baseText: theme.colors.onPrimary,
+            activeText: theme.colors.onPrimary,
+            shadowColor: theme.colors.primary,
+          };
+        case 'danger':
+          return {
+            baseBackground: theme.colors.surfaceVariant,
+            hoverBackground: withAlpha(DANGER_ACTION_COLOR, 0.12),
+            pressedBackground: withAlpha(DANGER_ACTION_COLOR, 0.18),
+            baseBorder: withAlpha(DANGER_ACTION_COLOR, 0.55),
+            activeBorder: withAlpha(DANGER_ACTION_COLOR, 0.8),
+            baseText: DANGER_ACTION_COLOR,
+            activeText: DANGER_ACTION_COLOR,
+            shadowColor: DANGER_ACTION_COLOR,
+          };
+        case 'success':
+          return {
+            baseBackground: theme.colors.surfaceVariant,
+            hoverBackground: withAlpha(SUCCESS_ACTION_COLOR, 0.12),
+            pressedBackground: withAlpha(SUCCESS_ACTION_COLOR, 0.18),
+            baseBorder: withAlpha(SUCCESS_ACTION_COLOR, 0.55),
+            activeBorder: withAlpha(SUCCESS_ACTION_COLOR, 0.8),
+            baseText: SUCCESS_ACTION_COLOR,
+            activeText: SUCCESS_ACTION_COLOR,
+            shadowColor: SUCCESS_ACTION_COLOR,
+          };
+        default:
+          return {
+            baseBackground: theme.colors.surfaceVariant,
+            hoverBackground: withAlpha(theme.colors.primary, 0.12),
+            pressedBackground: withAlpha(theme.colors.primary, 0.18),
+            baseBorder: theme.colors.outline,
+            activeBorder: withAlpha(theme.colors.primary, 0.7),
+            baseText: textColor,
+            activeText: theme.colors.primary,
+            shadowColor: theme.colors.primary,
+          };
+      }
+    },
+    [textColor, theme.colors]
+  );
+
+  const resolveInteractiveState = useCallback(
+    (
+      state: HoverablePressableState,
+      options: {
+        variant: InteractiveVariant;
+        disabled?: boolean;
+        selected?: boolean;
+      }
+    ) => {
+      const { variant, disabled = false, selected = false } = options;
+      const pressed = !disabled && Boolean(state.pressed);
+      const hovered = !disabled && Boolean(state.hovered);
+      const active = !disabled && (selected || hovered || pressed);
+
+      return {
+        palette: getInteractivePalette(variant),
+        pressed,
+        hovered,
+        active,
+        disabled,
+      };
+    },
+    [getInteractivePalette]
+  );
+
+  const resolveInteractiveStyle = useCallback(
+    (
+      state: HoverablePressableState,
+      options: {
+        variant: InteractiveVariant;
+        disabled?: boolean;
+        selected?: boolean;
+      }
+    ) => {
+      const { palette, pressed, hovered, active, disabled } = resolveInteractiveState(state, options);
+
+      return {
+        backgroundColor: disabled
+          ? palette.baseBackground
+          : pressed
+            ? palette.pressedBackground
+            : active
+              ? palette.hoverBackground
+              : palette.baseBackground,
+        borderColor: active ? palette.activeBorder : palette.baseBorder,
+        shadowColor: palette.shadowColor,
+        shadowOpacity: active ? 0.2 : 0.12,
+        shadowRadius: active ? 14 : 10,
+        shadowOffset: { width: 0, height: active ? 8 : 4 },
+        elevation: active ? 3 : 1,
+        opacity: disabled ? 0.45 : pressed ? 0.96 : 1,
+        transform: [{ translateY: hovered ? -1 : 0 }],
+      } as const;
+    },
+    [resolveInteractiveState]
+  );
+
+  const resolveInteractiveTextColor = useCallback(
+    (
+      state: HoverablePressableState,
+      options: {
+        variant: InteractiveVariant;
+        disabled?: boolean;
+        selected?: boolean;
+      }
+    ) => {
+      const { palette, active, disabled } = resolveInteractiveState(state, options);
+      if (disabled) {
+        return withAlpha(palette.baseText, 0.72);
+      }
+      return active ? palette.activeText : palette.baseText;
+    },
+    [resolveInteractiveState]
+  );
+
+  const resolveInteractiveIconColor = useCallback(
+    (
+      state: HoverablePressableState,
+      options: {
+        variant: InteractiveVariant;
+        disabled?: boolean;
+        selected?: boolean;
+      }
+    ) => {
+      const { disabled } = resolveInteractiveState(state, options);
+      if (options.variant === 'neutral') {
+        return disabled ? withAlpha(theme.colors.primary, 0.72) : theme.colors.primary;
+      }
+
+      return resolveInteractiveTextColor(state, options);
+    },
+    [resolveInteractiveState, resolveInteractiveTextColor, theme.colors.primary]
+  );
 
   const fetchUsers = useCallback(async (isRefresh = false) => {
     setErrorMessage('');
@@ -251,18 +482,6 @@ export default function UserScreen() {
   useEffect(() => {
     void fetchUsers(false);
   }, [fetchUsers]);
-
-  const summary = useMemo(() => {
-    const active = users.filter((user) => user.status === 'active').length;
-    const inactive = users.filter((user) => user.status === 'inactive').length;
-    const admins = users.filter((user) => user.role === 'Administrador').length;
-    return {
-      total: users.length,
-      active,
-      inactive,
-      admins,
-    };
-  }, [users]);
 
   const filteredUsers = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -510,65 +729,127 @@ export default function UserScreen() {
         editForm.password.trim() === editForm.confirmPassword.trim()
       : true);
 
+  const renderFilterDropdown = <T extends string,>(params: {
+    dropdownKey: FilterDropdownKey;
+    label: string;
+    value: T;
+    options: Array<{ value: T; label: string; accessibilityLabel: string }>;
+    onSelect: (value: T) => void;
+  }) => {
+    const { dropdownKey, label, value, options, onSelect } = params;
+    const isOpen = openDropdown === dropdownKey;
+    const selectedLabel = options.find((option) => option.value === value)?.label ?? String(value);
+
+    return (
+      <View
+        style={[
+          styles.filterDropdownGroup,
+          isCompact && styles.filterDropdownGroupCompact,
+          isOpen && styles.filterDropdownGroupOpen,
+        ]}
+      >
+        <Text style={[styles.filterLabel, { color: '#000000' }]}>{label}</Text>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`action-users-filter-${dropdownKey}-toggle`}
+          accessibilityState={{ expanded: isOpen }}
+          onPress={() => setOpenDropdown((prev) => (prev === dropdownKey ? null : dropdownKey))}
+          style={(state) => [
+            styles.filterDropdownTrigger,
+            actionTransitionStyle,
+            resolveInteractiveStyle(state, { variant: 'neutral', selected: isOpen }),
+          ]}
+        >
+          {(state) => {
+            const textColor = resolveInteractiveTextColor(state, {
+              variant: 'neutral',
+              selected: isOpen,
+            });
+            const iconColor = resolveInteractiveIconColor(state, {
+              variant: 'neutral',
+              selected: isOpen,
+            });
+
+            return (
+              <>
+                <Text style={[styles.filterDropdownValue, { color: textColor }]}>{selectedLabel}</Text>
+                <MaterialCommunityIcons
+                  name={isOpen ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={iconColor}
+                />
+              </>
+            );
+          }}
+        </Pressable>
+
+        {isOpen ? (
+          <View
+            style={[
+              styles.filterDropdownMenu,
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
+            ]}
+          >
+            {options.map((option) => {
+              const selected = option.value === value;
+
+              return (
+                <Pressable
+                  key={`${dropdownKey}-${option.value}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={option.accessibilityLabel}
+                  accessibilityState={{ selected }}
+                  onPress={() => {
+                    onSelect(option.value);
+                    setOpenDropdown(null);
+                  }}
+                  style={(state) => [
+                    styles.filterDropdownOption,
+                    actionTransitionStyle,
+                    resolveInteractiveStyle(state, { variant: 'neutral', selected }),
+                  ]}
+                >
+                  {(state) => {
+                    const textColor = resolveInteractiveTextColor(state, {
+                      variant: 'neutral',
+                      selected,
+                    });
+                    const iconColor = resolveInteractiveIconColor(state, {
+                      variant: 'neutral',
+                      selected,
+                    });
+
+                    return (
+                      <>
+                        <Text style={[styles.filterDropdownOptionText, { color: textColor }]}>
+                          {option.label}
+                        </Text>
+                        {selected ? (
+                          <MaterialCommunityIcons name="check" size={16} color={iconColor} />
+                        ) : null}
+                      </>
+                    );
+                  }}
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <>
       <ScrollView
         style={{ backgroundColor: theme.colors.background }}
         contentContainerStyle={styles.container}
+        onScrollBeginDrag={() => setOpenDropdown(null)}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void fetchUsers(true)} />
         }
       >
-        <Surface
-          style={[
-            styles.sectionCard,
-            styles.hero,
-            { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-          ]}
-          elevation={0}
-        >
-          <View style={[styles.heroTop, isCompact && styles.heroTopCompact]}>
-            <View style={[styles.metricsRow, isCompact && styles.metricsRowCompact]}>
-              <View pointerEvents="none">
-                <Chip style={styles.metricChip}>Total: {summary.total}</Chip>
-              </View>
-              <View pointerEvents="none">
-                <Chip style={styles.metricChip}>Ativos: {summary.active}</Chip>
-              </View>
-              <View pointerEvents="none">
-                <Chip style={styles.metricChip}>Inativos: {summary.inactive}</Chip>
-              </View>
-              <View pointerEvents="none">
-                <Chip style={styles.metricChip}>Administradores: {summary.admins}</Chip>
-              </View>
-            </View>
-            <View style={[styles.heroActions, isCompact && styles.heroActionsCompact]}>
-              <Button
-                mode="outlined"
-                icon="refresh"
-                onPress={() => void fetchUsers(false)}
-                loading={loading || refreshing}
-                accessibilityLabel="action-reload-users"
-                style={styles.topActionBtn}
-                disabled={submitting || savingPassword}
-              >
-                Recarregar
-              </Button>
-              <Button
-                mode="contained"
-                icon="account-plus-outline"
-                onPress={openCreate}
-                accessibilityLabel="action-new-user"
-                style={styles.createBtn}
-                textColor={theme.colors.onPrimary}
-                disabled={submitting || savingPassword}
-              >
-                Novo usuário
-              </Button>
-            </View>
-          </View>
-        </Surface>
-
         <Surface
           style={[
             styles.sectionCard,
@@ -579,56 +860,106 @@ export default function UserScreen() {
           <AppTextInput
             label="Buscar usuário"
             value={search}
-            onChangeText={setSearch}
+            onChangeText={(value) => {
+              setSearch(value);
+              setOpenDropdown(null);
+            }}
             style={styles.input}
             left={<TextInput.Icon icon="magnify" />}
           />
 
-          <View style={styles.filterRow}>
-            <Text style={[styles.filterLabel, { color: '#000000' }]}>Status</Text>
-            <Chip
-              selected={statusFilter === 'all'}
-              onPress={() => setStatusFilter('all')}
-              accessibilityLabel="action-users-filter-status-all"
-              selectedColor="#000000"
-              textStyle={{ color: '#000000' }}
-            >
-              Todos
-            </Chip>
-            <Chip
-              selected={statusFilter === 'active'}
-              onPress={() => setStatusFilter('active')}
-              accessibilityLabel="action-users-filter-status-active"
-              selectedColor="#000000"
-              textStyle={{ color: '#000000' }}
-            >
-              Ativos
-            </Chip>
-            <Chip
-              selected={statusFilter === 'inactive'}
-              onPress={() => setStatusFilter('inactive')}
-              accessibilityLabel="action-users-filter-status-inactive"
-              selectedColor="#000000"
-              textStyle={{ color: '#000000' }}
-            >
-              Inativos
-            </Chip>
-          </View>
+          <View style={[styles.filterControlsRow, isCompact && styles.filterControlsRowCompact]}>
+            <View style={[styles.filterDropdownRow, isCompact && styles.filterDropdownRowCompact]}>
+              {renderFilterDropdown({
+                dropdownKey: 'status',
+                label: 'Status',
+                value: statusFilter,
+                options: STATUS_FILTER_OPTIONS,
+                onSelect: (value) => setStatusFilter(value),
+              })}
 
-          <View style={styles.filterRow}>
-            <Text style={[styles.filterLabel, { color: '#000000' }]}>Perfil</Text>
-            {FILTER_ROLES.map((role) => (
-              <Chip
-                key={role}
-                selected={roleFilter === role}
-                onPress={() => setRoleFilter(role)}
-                accessibilityLabel={`action-users-filter-role-${role.toLowerCase()}`}
-                selectedColor="#000000"
-                textStyle={{ color: '#000000' }}
+              {renderFilterDropdown({
+                dropdownKey: 'role',
+                label: 'Perfil',
+                value: roleFilter,
+                options: ROLE_FILTER_OPTIONS,
+                onSelect: (value) => setRoleFilter(value),
+              })}
+            </View>
+
+            <View style={[styles.filterActionsRow, isCompact && styles.filterActionsRowCompact]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="action-reload-users"
+                onPress={() => void fetchUsers(false)}
+                disabled={actionBusy || reloadBusy}
+                style={(state) => [
+                  styles.actionButtonBase,
+                  styles.topActionBtn,
+                  actionTransitionStyle,
+                  resolveInteractiveStyle(state, {
+                    variant: 'neutral',
+                    disabled: actionBusy || reloadBusy,
+                  }),
+                ]}
               >
-                {role}
-              </Chip>
-            ))}
+                {(state) => {
+                  const contentColor = resolveInteractiveTextColor(state, {
+                    variant: 'neutral',
+                    disabled: actionBusy || reloadBusy,
+                  });
+                  const iconColor = resolveInteractiveIconColor(state, {
+                    variant: 'neutral',
+                    disabled: actionBusy || reloadBusy,
+                  });
+
+                  return (
+                    <>
+                      {reloadBusy ? (
+                        <ActivityIndicator size="small" color={iconColor} />
+                      ) : (
+                        <MaterialCommunityIcons name="refresh" size={18} color={iconColor} />
+                      )}
+                      <Text style={[styles.actionButtonText, { color: contentColor }]}>Recarregar</Text>
+                    </>
+                  );
+                }}
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="action-new-user"
+                onPress={openCreate}
+                disabled={actionBusy}
+                style={(state) => [
+                  styles.actionButtonBase,
+                  styles.createBtn,
+                  actionTransitionStyle,
+                  resolveInteractiveStyle(state, {
+                    variant: 'neutral',
+                    disabled: actionBusy,
+                  }),
+                ]}
+              >
+                {(state) => {
+                  const contentColor = resolveInteractiveTextColor(state, {
+                    variant: 'neutral',
+                    disabled: actionBusy,
+                  });
+                  const iconColor = resolveInteractiveIconColor(state, {
+                    variant: 'neutral',
+                    disabled: actionBusy,
+                  });
+
+                  return (
+                    <>
+                      <MaterialCommunityIcons name="account-plus-outline" size={18} color={iconColor} />
+                      <Text style={[styles.actionButtonText, { color: contentColor }]}>Novo usuário</Text>
+                    </>
+                  );
+                }}
+              </Pressable>
+            </View>
           </View>
         </Surface>
 
@@ -802,34 +1133,79 @@ export default function UserScreen() {
                   </View>
 
                   <View style={[styles.actions, isCompact && styles.actionsCompact]}>
-                    <Button
-                      mode="outlined"
-                      icon="pencil-outline"
-                      onPress={() => openEdit(user)}
+                    <Pressable
+                      accessibilityRole="button"
                       accessibilityLabel={`action-edit-user-${user.id}`}
-                      style={styles.rowActionBtn}
-                      disabled={submitting || savingPassword}
+                      onPress={() => openEdit(user)}
+                      disabled={actionBusy}
+                      style={(state) => [
+                        styles.actionButtonBase,
+                        styles.rowActionBtn,
+                        actionTransitionStyle,
+                        resolveInteractiveStyle(state, {
+                          variant: 'neutral',
+                          disabled: actionBusy,
+                        }),
+                      ]}
                     >
-                      Editar
-                    </Button>
-                    <Button
-                      mode="outlined"
-                      icon={isUserActive ? 'account-off-outline' : 'account-check-outline'}
-                      onPress={() => void handleToggleStatus(user)}
+                      {(state) => {
+                        const contentColor = resolveInteractiveTextColor(state, {
+                          variant: 'neutral',
+                          disabled: actionBusy,
+                        });
+                        const iconColor = resolveInteractiveIconColor(state, {
+                          variant: 'neutral',
+                          disabled: actionBusy,
+                        });
+
+                        return (
+                          <>
+                            <MaterialCommunityIcons name="pencil-outline" size={18} color={iconColor} />
+                            <Text style={[styles.actionButtonText, { color: contentColor }]}>Editar</Text>
+                          </>
+                        );
+                      }}
+                    </Pressable>
+
+                    <Pressable
+                      accessibilityRole="button"
                       accessibilityLabel={
                         isUserActive
                           ? `action-status-inactivate-${user.id}`
                           : `action-status-activate-${user.id}`
                       }
-                      textColor={isUserActive ? DANGER_ACTION_COLOR : SUCCESS_ACTION_COLOR}
-                      style={[
+                      onPress={() => void handleToggleStatus(user)}
+                      disabled={actionBusy}
+                      style={(state) => [
+                        styles.actionButtonBase,
                         styles.rowActionBtn,
-                        isUserActive ? styles.actionDanger : styles.actionSuccess,
+                        actionTransitionStyle,
+                        resolveInteractiveStyle(state, {
+                          variant: isUserActive ? 'danger' : 'success',
+                          disabled: actionBusy,
+                        }),
                       ]}
-                      disabled={submitting || savingPassword}
                     >
-                      {isUserActive ? 'Inativar' : 'Ativar'}
-                    </Button>
+                      {(state) => {
+                        const contentColor = resolveInteractiveTextColor(state, {
+                          variant: isUserActive ? 'danger' : 'success',
+                          disabled: actionBusy,
+                        });
+
+                        return (
+                          <>
+                            <MaterialCommunityIcons
+                              name={isUserActive ? 'account-off-outline' : 'account-check-outline'}
+                              size={18}
+                              color={contentColor}
+                            />
+                            <Text style={[styles.actionButtonText, { color: contentColor }]}>
+                              {isUserActive ? 'Inativar' : 'Ativar'}
+                            </Text>
+                          </>
+                        );
+                      }}
+                    </Pressable>
                   </View>
                 </View>
               </Surface>
@@ -1113,22 +1489,20 @@ export default function UserScreen() {
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 14 },
   sectionCard: { borderRadius: 16, borderWidth: 1, padding: 14 },
-  hero: { gap: 8 },
-  heroTop: {
+  actionButtonBase: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     flexDirection: 'row',
-    flexWrap: 'nowrap',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
+    justifyContent: 'center',
+    gap: 8,
   },
-  heroTopCompact: { flexDirection: 'column', alignItems: 'stretch', gap: 8 },
-  heroActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' },
-  heroActionsCompact: { width: '100%', justifyContent: 'flex-end' },
-  topActionBtn: { borderRadius: 10 },
-  createBtn: { borderRadius: 10 },
-  metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, flex: 1 },
-  metricsRowCompact: { width: '100%' },
-  metricChip: { borderRadius: 999 },
+  topActionBtn: { minWidth: 152 },
+  createBtn: { minWidth: 170 },
+  actionButtonText: { fontSize: 14, fontWeight: '800' },
   input: { marginBottom: 8 },
   filterRow: {
     flexDirection: 'row',
@@ -1137,7 +1511,68 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
+  filterControlsRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  filterControlsRowCompact: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 10,
+  },
+  filterDropdownRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    flex: 1,
+  },
+  filterDropdownRowCompact: { flexDirection: 'column', gap: 10 },
+  filterActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  filterActionsRowCompact: { justifyContent: 'flex-start', width: '100%' },
+  filterDropdownGroup: { flex: 1, minWidth: 200, maxWidth: 320 },
+  filterDropdownGroupCompact: { width: '100%', minWidth: 0, maxWidth: '100%' },
+  filterDropdownGroupOpen: { zIndex: 2 },
   filterLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  filterDropdownTrigger: {
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  filterDropdownValue: { fontSize: 14, fontWeight: '700' },
+  filterDropdownMenu: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 6,
+    gap: 6,
+  },
+  filterDropdownOption: {
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  filterDropdownOptionText: { fontSize: 14, fontWeight: '700' },
   listBlock: { gap: 10 },
   userCard: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 10 },
   userTop: {
@@ -1186,9 +1621,17 @@ const styles = StyleSheet.create({
   permissionFill: { height: '100%', borderRadius: 999 },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
   actionsCompact: { justifyContent: 'flex-start', width: '100%' },
-  rowActionBtn: { borderRadius: 999 },
-  actionDanger: { borderColor: '#B3261E' },
-  actionSuccess: { borderColor: SUCCESS_ACTION_COLOR },
+  rowActionBtn: { minWidth: 120 },
+  interactiveWeb:
+    Platform.OS === 'web'
+      ? ({
+          transitionProperty:
+            'transform, box-shadow, background-color, border-color, opacity, color',
+          transitionDuration: '160ms',
+          transitionTimingFunction: 'ease-out',
+          cursor: 'pointer',
+        } as any)
+      : ({} as any),
   empty: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 6, alignItems: 'center' },
   loadingBox: { minHeight: 136 },
   modalFrame: {

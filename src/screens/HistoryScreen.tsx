@@ -24,7 +24,6 @@ import { DatePickerModal, pt, registerTranslation } from 'react-native-paper-dat
 import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
-import { API } from '../axios';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
 import {
   HistoricoMovimentacaoFilterRequestDTO,
@@ -67,16 +66,6 @@ type GradeById = Record<number, GradeLocation>;
 type FileiraById = Record<number, string>;
 type ItemLocationById = Record<number, LocationParts>;
 type MinuteNivelLocationByKey = Record<string, LocationParts>;
-type EstoquePosicaoSnapshot = {
-  fileiraId?: number | null;
-  nivelId?: number | null;
-  gradeId?: number | null;
-  fileiraIdentificador?: string | null;
-  gradeIdentificador?: string | null;
-  nivelIdentificador?: string | null;
-};
-
-const AREA_ID = 1;
 const PAGE_SIZE = 20;
 const QUICK_FILTERS: Array<{ label: string; value: QuickType }> = [
   { label: 'Todos', value: '' },
@@ -782,11 +771,14 @@ export default function HistoryScreen() {
   const [itemLocationById, setItemLocationById] = useState<ItemLocationById>({});
   const [minuteNivelLocationByKey, setMinuteNivelLocationByKey] =
     useState<MinuteNivelLocationByKey>({});
+  const [appliedFilterDto, setAppliedFilterDto] =
+    useState<HistoricoMovimentacaoFilterRequestDTO>({});
   const locationByNivelIdRef = useRef<LocationByNivelId>({});
   const gradeByIdRef = useRef<GradeById>({});
   const fileiraByIdRef = useRef<FileiraById>({});
   const itemLocationByIdRef = useRef<ItemLocationById>({});
   const minuteNivelLocationByKeyRef = useRef<MinuteNivelLocationByKey>({});
+  const filterDtoRef = useRef<HistoricoMovimentacaoFilterRequestDTO>({});
 
   const selectedDateRangeLabel = useMemo(
     () => dateRangeLabel(rangeStartDate, rangeEndDate),
@@ -806,7 +798,7 @@ export default function HistoryScreen() {
     return dto;
   }, [operationFilter, rangeEndDate, rangeStartDate, search]);
 
-  const hasFilters = useMemo(() => hasActiveFilters(filterDto), [filterDto]);
+  const hasFilters = useMemo(() => hasActiveFilters(appliedFilterDto), [appliedFilterDto]);
   const historyEmptyCopy = useMemo(() => getApiEmptyCopy('history', hasFilters), [hasFilters]);
 
   const commitLocationMaps = useCallback(
@@ -865,49 +857,12 @@ export default function HistoryScreen() {
     [commitLocationMaps]
   );
 
-  const loadLocationIndex = useCallback(async () => {
-    try {
-      const mapped: LocationByNivelId = {};
-      const mappedGradeById: GradeById = {};
-      const mappedFileiraById: FileiraById = {};
-      const positionResponse = await API.get<EstoquePosicaoSnapshot[]>(
-        `/api/estoque/posicoes/area/${AREA_ID}`
-      );
-      const positions = Array.isArray(positionResponse.data) ? positionResponse.data : [];
-
-      for (const row of positions) {
-        mergeLocationForReference(mapped, mappedGradeById, mappedFileiraById, {
-          fileiraId: row.fileiraId,
-          gradeId: row.gradeId,
-          nivelId: row.nivelId,
-          fileira: row.fileiraIdentificador,
-          grade: row.gradeIdentificador,
-          nivel: row.nivelIdentificador,
-        });
-      }
-
-      const nextByNivel = { ...locationByNivelIdRef.current, ...mapped };
-      const nextByGrade = { ...gradeByIdRef.current, ...mappedGradeById };
-      const nextByFileira = { ...fileiraByIdRef.current, ...mappedFileiraById };
-      const nextByItem = { ...itemLocationByIdRef.current };
-      const nextByMinuteNivel = { ...minuteNivelLocationByKeyRef.current };
-      commitLocationMaps(
-        nextByNivel,
-        nextByGrade,
-        nextByFileira,
-        nextByItem,
-        nextByMinuteNivel
-      );
-    } catch {
-      // Mantém o último índice válido para evitar regressão visual em falha temporária.
-    }
-  }, [commitLocationMaps]);
-
   const fetchPage = useCallback(
     async (
       targetPage: number,
       append: boolean,
-      trigger: 'initial' | 'refresh' | 'more' = 'initial'
+      trigger: 'initial' | 'refresh' | 'more' = 'initial',
+      forcedFilter?: HistoricoMovimentacaoFilterRequestDTO
     ) => {
       if (trigger === 'initial') setLoading(true);
       if (trigger === 'refresh') setRefreshing(true);
@@ -915,8 +870,9 @@ export default function HistoryScreen() {
       if (!append) setErrorMessage('');
 
       try {
-        const response = hasActiveFilters(filterDto)
-          ? await filtrarHistorico(filterDto, targetPage, PAGE_SIZE)
+        const effectiveFilter = forcedFilter ?? filterDtoRef.current;
+        const response = hasActiveFilters(effectiveFilter)
+          ? await filtrarHistorico(effectiveFilter, targetPage, PAGE_SIZE)
           : await listarHistorico(targetPage, PAGE_SIZE);
 
         const content = Array.isArray(response.content) ? response.content : [];
@@ -945,14 +901,21 @@ export default function HistoryScreen() {
         setLoadingMore(false);
       }
     },
-    [filterDto, mergeLocationHintsFromRows]
+    [mergeLocationHintsFromRows]
   );
 
-  const loadFirstPage = useCallback(async () => {
-    setPage(0);
-    setHasMore(true);
-    await fetchPage(0, false, 'initial');
-  }, [fetchPage]);
+  const loadFirstPage = useCallback(
+    async (forcedFilter?: HistoricoMovimentacaoFilterRequestDTO) => {
+      if (forcedFilter) {
+        filterDtoRef.current = forcedFilter;
+        setAppliedFilterDto(forcedFilter);
+      }
+      setPage(0);
+      setHasMore(true);
+      await fetchPage(0, false, 'initial', forcedFilter);
+    },
+    [fetchPage]
+  );
 
   const openDatePicker = useCallback(() => {
     if (isCompactDatePicker) {
@@ -1013,8 +976,7 @@ export default function HistoryScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadFirstPage();
-      void loadLocationIndex();
-    }, [loadFirstPage, loadLocationIndex])
+    }, [loadFirstPage])
   );
 
   const clearFilters = useCallback(async () => {
@@ -1022,7 +984,9 @@ export default function HistoryScreen() {
     setOperationFilter('');
     setRangeStartDate(undefined);
     setRangeEndDate(undefined);
-    await loadFirstPage();
+    const emptyFilter: HistoricoMovimentacaoFilterRequestDTO = {};
+    filterDtoRef.current = emptyFilter;
+    await loadFirstPage(emptyFilter);
   }, [loadFirstPage]);
 
   const loadMore = useCallback(async () => {
@@ -1212,7 +1176,7 @@ export default function HistoryScreen() {
                     </Button>
                     <Button
                       mode="contained"
-                      onPress={() => void loadFirstPage()}
+                      onPress={() => void loadFirstPage(filterDto)}
                       accessibilityLabel="action-historico-aplicar"
                       style={[
                         styles.headerActionButton,

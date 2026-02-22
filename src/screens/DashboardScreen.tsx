@@ -1,8 +1,10 @@
 // DashboardScreen.tsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -10,13 +12,15 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
-import { Button, Chip, Text, TextInput } from 'react-native-paper';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Chip, Text, TextInput } from 'react-native-paper';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
 import DashboardQuickActions from '../components/DashboardQuickActions';
+import ModalFrame from '../components/warehouse2d/modals/ModalFrame';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
 import { useAuth } from '../auth/AuthContext';
 import { useThemeContext } from '../theme/ThemeContext';
@@ -30,6 +34,9 @@ type StockRow = {
   nivel: string;
   status: 'Disponível' | 'Reservado' | 'Baixo';
   quantidade: number;
+  codigoSistemaWester: string;
+  cor: string;
+  descricao: string;
 };
 
 type EstoquePosicao = {
@@ -69,6 +76,51 @@ const STATUS_COLOR: Record<StockRow['status'], string> = {
 };
 
 const AREA_ID = 1;
+
+function withAlpha(color: string, alpha: number): string {
+  const clamped = Math.max(0, Math.min(1, alpha));
+  const hexAlpha = Math.round(clamped * 255)
+    .toString(16)
+    .padStart(2, '0');
+
+  if (/^#[0-9a-f]{3}$/i.test(color)) {
+    const expanded = color.replace(
+      /^#(.)(.)(.)$/i,
+      (_match, r: string, g: string, b: string) => `#${r}${r}${g}${g}${b}${b}`
+    );
+    return `${expanded}${hexAlpha}`;
+  }
+
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    return `${color}${hexAlpha}`;
+  }
+
+  const rgbMatch = color.match(/^rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)$/i);
+  if (rgbMatch) {
+    const [, r, g, b] = rgbMatch;
+    return `rgba(${r}, ${g}, ${b}, ${clamped})`;
+  }
+
+  const rgbaMatch = color.match(
+    /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i
+  );
+  if (rgbaMatch) {
+    const [, r, g, b] = rgbaMatch;
+    return `rgba(${r}, ${g}, ${b}, ${clamped})`;
+  }
+
+  return color;
+}
+
+function firstNonEmpty(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized !== '') {
+      return normalized;
+    }
+  }
+  return '';
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -181,6 +233,10 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [isPdfHovered, setIsPdfHovered] = useState(false);
+  const [hoveredSortColumn, setHoveredSortColumn] = useState<keyof StockRow | null>(null);
+  const [selectedRow, setSelectedRow] = useState<StockRow | null>(null);
+  const [isProductModalVisible, setIsProductModalVisible] = useState(false);
   const [rows, setRows] = useState<StockRow[]>([]);
   const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [summary, setSummary] = useState({
@@ -291,6 +347,9 @@ export default function DashboardScreen() {
           fileira: string;
           grade: string;
           nivel: string;
+          codigoSistemaWester: string;
+          cor: string;
+          descricao: string;
         }
       >();
 
@@ -308,6 +367,12 @@ export default function DashboardScreen() {
         const fileira = normalizeFileiraIdentificador(p);
         const grade = normalizeGradeIdentificador(p);
         const nivel = normalizeNivelIdentificador(p);
+        const codigoSistemaWester = firstNonEmpty(
+          p.produto?.codigoSistemaWester,
+          p.codigoSistemaWester
+        );
+        const cor = firstNonEmpty(p.produto?.cor, p.cor);
+        const descricao = firstNonEmpty(p.produto?.descricao, p.descricao);
 
         const key = `${produtoNome}__${fileira}__${grade}__${nivel}`;
         const current = grouped.get(key);
@@ -319,11 +384,17 @@ export default function DashboardScreen() {
             fileira,
             grade,
             nivel,
+            codigoSistemaWester,
+            cor,
+            descricao,
           });
         } else {
           grouped.set(key, {
             ...current,
             quantidade: current.quantidade + qtd,
+            codigoSistemaWester: firstNonEmpty(current.codigoSistemaWester, codigoSistemaWester),
+            cor: firstNonEmpty(current.cor, cor),
+            descricao: firstNonEmpty(current.descricao, descricao),
           });
         }
       }
@@ -337,6 +408,9 @@ export default function DashboardScreen() {
           nivel: g.nivel,
           status: computeStatus(g.quantidade),
           quantidade: g.quantidade,
+          codigoSistemaWester: g.codigoSistemaWester,
+          cor: g.cor,
+          descricao: g.descricao,
         };
       });
 
@@ -600,18 +674,58 @@ export default function DashboardScreen() {
             </Text>
           </View>
 
-          <Button
-            mode="contained"
-            icon="file-document-outline"
-            onPress={() => void handleGenerateReport()}
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="action-dashboard-generate-report"
-            style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]}
-            textColor={theme.colors.onPrimary}
-            loading={generatingReport}
+            onPress={() => {
+              if (loading || refreshing || generatingReport) {
+                return;
+              }
+              void handleGenerateReport();
+            }}
             disabled={loading || refreshing || generatingReport}
+            onHoverIn={
+              Platform.OS === 'web' ? () => setIsPdfHovered(true) : undefined
+            }
+            onHoverOut={
+              Platform.OS === 'web' ? () => setIsPdfHovered(false) : undefined
+            }
+            style={({ pressed }) => [
+              styles.pdfActionButton,
+              Platform.OS === 'web' && styles.sortActionButtonWeb,
+              {
+                backgroundColor: pressed
+                  ? withAlpha(theme.colors.primary, 0.18)
+                  : isPdfHovered
+                    ? withAlpha(theme.colors.primary, 0.12)
+                    : theme.colors.surfaceVariant,
+                borderColor:
+                  isPdfHovered || pressed
+                    ? withAlpha(theme.colors.primary, 0.7)
+                    : theme.colors.outline,
+                shadowColor: theme.colors.primary,
+                shadowOpacity: isPdfHovered ? 0.2 : 0.12,
+                shadowRadius: isPdfHovered ? 14 : 10,
+                shadowOffset: { width: 0, height: isPdfHovered ? 8 : 4 },
+                elevation: isPdfHovered ? 3 : 1,
+                opacity: loading || refreshing || generatingReport ? 0.5 : pressed ? 0.96 : 1,
+                transform: [{ translateY: isPdfHovered ? -1 : 0 }],
+              },
+            ]}
           >
-            Gerar PDF
-          </Button>
+            {generatingReport ? (
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            ) : (
+              <MaterialCommunityIcons
+                name="file-document-outline"
+                size={20}
+                color={theme.colors.primary}
+              />
+            )}
+            <Text style={[styles.pdfActionLabel, { color: theme.colors.text }]}>
+              Gerar PDF
+            </Text>
+          </Pressable>
         </View>
 
         <View style={[styles.filtersRow, !isWide && styles.filtersRowMobile]}>
@@ -636,37 +750,79 @@ export default function DashboardScreen() {
             >
               Ordenar:
             </Text>
-            {(['produto', 'quantidade', 'status'] as Array<keyof StockRow>).map((col) => (
-              <Chip
-                key={col}
-                onPress={() => handleSort(col)}
-                selected={sortBy === col}
-                selectedColor={theme.colors.onPrimary}
-                accessibilityLabel={`action-dashboard-sort-${col}`}
-                icon={
-                  sortBy === col ? (sortDirection === 'asc' ? 'arrow-up' : 'arrow-down') : undefined
-                }
-                style={[
-                  styles.sortChip,
-                  {
-                    backgroundColor:
-                      sortBy === col ? theme.colors.primary : theme.colors.surfaceVariant,
-                  },
-                ]}
-                textStyle={{
-                  color: sortBy === col ? theme.colors.onPrimary : theme.colors.text,
-                  fontWeight: '600',
-                }}
-              >
-                {col === 'produto'
+            {(['produto', 'quantidade', 'status'] as Array<keyof StockRow>).map((col) => {
+              const isSelected = sortBy === col;
+              const isHovered = hoveredSortColumn === col;
+              const label =
+                col === 'produto'
                   ? 'Produto'
                   : col === 'quantidade'
                     ? isWide
                       ? 'Quantidade'
                       : 'Qtd.'
-                    : 'Status'}
-              </Chip>
-            ))}
+                    : 'Status';
+
+              return (
+                <Pressable
+                  key={col}
+                  accessibilityRole="button"
+                  accessibilityLabel={`action-dashboard-sort-${col}`}
+                  onPress={() => handleSort(col)}
+                  onHoverIn={
+                    Platform.OS === 'web' ? () => setHoveredSortColumn(col) : undefined
+                  }
+                  onHoverOut={
+                    Platform.OS === 'web'
+                      ? () =>
+                          setHoveredSortColumn((prev) => (prev === col ? null : prev))
+                      : undefined
+                  }
+                  style={({ pressed }) => [
+                    styles.sortActionButton,
+                    Platform.OS === 'web' && styles.sortActionButtonWeb,
+                    {
+                      backgroundColor: pressed
+                        ? withAlpha(theme.colors.primary, 0.18)
+                        : isSelected || isHovered
+                          ? withAlpha(theme.colors.primary, 0.12)
+                          : theme.colors.surfaceVariant,
+                      borderColor:
+                        isSelected || isHovered || pressed
+                          ? withAlpha(theme.colors.primary, 0.7)
+                          : theme.colors.outline,
+                      shadowColor: theme.colors.primary,
+                      shadowOpacity: isSelected || isHovered ? 0.2 : 0.12,
+                      shadowRadius: isSelected || isHovered ? 14 : 10,
+                      shadowOffset: { width: 0, height: isSelected || isHovered ? 8 : 4 },
+                      elevation: isSelected || isHovered ? 3 : 1,
+                      opacity: pressed ? 0.96 : 1,
+                      transform: [{ translateY: isSelected || isHovered ? -1 : 0 }],
+                    },
+                  ]}
+                >
+                  {isSelected ? (
+                    <MaterialCommunityIcons
+                      name={sortDirection === 'asc' ? 'arrow-up' : 'arrow-down'}
+                      size={16}
+                      color={theme.colors.primary}
+                    />
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.sortActionLabel,
+                      {
+                        color:
+                          isSelected || isHovered
+                            ? theme.colors.primary
+                            : theme.colors.text,
+                      },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 
@@ -722,15 +878,42 @@ export default function DashboardScreen() {
 
             <View style={styles.list}>
               {pagedRows.map((row) => (
-                <View
+                <Pressable
                   key={row.id}
-                  style={[
-                    styles.stockCard,
-                    {
-                      backgroundColor: theme.colors.surfaceVariant,
-                      borderColor: theme.colors.outlineVariant,
-                    },
-                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`action-dashboard-open-item-details-${row.id}`}
+                  onPress={() => {
+                    setSelectedRow(row);
+                    setIsProductModalVisible(true);
+                  }}
+                  style={(state: any) => {
+                    const pressed = Boolean(state?.pressed);
+                    const hovered = Boolean(state?.hovered);
+                    const interactive = hovered || pressed;
+
+                    return [
+                      styles.stockCard,
+                      Platform.OS === 'web' && styles.sortActionButtonWeb,
+                      Platform.OS === 'web' && styles.stockCardInteractiveWeb,
+                      {
+                        backgroundColor: pressed
+                          ? withAlpha(theme.colors.primary, 0.16)
+                          : hovered
+                            ? withAlpha(theme.colors.primary, 0.1)
+                            : theme.colors.surfaceVariant,
+                        borderColor: interactive
+                          ? withAlpha(theme.colors.primary, 0.72)
+                          : theme.colors.outlineVariant,
+                        shadowColor: theme.colors.primary,
+                        shadowOpacity: interactive ? 0.2 : 0.1,
+                        shadowRadius: interactive ? 14 : 8,
+                        shadowOffset: { width: 0, height: interactive ? 8 : 4 },
+                        elevation: interactive ? 3 : 1,
+                        opacity: pressed ? 0.97 : 1,
+                        transform: [{ translateY: hovered ? -1 : 0 }],
+                      },
+                    ];
+                  }}
                 >
                   {isWide ? (
                     <View style={styles.stockDesktopRow}>
@@ -798,7 +981,7 @@ export default function DashboardScreen() {
                       </View>
                     </>
                   )}
-                </View>
+                </Pressable>
               ))}
 
               {pagedRows.length === 0 ? (
@@ -834,53 +1017,156 @@ export default function DashboardScreen() {
                 </Text>
 
                 <View style={[styles.paginationControls, !isWide && styles.paginationControlsMobile]}>
-                  <Button
-                    mode="outlined"
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="action-dashboard-page-prev"
                     onPress={() => setPage((prev) => Math.max(0, prev - 1))}
                     disabled={page === 0}
-                    accessibilityLabel="action-dashboard-page-prev"
-                    compact
-                  >
-                    Anterior
-                  </Button>
+                    style={(state: any) => {
+                      const pressed = Boolean(state?.pressed);
+                      const hovered = Boolean(state?.hovered);
+                      const disabled = page === 0;
+                      const interactive = !disabled && (hovered || pressed);
 
-                  <Button
-                    mode="outlined"
+                      return [
+                        styles.paginationActionButton,
+                        Platform.OS === 'web' && styles.sortActionButtonWeb,
+                        {
+                          backgroundColor: disabled
+                            ? theme.colors.surfaceVariant
+                            : pressed
+                              ? withAlpha(theme.colors.primary, 0.18)
+                              : hovered
+                                ? withAlpha(theme.colors.primary, 0.12)
+                                : theme.colors.surfaceVariant,
+                          borderColor: interactive
+                            ? withAlpha(theme.colors.primary, 0.7)
+                            : theme.colors.outline,
+                          shadowColor: theme.colors.primary,
+                          shadowOpacity: interactive ? 0.2 : 0.12,
+                          shadowRadius: interactive ? 14 : 10,
+                          shadowOffset: { width: 0, height: interactive ? 8 : 4 },
+                          elevation: interactive ? 3 : 1,
+                          opacity: disabled ? 0.45 : pressed ? 0.96 : 1,
+                          transform: [{ translateY: hovered && !disabled ? -1 : 0 }],
+                        },
+                      ];
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.paginationActionLabel,
+                        { color: page === 0 ? withAlpha(theme.colors.text, 0.65) : theme.colors.text },
+                      ]}
+                    >
+                      Anterior
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="action-dashboard-page-next"
                     onPress={() =>
                       setPage((prev) => Math.min(prev + 1, Math.ceil(totalItems / itemsPerPage) - 1))
                     }
                     disabled={rangeEnd >= totalItems}
-                    accessibilityLabel="action-dashboard-page-next"
-                    compact
+                    style={(state: any) => {
+                      const pressed = Boolean(state?.pressed);
+                      const hovered = Boolean(state?.hovered);
+                      const disabled = rangeEnd >= totalItems;
+                      const interactive = !disabled && (hovered || pressed);
+
+                      return [
+                        styles.paginationActionButton,
+                        Platform.OS === 'web' && styles.sortActionButtonWeb,
+                        {
+                          backgroundColor: disabled
+                            ? theme.colors.surfaceVariant
+                            : pressed
+                              ? withAlpha(theme.colors.primary, 0.18)
+                              : hovered
+                                ? withAlpha(theme.colors.primary, 0.12)
+                                : theme.colors.surfaceVariant,
+                          borderColor: interactive
+                            ? withAlpha(theme.colors.primary, 0.7)
+                            : theme.colors.outline,
+                          shadowColor: theme.colors.primary,
+                          shadowOpacity: interactive ? 0.2 : 0.12,
+                          shadowRadius: interactive ? 14 : 10,
+                          shadowOffset: { width: 0, height: interactive ? 8 : 4 },
+                          elevation: interactive ? 3 : 1,
+                          opacity: disabled ? 0.45 : pressed ? 0.96 : 1,
+                          transform: [{ translateY: hovered && !disabled ? -1 : 0 }],
+                        },
+                      ];
+                    }}
                   >
-                    Próximo
-                  </Button>
+                    <Text
+                      style={[
+                        styles.paginationActionLabel,
+                        {
+                          color:
+                            rangeEnd >= totalItems
+                              ? withAlpha(theme.colors.text, 0.65)
+                              : theme.colors.text,
+                        },
+                      ]}
+                    >
+                      Próximo
+                    </Text>
+                  </Pressable>
 
                   <View style={[styles.itemsPerPage, !isWide && styles.itemsPerPageMobile]}>
                     {[5, 8, 10].map((size) => (
-                      <Chip
+                      <Pressable
                         key={size}
-                        compact
+                        accessibilityRole="button"
+                        accessibilityLabel={`action-dashboard-page-size-${size}`}
                         onPress={() => {
                           setItemsPerPage(size);
                           setPage(0);
                         }}
-                        accessibilityLabel={`action-dashboard-page-size-${size}`}
-                        style={[
-                          styles.pageChip,
-                          {
-                            backgroundColor:
-                              itemsPerPage === size
-                                ? theme.colors.primary
-                                : theme.colors.surfaceVariant,
-                          },
-                        ]}
-                        textStyle={{
-                          color: itemsPerPage === size ? theme.colors.onPrimary : theme.colors.text,
+                        style={(state: any) => {
+                          const pressed = Boolean(state?.pressed);
+                          const hovered = Boolean(state?.hovered);
+                          const selected = itemsPerPage === size;
+                          const interactive = selected || hovered || pressed;
+
+                          return [
+                            styles.paginationSizeButton,
+                            Platform.OS === 'web' && styles.sortActionButtonWeb,
+                            {
+                              backgroundColor: pressed
+                                ? withAlpha(theme.colors.primary, 0.18)
+                                : selected || hovered
+                                  ? withAlpha(theme.colors.primary, 0.12)
+                                  : theme.colors.surfaceVariant,
+                              borderColor: interactive
+                                ? withAlpha(theme.colors.primary, 0.7)
+                                : theme.colors.outline,
+                              shadowColor: theme.colors.primary,
+                              shadowOpacity: interactive ? 0.2 : 0.12,
+                              shadowRadius: interactive ? 14 : 10,
+                              shadowOffset: { width: 0, height: interactive ? 8 : 4 },
+                              elevation: interactive ? 3 : 1,
+                              opacity: pressed ? 0.96 : 1,
+                              transform: [{ translateY: hovered ? -1 : 0 }],
+                            },
+                          ];
                         }}
                       >
-                        {size}
-                      </Chip>
+                        <Text
+                          style={[
+                            styles.paginationSizeLabel,
+                            {
+                              color:
+                                itemsPerPage === size ? theme.colors.primary : theme.colors.text,
+                            },
+                          ]}
+                        >
+                          {size}
+                        </Text>
+                      </Pressable>
                     ))}
                   </View>
                 </View>
@@ -889,6 +1175,134 @@ export default function DashboardScreen() {
           </>
         )}
       </View>
+
+      <ModalFrame
+        visible={isProductModalVisible}
+        onRequestClose={() => setIsProductModalVisible(false)}
+        containerStyle={[
+          styles.productModalContainer,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outline,
+          },
+        ]}
+      >
+        <View style={styles.productModalHeader}>
+          <Text style={[styles.productModalTitle, { color: theme.colors.primary }]}>Detalhes do produto</Text>
+          <Text style={[styles.productModalName, { color: theme.colors.text }]}>
+            {selectedRow?.produto ?? '-'}
+          </Text>
+        </View>
+
+        <View style={styles.productModalSummaryRow}>
+          <View
+            style={[
+              styles.productModalSummaryChip,
+              {
+                backgroundColor: withAlpha(theme.colors.primary, 0.12),
+                borderColor: withAlpha(theme.colors.primary, 0.4),
+              },
+            ]}
+          >
+            <Text style={[styles.productModalSummaryLabel, { color: theme.colors.primary }]}>Status</Text>
+            <Text
+              style={[
+                styles.productModalSummaryValue,
+                { color: selectedRow ? STATUS_COLOR[selectedRow.status] : theme.colors.text },
+              ]}
+            >
+              {selectedRow?.status ?? '-'}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.productModalSummaryChip,
+              {
+                backgroundColor: withAlpha(theme.colors.primary, 0.12),
+                borderColor: withAlpha(theme.colors.primary, 0.4),
+              },
+            ]}
+          >
+            <Text style={[styles.productModalSummaryLabel, { color: theme.colors.primary }]}>Quantidade</Text>
+            <Text style={[styles.productModalSummaryValue, { color: theme.colors.text }]}>
+              {selectedRow?.quantidade ?? 0}
+            </Text>
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.productModalInfoCard,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              borderColor: theme.colors.outlineVariant,
+            },
+          ]}
+        >
+          <View style={styles.productModalInfoRow}>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Codigo Wester</Text>
+            <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
+              {selectedRow?.codigoSistemaWester || 'Nao informado'}
+            </Text>
+          </View>
+
+          <View style={styles.productModalInfoRow}>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Cor</Text>
+            <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
+              {selectedRow?.cor || 'Nao informada'}
+            </Text>
+          </View>
+
+          <View style={styles.productModalInfoRow}>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Localizacao</Text>
+            <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
+              Fileira {selectedRow?.fileira ?? '-'} / Grade {selectedRow?.grade ?? '-'} / Nivel{' '}
+              {selectedRow?.nivel ?? '-'}
+            </Text>
+          </View>
+
+          <View style={[styles.productModalInfoRow, styles.productModalDescriptionRow]}>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Descricao</Text>
+            <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
+              {selectedRow?.descricao || 'Nao informada'}
+            </Text>
+          </View>
+        </View>
+
+        <Pressable
+          onPress={() => setIsProductModalVisible(false)}
+          style={(state: any) => {
+            const pressed = Boolean(state?.pressed);
+            const hovered = Boolean(state?.hovered);
+            const interactive = hovered || pressed;
+
+            return [
+              styles.productModalCloseButton,
+              Platform.OS === 'web' && styles.sortActionButtonWeb,
+              {
+                backgroundColor: pressed
+                  ? withAlpha(theme.colors.primary, 0.18)
+                  : hovered
+                    ? withAlpha(theme.colors.primary, 0.12)
+                    : theme.colors.surfaceVariant,
+                borderColor: interactive
+                  ? withAlpha(theme.colors.primary, 0.7)
+                  : theme.colors.outline,
+                shadowColor: theme.colors.primary,
+                shadowOpacity: interactive ? 0.2 : 0.1,
+                shadowRadius: interactive ? 14 : 8,
+                shadowOffset: { width: 0, height: interactive ? 8 : 4 },
+                elevation: interactive ? 3 : 1,
+                opacity: pressed ? 0.97 : 1,
+                transform: [{ translateY: hovered ? -1 : 0 }],
+              },
+            ];
+          }}
+        >
+          <Text style={[styles.productModalCloseButtonLabel, { color: theme.colors.text }]}>Fechar</Text>
+        </Pressable>
+      </ModalFrame>
     </ScrollView>
   );
 }
@@ -906,7 +1320,18 @@ const styles = StyleSheet.create({
   },
   sectionSubtitle: { marginTop: 2, fontSize: 12, fontWeight: '600' },
   sectionTitle: { fontSize: 18, fontWeight: '800' },
-  primaryButton: { borderRadius: 10, height: 40, justifyContent: 'center' },
+  pdfActionButton: {
+    borderWidth: 1,
+    borderRadius: 16,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  pdfActionLabel: { fontSize: 16, fontWeight: '800' },
   filtersRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -922,7 +1347,27 @@ const styles = StyleSheet.create({
   sortRowMobile: { flexBasis: '100%', maxWidth: '100%' },
   sortLabel: { fontSize: 12, fontWeight: '700' },
   sortLabelMobile: { width: '100%' },
-  sortChip: { borderRadius: 999 },
+  sortActionButton: {
+    borderWidth: 1,
+    borderRadius: 16,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  sortActionButtonWeb:
+    Platform.OS === 'web'
+      ? ({
+          transitionProperty:
+            'transform, box-shadow, background-color, border-color, opacity',
+          transitionDuration: '160ms',
+          transitionTimingFunction: 'ease-out',
+        } as any)
+      : ({} as any),
+  sortActionLabel: { fontSize: 14, fontWeight: '800' },
   listHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -937,6 +1382,12 @@ const styles = StyleSheet.create({
   qtyText: { textAlign: 'right' },
   list: { gap: 12, marginTop: 10 },
   stockCard: { borderRadius: 14, borderWidth: 1, padding: 14 },
+  stockCardInteractiveWeb:
+    Platform.OS === 'web'
+      ? ({
+          cursor: 'pointer',
+        } as any)
+      : ({} as any),
   stockDesktopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stockTopRow: {
     flexDirection: 'row',
@@ -973,11 +1424,120 @@ const styles = StyleSheet.create({
   paginationControlsMobile: { width: '100%' },
   itemsPerPage: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   itemsPerPageMobile: { marginLeft: 0 },
-  pageChip: { borderRadius: 999 },
+  paginationActionButton: {
+    borderWidth: 1,
+    borderRadius: 16,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  paginationActionLabel: { fontSize: 14, fontWeight: '800' },
+  paginationSizeButton: {
+    borderWidth: 1,
+    borderRadius: 16,
+    minHeight: 42,
+    minWidth: 44,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paginationSizeLabel: { fontSize: 14, fontWeight: '800' },
+  productModalContainer: {
+    width: '92%',
+    maxWidth: 560,
+    maxHeight: '88%',
+    borderRadius: 12,
+    padding: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  productModalHeader: {
+    gap: 4,
+    marginBottom: 12,
+  },
+  productModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  productModalName: {
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  productModalSummaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  productModalSummaryChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  productModalSummaryLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+  },
+  productModalSummaryValue: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  productModalInfoCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  productModalInfoRow: {
+    gap: 4,
+  },
+  productModalDescriptionRow: {
+    marginTop: 4,
+  },
+  productModalInfoLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+  },
+  productModalInfoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  productModalCloseButton: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  productModalCloseButtonLabel: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
   loadingBox: { marginTop: 8, minHeight: 188 },
   emptyBox: { paddingVertical: 24, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyText: { fontWeight: '700' },
 });
+
+
+
 
 
 

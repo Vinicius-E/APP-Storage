@@ -36,12 +36,9 @@ export default function AppTextInput({
   const accent = theme.colors.primary;
   const assistiveTextColor = Platform.OS === 'web' ? accent : secondaryText;
   const background = theme.colors.surfaceVariant;
-  const webInputStyle =
+  const webContentStyle =
     Platform.OS === 'web'
       ? ({
-          outlineStyle: 'none',
-          outlineWidth: 0,
-          borderWidth: 0,
           boxShadow: 'none',
           backgroundColor: 'transparent',
         } as any)
@@ -72,7 +69,7 @@ export default function AppTextInput({
         },
         outlineStyle,
       ]}
-      contentStyle={[styles.content, webInputStyle, contentStyle]}
+      contentStyle={[styles.content, webContentStyle, contentStyle]}
       left={withAdornmentSpacing(left, accent)}
       right={withAdornmentSpacing(right, accent)}
     />
@@ -86,12 +83,10 @@ const styles = StyleSheet.create({
     minWidth: 0,
     alignSelf: 'stretch',
     borderRadius: 12,
-    overflow: 'hidden',
   },
   outline: {
     borderRadius: 12,
     borderWidth: 1,
-    overflow: 'hidden',
   },
   content: {
     paddingVertical: 11,

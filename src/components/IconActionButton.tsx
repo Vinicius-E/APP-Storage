@@ -1,5 +1,12 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleProp,
+  StyleSheet,
+  ViewStyle,
+} from 'react-native';
 import { Icon } from 'react-native-paper';
 
 type SizePreset = 'small' | 'medium' | 'large';
@@ -30,6 +37,8 @@ const presetToPx = (value: SizePreset): number => {
   return 16;
 };
 
+const IS_WEB = Platform.OS === 'web';
+
 export function ActionIconButton(props: Props) {
   const {
     iconName,
@@ -41,6 +50,7 @@ export function ActionIconButton(props: Props) {
     borderColor,
     backgroundColor,
     iconColor,
+    primaryColor,
     stopPropagation,
     style,
     testID,
@@ -63,12 +73,27 @@ export function ActionIconButton(props: Props) {
         }
         onPress(e);
       }}
-      style={({ pressed }) => [
-        styles.btn,
-        { width, height, borderColor, backgroundColor, opacity: disabled ? 0.4 : 1 },
-        pressed && !disabled && !loading && { opacity: 0.75 },
-        style,
-      ]}
+      style={(state: any) => {
+        const pressed = Boolean(state?.pressed);
+        const hovered = Boolean(state?.hovered);
+
+        return [
+          styles.btn,
+          { width, height, borderColor, backgroundColor, opacity: disabled ? 0.4 : 1 },
+          IS_WEB && styles.webBtnAnimated,
+          hovered &&
+            IS_WEB &&
+            !disabled &&
+            !loading &&
+            ({
+              borderColor: primaryColor ?? borderColor,
+              transform: [{ translateY: -1 }],
+              boxShadow: '0 4px 10px rgba(0,0,0,0.14)',
+            } as any),
+          pressed && !disabled && !loading && { opacity: 0.75 },
+          style,
+        ];
+      }}
     >
       {loading ? (
         <ActivityIndicator size="small" color={iconColor} />
@@ -88,4 +113,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  webBtnAnimated: {
+    transitionProperty: 'transform, box-shadow, border-color, opacity',
+    transitionDuration: '140ms',
+    transitionTimingFunction: 'ease-out',
+  } as any,
 });

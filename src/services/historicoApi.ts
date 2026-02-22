@@ -47,21 +47,21 @@ export interface HistoricoMovimentacaoFilterRequestDTO {
   textoLivre?: string;
 }
 
-export interface PageResponse<T> {
+export interface SliceResponse<T> {
   content: T[];
-  totalElements: number;
-  totalPages: number;
   number: number;
   size: number;
   first: boolean;
   last: boolean;
+  totalElements?: number;
+  totalPages?: number;
 }
 
 export async function listarHistorico(
   page = 0,
   size = 20
-): Promise<PageResponse<HistoricoMovimentacaoResponseDTO>> {
-  const response = await API.get<PageResponse<HistoricoMovimentacaoResponseDTO>>(
+): Promise<SliceResponse<HistoricoMovimentacaoResponseDTO>> {
+  const response = await API.get<SliceResponse<HistoricoMovimentacaoResponseDTO>>(
     '/api/historico-movimentacao',
     { params: { page, size } }
   );
@@ -72,8 +72,8 @@ export async function filtrarHistorico(
   filterDto: HistoricoMovimentacaoFilterRequestDTO,
   page = 0,
   size = 20
-): Promise<PageResponse<HistoricoMovimentacaoResponseDTO>> {
-  const response = await API.post<PageResponse<HistoricoMovimentacaoResponseDTO>>(
+): Promise<SliceResponse<HistoricoMovimentacaoResponseDTO>> {
+  const response = await API.post<SliceResponse<HistoricoMovimentacaoResponseDTO>>(
     '/api/historico-movimentacao/filter',
     filterDto,
     { params: { page, size } }
