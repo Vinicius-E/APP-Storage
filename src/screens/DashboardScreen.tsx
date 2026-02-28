@@ -101,9 +101,7 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
   }
 
-  const rgbaMatch = color.match(
-    /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i
-  );
+  const rgbaMatch = color.match(/^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i);
   if (rgbaMatch) {
     const [, r, g, b] = rgbaMatch;
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
@@ -443,7 +441,6 @@ export default function DashboardScreen() {
     void loadDashboard(true);
   }, [loadDashboard]);
 
-
   const filteredRows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     if (!needle) {
@@ -544,11 +541,7 @@ export default function DashboardScreen() {
         const summaryLine =
           `Fileiras: ${summary.fileiras}  |  Grades: ${summary.grades}  |  ` +
           `Níveis: ${summary.niveis}  |  Itens: ${summary.itens}  |  Vazios: ${summary.vazios}`;
-        doc.text(
-          summaryLine,
-          40,
-          84
-        );
+        doc.text(summaryLine, 40, 84);
 
         const tableRows = orderedRows.map((row) => [
           row.produto,
@@ -563,8 +556,7 @@ export default function DashboardScreen() {
         const productColWidth = Math.floor(usableTableWidth * 0.28);
         const locationColWidth = Math.floor(usableTableWidth * 0.44);
         const statusColWidth = Math.floor(usableTableWidth * 0.14);
-        const qtyColWidth =
-          usableTableWidth - productColWidth - locationColWidth - statusColWidth;
+        const qtyColWidth = usableTableWidth - productColWidth - locationColWidth - statusColWidth;
 
         autoTable(doc, {
           startY: 100,
@@ -684,12 +676,8 @@ export default function DashboardScreen() {
               void handleGenerateReport();
             }}
             disabled={loading || refreshing || generatingReport}
-            onHoverIn={
-              Platform.OS === 'web' ? () => setIsPdfHovered(true) : undefined
-            }
-            onHoverOut={
-              Platform.OS === 'web' ? () => setIsPdfHovered(false) : undefined
-            }
+            onHoverIn={Platform.OS === 'web' ? () => setIsPdfHovered(true) : undefined}
+            onHoverOut={Platform.OS === 'web' ? () => setIsPdfHovered(false) : undefined}
             style={({ pressed }) => [
               styles.pdfActionButton,
               Platform.OS === 'web' && styles.sortActionButtonWeb,
@@ -722,9 +710,7 @@ export default function DashboardScreen() {
                 color={theme.colors.primary}
               />
             )}
-            <Text style={[styles.pdfActionLabel, { color: theme.colors.text }]}>
-              Gerar PDF
-            </Text>
+            <Text style={[styles.pdfActionLabel, { color: theme.colors.text }]}>Gerar PDF</Text>
           </Pressable>
         </View>
 
@@ -768,13 +754,10 @@ export default function DashboardScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`action-dashboard-sort-${col}`}
                   onPress={() => handleSort(col)}
-                  onHoverIn={
-                    Platform.OS === 'web' ? () => setHoveredSortColumn(col) : undefined
-                  }
+                  onHoverIn={Platform.OS === 'web' ? () => setHoveredSortColumn(col) : undefined}
                   onHoverOut={
                     Platform.OS === 'web'
-                      ? () =>
-                          setHoveredSortColumn((prev) => (prev === col ? null : prev))
+                      ? () => setHoveredSortColumn((prev) => (prev === col ? null : prev))
                       : undefined
                   }
                   style={({ pressed }) => [
@@ -811,10 +794,7 @@ export default function DashboardScreen() {
                     style={[
                       styles.sortActionLabel,
                       {
-                        color:
-                          isSelected || isHovered
-                            ? theme.colors.primary
-                            : theme.colors.text,
+                        color: isSelected || isHovered ? theme.colors.primary : theme.colors.text,
                       },
                     ]}
                   >
@@ -1016,7 +996,9 @@ export default function DashboardScreen() {
                   {rangeStart}-{rangeEnd} de {totalItems}
                 </Text>
 
-                <View style={[styles.paginationControls, !isWide && styles.paginationControlsMobile]}>
+                <View
+                  style={[styles.paginationControls, !isWide && styles.paginationControlsMobile]}
+                >
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="action-dashboard-page-prev"
@@ -1056,7 +1038,10 @@ export default function DashboardScreen() {
                     <Text
                       style={[
                         styles.paginationActionLabel,
-                        { color: page === 0 ? withAlpha(theme.colors.text, 0.65) : theme.colors.text },
+                        {
+                          color:
+                            page === 0 ? withAlpha(theme.colors.text, 0.65) : theme.colors.text,
+                        },
                       ]}
                     >
                       Anterior
@@ -1067,7 +1052,9 @@ export default function DashboardScreen() {
                     accessibilityRole="button"
                     accessibilityLabel="action-dashboard-page-next"
                     onPress={() =>
-                      setPage((prev) => Math.min(prev + 1, Math.ceil(totalItems / itemsPerPage) - 1))
+                      setPage((prev) =>
+                        Math.min(prev + 1, Math.ceil(totalItems / itemsPerPage) - 1)
+                      )
                     }
                     disabled={rangeEnd >= totalItems}
                     style={(state: any) => {
@@ -1188,7 +1175,9 @@ export default function DashboardScreen() {
         ]}
       >
         <View style={styles.productModalHeader}>
-          <Text style={[styles.productModalTitle, { color: theme.colors.primary }]}>Detalhes do produto</Text>
+          <Text style={[styles.productModalTitle, { color: theme.colors.primary }]}>
+            Detalhes do produto
+          </Text>
           <Text style={[styles.productModalName, { color: theme.colors.text }]}>
             {selectedRow?.produto ?? '-'}
           </Text>
@@ -1204,7 +1193,9 @@ export default function DashboardScreen() {
               },
             ]}
           >
-            <Text style={[styles.productModalSummaryLabel, { color: theme.colors.primary }]}>Status</Text>
+            <Text style={[styles.productModalSummaryLabel, { color: theme.colors.primary }]}>
+              Status
+            </Text>
             <Text
               style={[
                 styles.productModalSummaryValue,
@@ -1224,7 +1215,9 @@ export default function DashboardScreen() {
               },
             ]}
           >
-            <Text style={[styles.productModalSummaryLabel, { color: theme.colors.primary }]}>Quantidade</Text>
+            <Text style={[styles.productModalSummaryLabel, { color: theme.colors.primary }]}>
+              Quantidade
+            </Text>
             <Text style={[styles.productModalSummaryValue, { color: theme.colors.text }]}>
               {selectedRow?.quantidade ?? 0}
             </Text>
@@ -1241,7 +1234,9 @@ export default function DashboardScreen() {
           ]}
         >
           <View style={styles.productModalInfoRow}>
-            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Codigo Wester</Text>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
+              Codigo Wester
+            </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
               {selectedRow?.codigoSistemaWester || 'Nao informado'}
             </Text>
@@ -1255,7 +1250,9 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.productModalInfoRow}>
-            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Localizacao</Text>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
+              Localizacao
+            </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
               Fileira {selectedRow?.fileira ?? '-'} / Grade {selectedRow?.grade ?? '-'} / Nivel{' '}
               {selectedRow?.nivel ?? '-'}
@@ -1263,7 +1260,9 @@ export default function DashboardScreen() {
           </View>
 
           <View style={[styles.productModalInfoRow, styles.productModalDescriptionRow]}>
-            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Descricao</Text>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
+              Descricao
+            </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
               {selectedRow?.descricao || 'Nao informada'}
             </Text>
@@ -1300,7 +1299,9 @@ export default function DashboardScreen() {
             ];
           }}
         >
-          <Text style={[styles.productModalCloseButtonLabel, { color: theme.colors.text }]}>Fechar</Text>
+          <Text style={[styles.productModalCloseButtonLabel, { color: theme.colors.text }]}>
+            Fechar
+          </Text>
         </Pressable>
       </ModalFrame>
     </ScrollView>
@@ -1345,7 +1346,7 @@ const styles = StyleSheet.create({
   filterInputMobile: { minWidth: 0, width: '100%' },
   sortRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   sortRowMobile: { flexBasis: '100%', maxWidth: '100%' },
-  sortLabel: { fontSize: 12, fontWeight: '700' },
+  sortLabel: { fontSize: 16, fontWeight: '700' },
   sortLabelMobile: { width: '100%' },
   sortActionButton: {
     borderWidth: 1,
@@ -1361,8 +1362,7 @@ const styles = StyleSheet.create({
   sortActionButtonWeb:
     Platform.OS === 'web'
       ? ({
-          transitionProperty:
-            'transform, box-shadow, background-color, border-color, opacity',
+          transitionProperty: 'transform, box-shadow, background-color, border-color, opacity',
           transitionDuration: '160ms',
           transitionTimingFunction: 'ease-out',
         } as any)
@@ -1535,10 +1535,3 @@ const styles = StyleSheet.create({
   emptyBox: { paddingVertical: 24, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyText: { fontWeight: '700' },
 });
-
-
-
-
-
-
-

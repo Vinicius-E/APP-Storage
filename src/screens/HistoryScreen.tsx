@@ -109,9 +109,7 @@ function formatKnownLocation(parts: Partial<LocationParts>): string {
 
 function hasFullLocation(parts: Partial<LocationParts>): boolean {
   return Boolean(
-    normalizeLabel(parts.fileira) &&
-      normalizeLabel(parts.grade) &&
-      normalizeLabel(parts.nivel)
+    normalizeLabel(parts.fileira) && normalizeLabel(parts.grade) && normalizeLabel(parts.nivel)
   );
 }
 
@@ -149,9 +147,7 @@ function cleanExtractedToken(value: string | undefined): string {
   return normalizeLabel(value).replace(/[.,;:)\]]+$/g, '');
 }
 
-function parseLocationFromDetails(
-  details: string | null | undefined
-): Partial<LocationParts> {
+function parseLocationFromDetails(details: string | null | undefined): Partial<LocationParts> {
   const content = normalizeLabel(details);
   if (!content) {
     return {};
@@ -168,9 +164,7 @@ function parseLocationFromDetails(
   };
 }
 
-function parseRemovedItemIdFromDetails(
-  details: string | null | undefined
-): number | undefined {
+function parseRemovedItemIdFromDetails(details: string | null | undefined): number | undefined {
   const content = normalizeLabel(details);
   if (!content) {
     return undefined;
@@ -263,9 +257,7 @@ function mergeLocationForReference(
         normalizeLabel(gradeFromId?.fileira) ||
         fileiraFromId,
       grade:
-        normalizeLabel(existingLevel?.grade) ||
-        gradeLabel ||
-        normalizeLabel(gradeFromId?.grade),
+        normalizeLabel(existingLevel?.grade) || gradeLabel || normalizeLabel(gradeFromId?.grade),
       nivel: normalizeLabel(existingLevel?.nivel) || nivelLabel,
     };
   }
@@ -284,8 +276,7 @@ function resolveLocationFromReference(
   mappedGradeById: GradeById,
   mappedFileiraById: FileiraById
 ): LocationParts {
-  const mappedLevel =
-    typeof reference.nivelId === 'number' ? mapped[reference.nivelId] : undefined;
+  const mappedLevel = typeof reference.nivelId === 'number' ? mapped[reference.nivelId] : undefined;
   const mappedGrade =
     typeof reference.gradeId === 'number' ? mappedGradeById[reference.gradeId] : undefined;
   const mappedFileira =
@@ -303,9 +294,7 @@ function resolveLocationFromReference(
       normalizeLabel(reference.grade) ||
       normalizeLabel(mappedLevel?.grade) ||
       normalizeLabel(mappedGrade?.grade),
-    nivel:
-      normalizeLabel(reference.nivel) ||
-      normalizeLabel(mappedLevel?.nivel),
+    nivel: normalizeLabel(reference.nivel) || normalizeLabel(mappedLevel?.nivel),
   };
 }
 
@@ -634,9 +623,8 @@ function locationLabel(
     typeof item.itemEstoqueId === 'number' ? itemLocationById[item.itemEstoqueId] : undefined;
   const mappedByRemovedItemId =
     typeof removedItemId === 'number' ? itemLocationById[removedItemId] : undefined;
-  const mappedByMinuteNivel = minuteNivelLocationByKey[
-    toMinuteNivelKey(item.timestamp, parsedFromDetails.nivel)
-  ];
+  const mappedByMinuteNivel =
+    minuteNivelLocationByKey[toMinuteNivelKey(item.timestamp, parsedFromDetails.nivel)];
   const mappedCurrent = mapByNivelId(item.nivelId, locationByNivelId);
   const mappedOrigin = mapByNivelId(item.nivelOrigemId, locationByNivelId);
   const mappedDestination = mapByNivelId(item.nivelDestinoId, locationByNivelId);
@@ -648,19 +636,19 @@ function locationLabel(
   const mappedDestinationFileira = mapByFileiraId(item.fileiraDestinoId, fileiraById);
   const hasOriginReference = Boolean(
     item.nivelOrigemId ||
-      normalizeLabel(item.nivelOrigemIdentificador) ||
-      item.gradeOrigemId ||
-      normalizeLabel(item.gradeOrigemIdentificador) ||
-      item.fileiraOrigemId ||
-      normalizeLabel(item.fileiraOrigemIdentificador)
+    normalizeLabel(item.nivelOrigemIdentificador) ||
+    item.gradeOrigemId ||
+    normalizeLabel(item.gradeOrigemIdentificador) ||
+    item.fileiraOrigemId ||
+    normalizeLabel(item.fileiraOrigemIdentificador)
   );
   const hasDestinationReference = Boolean(
     item.nivelDestinoId ||
-      normalizeLabel(item.nivelDestinoIdentificador) ||
-      item.gradeDestinoId ||
-      normalizeLabel(item.gradeDestinoIdentificador) ||
-      item.fileiraDestinoId ||
-      normalizeLabel(item.fileiraDestinoIdentificador)
+    normalizeLabel(item.nivelDestinoIdentificador) ||
+    item.gradeDestinoId ||
+    normalizeLabel(item.gradeDestinoIdentificador) ||
+    item.fileiraDestinoId ||
+    normalizeLabel(item.fileiraDestinoIdentificador)
   );
 
   const current = {
@@ -700,9 +688,7 @@ function locationLabel(
       normalizeLabel(item.gradeOrigemIdentificador) ||
       normalizeLabel(mappedOrigin?.grade) ||
       normalizeLabel(mappedOriginGrade?.grade),
-    nivel:
-      normalizeLabel(item.nivelOrigemIdentificador) ||
-      normalizeLabel(mappedOrigin?.nivel),
+    nivel: normalizeLabel(item.nivelOrigemIdentificador) || normalizeLabel(mappedOrigin?.nivel),
   };
 
   const destination = {
@@ -716,8 +702,7 @@ function locationLabel(
       normalizeLabel(mappedDestination?.grade) ||
       normalizeLabel(mappedDestinationGrade?.grade),
     nivel:
-      normalizeLabel(item.nivelDestinoIdentificador) ||
-      normalizeLabel(mappedDestination?.nivel),
+      normalizeLabel(item.nivelDestinoIdentificador) || normalizeLabel(mappedDestination?.nivel),
   };
 
   const canShowRoute =
@@ -761,6 +746,7 @@ export default function HistoryScreen() {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [isApplyingFilters, setIsApplyingFilters] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -773,8 +759,9 @@ export default function HistoryScreen() {
   const [itemLocationById, setItemLocationById] = useState<ItemLocationById>({});
   const [minuteNivelLocationByKey, setMinuteNivelLocationByKey] =
     useState<MinuteNivelLocationByKey>({});
-  const [appliedFilterDto, setAppliedFilterDto] =
-    useState<HistoricoMovimentacaoFilterRequestDTO>({});
+  const [appliedFilterDto, setAppliedFilterDto] = useState<HistoricoMovimentacaoFilterRequestDTO>(
+    {}
+  );
   const locationByNivelIdRef = useRef<LocationByNivelId>({});
   const gradeByIdRef = useRef<GradeById>({});
   const fileiraByIdRef = useRef<FileiraById>({});
@@ -854,13 +841,7 @@ export default function HistoryScreen() {
         );
       }
 
-      commitLocationMaps(
-        nextByNivel,
-        nextByGrade,
-        nextByFileira,
-        nextByItem,
-        nextByMinuteNivel
-      );
+      commitLocationMaps(nextByNivel, nextByGrade, nextByFileira, nextByItem, nextByMinuteNivel);
     },
     [commitLocationMaps]
   );
@@ -918,12 +899,26 @@ export default function HistoryScreen() {
         filterDtoRef.current = forcedFilter;
         setAppliedFilterDto(forcedFilter);
       }
+      setItems([]);
+      setLoading(true);
+      setErrorMessage('');
       setPage(0);
       setHasMore(true);
       await fetchPage(0, false, 'initial', forcedFilter);
     },
     [fetchPage]
   );
+
+  const handleApplyFilters = useCallback(async () => {
+    setIsOperationDropdownOpen(false);
+    setIsApplyingFilters(true);
+
+    try {
+      await loadFirstPage(filterDto);
+    } finally {
+      setIsApplyingFilters(false);
+    }
+  }, [filterDto, loadFirstPage]);
 
   const openDatePicker = useCallback(() => {
     if (isCompactDatePicker) {
@@ -1003,23 +998,26 @@ export default function HistoryScreen() {
     await fetchPage(page + 1, true, 'more');
   }, [fetchPage, hasMore, loading, loadingMore, page]);
 
-  const openDetails = useCallback(async (id: number) => {
-    setDetailLoading(true);
-    try {
-      const detail = await buscarHistoricoPorId(id);
-      mergeLocationHintsFromRows([detail]);
-      setSelected(detail);
-    } catch (error: any) {
-      const fallback = 'Não foi possível carregar os detalhes.';
-      const backendMessage =
-        typeof error?.response?.data === 'string'
-          ? error.response.data
-          : (error?.response?.data?.message ?? '');
-      setSnackbarMessage(backendMessage || fallback);
-    } finally {
-      setDetailLoading(false);
-    }
-  }, [mergeLocationHintsFromRows]);
+  const openDetails = useCallback(
+    async (id: number) => {
+      setDetailLoading(true);
+      try {
+        const detail = await buscarHistoricoPorId(id);
+        mergeLocationHintsFromRows([detail]);
+        setSelected(detail);
+      } catch (error: any) {
+        const fallback = 'Não foi possível carregar os detalhes.';
+        const backendMessage =
+          typeof error?.response?.data === 'string'
+            ? error.response.data
+            : (error?.response?.data?.message ?? '');
+        setSnackbarMessage(backendMessage || fallback);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [mergeLocationHintsFromRows]
+  );
 
   const renderItem = ({ item }: { item: HistoricoMovimentacaoResponseDTO }) => {
     const tone = operationTone(item.tipoOperacao);
@@ -1154,7 +1152,9 @@ export default function HistoryScreen() {
                       isOperationDropdownOpen && styles.operationDropdownWrapOpen,
                     ]}
                   >
-                    <Text style={[styles.filterLabel, { color: theme.colors.primary }]}>Status</Text>
+                    <Text style={[styles.filterLabel, { color: theme.colors.primary }]}>
+                      Status
+                    </Text>
 
                     <Pressable
                       accessibilityRole="button"
@@ -1191,7 +1191,9 @@ export default function HistoryScreen() {
 
                         return (
                           <>
-                            <Text style={[styles.operationDropdownValue, { color: triggerTextColor }]}>
+                            <Text
+                              style={[styles.operationDropdownValue, { color: triggerTextColor }]}
+                            >
                               {selectedOperationLabel}
                             </Text>
                             <MaterialCommunityIcons
@@ -1336,17 +1338,16 @@ export default function HistoryScreen() {
                       </Button>
                       <Button
                         mode="contained"
-                        onPress={() => {
-                          setIsOperationDropdownOpen(false);
-                          void loadFirstPage(filterDto);
-                        }}
+                        onPress={() => void handleApplyFilters()}
                         accessibilityLabel="action-historico-aplicar"
+                        loading={isApplyingFilters}
+                        disabled={isApplyingFilters}
                         style={[
                           styles.headerActionButton,
                           isCompact && styles.headerActionButtonCompact,
                         ]}
                       >
-                        Aplicar filtros
+                        Filtrar
                       </Button>
                     </View>
                   </View>
@@ -1643,7 +1644,13 @@ const styles = StyleSheet.create({
   historyHeaderBase: { zIndex: 1, position: 'relative' },
   historyHeaderRaised: { zIndex: 220, position: 'relative' },
   headerFrame: { gap: 12, overflow: 'visible', position: 'relative' },
-  section: { borderRadius: 16, borderWidth: 1, padding: 14, overflow: 'visible', position: 'relative' },
+  section: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    overflow: 'visible',
+    position: 'relative',
+  },
   sectionRaised: { zIndex: 240, elevation: 10 },
   input: { marginBottom: 8 },
   filtersStack: {
@@ -1655,7 +1662,7 @@ const styles = StyleSheet.create({
   },
   filtersRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'flex-end',
     gap: 10,
     overflow: 'visible',
     position: 'relative',
@@ -1729,9 +1736,10 @@ const styles = StyleSheet.create({
   operationDropdownOptionText: { fontSize: 14, fontWeight: '700' },
   filtersFooter: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
+    flexWrap: 'nowrap',
+    alignItems: 'flex-end',
     gap: 8,
+    justifyContent: 'flex-end',
     marginLeft: 'auto',
     position: 'relative',
     zIndex: 20,
@@ -1765,8 +1773,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: 8,
+    marginLeft: 'auto',
   },
   headerActionsCompact: { marginLeft: 0, width: '100%' },
   headerActionButton: { minWidth: 96 },
@@ -1921,4 +1930,3 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 22, fontWeight: '900' },
   details: { fontSize: 14, lineHeight: 22, fontWeight: '600' },
 });
-
