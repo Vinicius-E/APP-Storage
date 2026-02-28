@@ -748,94 +748,101 @@ export default function UserScreen() {
           isOpen && styles.filterDropdownGroupOpen,
         ]}
       >
-        <Text style={[styles.filterLabel, { color: '#000000' }]}>{label}</Text>
+        <Text style={[styles.filterLabel, { color: theme.colors.primary }]}>{label}</Text>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`action-users-filter-${dropdownKey}-toggle`}
-          accessibilityState={{ expanded: isOpen }}
-          onPress={() => setOpenDropdown((prev) => (prev === dropdownKey ? null : dropdownKey))}
-          style={(state) => [
-            styles.filterDropdownTrigger,
-            actionTransitionStyle,
-            resolveInteractiveStyle(state, { variant: 'neutral', selected: isOpen }),
+        <View
+          style={[
+            styles.filterDropdownAnchor,
+            isOpen && styles.filterDropdownAnchorOpen,
           ]}
         >
-          {(state) => {
-            const textColor = resolveInteractiveTextColor(state, {
-              variant: 'neutral',
-              selected: isOpen,
-            });
-            const iconColor = resolveInteractiveIconColor(state, {
-              variant: 'neutral',
-              selected: isOpen,
-            });
-
-            return (
-              <>
-                <Text style={[styles.filterDropdownValue, { color: textColor }]}>{selectedLabel}</Text>
-                <MaterialCommunityIcons
-                  name={isOpen ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={iconColor}
-                />
-              </>
-            );
-          }}
-        </Pressable>
-
-        {isOpen ? (
-          <View
-            style={[
-              styles.filterDropdownMenu,
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`action-users-filter-${dropdownKey}-toggle`}
+            accessibilityState={{ expanded: isOpen }}
+            onPress={() => setOpenDropdown((prev) => (prev === dropdownKey ? null : dropdownKey))}
+            style={(state) => [
+              styles.filterDropdownTrigger,
+              actionTransitionStyle,
+              resolveInteractiveStyle(state, { variant: 'neutral', selected: isOpen }),
             ]}
           >
-            {options.map((option) => {
-              const selected = option.value === value;
+            {(state) => {
+              const textColor = resolveInteractiveTextColor(state, {
+                variant: 'neutral',
+                selected: isOpen,
+              });
+              const iconColor = resolveInteractiveIconColor(state, {
+                variant: 'neutral',
+                selected: isOpen,
+              });
 
               return (
-                <Pressable
-                  key={`${dropdownKey}-${option.value}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={option.accessibilityLabel}
-                  accessibilityState={{ selected }}
-                  onPress={() => {
-                    onSelect(option.value);
-                    setOpenDropdown(null);
-                  }}
-                  style={(state) => [
-                    styles.filterDropdownOption,
-                    actionTransitionStyle,
-                    resolveInteractiveStyle(state, { variant: 'neutral', selected }),
-                  ]}
-                >
-                  {(state) => {
-                    const textColor = resolveInteractiveTextColor(state, {
-                      variant: 'neutral',
-                      selected,
-                    });
-                    const iconColor = resolveInteractiveIconColor(state, {
-                      variant: 'neutral',
-                      selected,
-                    });
-
-                    return (
-                      <>
-                        <Text style={[styles.filterDropdownOptionText, { color: textColor }]}>
-                          {option.label}
-                        </Text>
-                        {selected ? (
-                          <MaterialCommunityIcons name="check" size={16} color={iconColor} />
-                        ) : null}
-                      </>
-                    );
-                  }}
-                </Pressable>
+                <>
+                  <Text style={[styles.filterDropdownValue, { color: textColor }]}>{selectedLabel}</Text>
+                  <MaterialCommunityIcons
+                    name={isOpen ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={iconColor}
+                  />
+                </>
               );
-            })}
-          </View>
-        ) : null}
+            }}
+          </Pressable>
+
+          {isOpen ? (
+            <View
+              style={[
+                styles.filterDropdownMenu,
+                { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
+              ]}
+            >
+              {options.map((option) => {
+                const selected = option.value === value;
+
+                return (
+                  <Pressable
+                    key={`${dropdownKey}-${option.value}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={option.accessibilityLabel}
+                    accessibilityState={{ selected }}
+                    onPress={() => {
+                      onSelect(option.value);
+                      setOpenDropdown(null);
+                    }}
+                    style={(state) => [
+                      styles.filterDropdownOption,
+                      actionTransitionStyle,
+                      resolveInteractiveStyle(state, { variant: 'neutral', selected }),
+                    ]}
+                  >
+                    {(state) => {
+                      const textColor = resolveInteractiveTextColor(state, {
+                        variant: 'neutral',
+                        selected,
+                      });
+                      const iconColor = resolveInteractiveIconColor(state, {
+                        variant: 'neutral',
+                        selected,
+                      });
+
+                      return (
+                        <>
+                          <Text style={[styles.filterDropdownOptionText, { color: textColor }]}>
+                            {option.label}
+                          </Text>
+                          {selected ? (
+                            <MaterialCommunityIcons name="check" size={16} color={iconColor} />
+                          ) : null}
+                        </>
+                      );
+                    }}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
       </View>
     );
   };
@@ -853,6 +860,7 @@ export default function UserScreen() {
         <Surface
           style={[
             styles.sectionCard,
+            openDropdown !== null && styles.sectionCardRaised,
             { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
           ]}
           elevation={0}
@@ -868,8 +876,20 @@ export default function UserScreen() {
             left={<TextInput.Icon icon="magnify" />}
           />
 
-          <View style={[styles.filterControlsRow, isCompact && styles.filterControlsRowCompact]}>
-            <View style={[styles.filterDropdownRow, isCompact && styles.filterDropdownRowCompact]}>
+          <View
+            style={[
+              styles.filterControlsRow,
+              isCompact && styles.filterControlsRowCompact,
+              openDropdown !== null && styles.filterControlsRowRaised,
+            ]}
+          >
+            <View
+              style={[
+                styles.filterDropdownRow,
+                isCompact && styles.filterDropdownRowCompact,
+                openDropdown !== null && styles.filterDropdownRowRaised,
+              ]}
+            >
               {renderFilterDropdown({
                 dropdownKey: 'status',
                 label: 'Status',
@@ -896,6 +916,7 @@ export default function UserScreen() {
                 style={(state) => [
                   styles.actionButtonBase,
                   styles.topActionBtn,
+                  isCompact && styles.topActionBtnCompact,
                   actionTransitionStyle,
                   resolveInteractiveStyle(state, {
                     variant: 'neutral',
@@ -920,7 +941,12 @@ export default function UserScreen() {
                       ) : (
                         <MaterialCommunityIcons name="refresh" size={18} color={iconColor} />
                       )}
-                      <Text style={[styles.actionButtonText, { color: contentColor }]}>Recarregar</Text>
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.actionButtonText, { color: contentColor }]}
+                      >
+                        Recarregar
+                      </Text>
                     </>
                   );
                 }}
@@ -934,6 +960,7 @@ export default function UserScreen() {
                 style={(state) => [
                   styles.actionButtonBase,
                   styles.createBtn,
+                  isCompact && styles.createBtnCompact,
                   actionTransitionStyle,
                   resolveInteractiveStyle(state, {
                     variant: 'neutral',
@@ -992,7 +1019,7 @@ export default function UserScreen() {
           </Surface>
         ) : null}
 
-        <View style={styles.listBlock}>
+        {!loading && !errorMessage ? <View style={styles.listBlock}>
           {filteredUsers.map((user) => {
             const enabled = Object.values(user.permissions).filter(Boolean).length;
             const isUserActive = user.status === 'active';
@@ -1080,7 +1107,13 @@ export default function UserScreen() {
                     </View>
                   </View>
 
-                  <View style={[styles.tags, isCompact && styles.tagsCompact]}>
+                  <View
+                    style={[
+                      styles.tags,
+                      !isCompact && styles.tagsCentered,
+                      isCompact && styles.tagsCompact,
+                    ]}
+                  >
                     <View pointerEvents="none">
                       <Chip compact>{user.role}</Chip>
                     </View>
@@ -1212,7 +1245,7 @@ export default function UserScreen() {
             );
           })}
 
-          {!loading && !errorMessage && filteredUsers.length === 0 ? (
+          {filteredUsers.length === 0 ? (
             <Surface
               style={[
                 styles.empty,
@@ -1227,7 +1260,7 @@ export default function UserScreen() {
               />
             </Surface>
           ) : null}
-        </View>
+        </View> : null}
       </ScrollView>
 
       <Portal>
@@ -1488,7 +1521,11 @@ export default function UserScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 14 },
-  sectionCard: { borderRadius: 16, borderWidth: 1, padding: 14 },
+  sectionCard: { borderRadius: 16, borderWidth: 1, padding: 14, overflow: 'visible' },
+  sectionCardRaised: {
+    zIndex: 120,
+    elevation: 8,
+  },
   actionButtonBase: {
     borderWidth: 1,
     borderRadius: 999,
@@ -1501,8 +1538,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   topActionBtn: { minWidth: 152 },
+  topActionBtnCompact: { flex: 1, minWidth: 0 },
   createBtn: { minWidth: 170 },
-  actionButtonText: { fontSize: 14, fontWeight: '800' },
+  createBtnCompact: { flex: 1, minWidth: 0 },
+  actionButtonText: { flexShrink: 1, fontSize: 14, fontWeight: '800' },
   input: { marginBottom: 8 },
   filterRow: {
     flexDirection: 'row',
@@ -1517,7 +1556,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: 12,
+    overflow: 'visible',
   },
+  filterControlsRowRaised: { zIndex: 140 },
   filterControlsRowCompact: {
     flexDirection: 'column',
     alignItems: 'stretch',
@@ -1528,7 +1569,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     flex: 1,
+    overflow: 'visible',
   },
+  filterDropdownRowRaised: { zIndex: 150 },
   filterDropdownRowCompact: { flexDirection: 'column', gap: 10 },
   filterActionsRow: {
     flexDirection: 'row',
@@ -1537,11 +1580,36 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 8,
   },
-  filterActionsRowCompact: { justifyContent: 'flex-start', width: '100%' },
-  filterDropdownGroup: { flex: 1, minWidth: 200, maxWidth: 320 },
+  filterActionsRowCompact: {
+    width: '100%',
+    flexWrap: 'nowrap',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+  },
+  filterDropdownGroup: {
+    flex: 1,
+    minWidth: 200,
+    maxWidth: 320,
+    position: 'relative',
+    overflow: 'visible',
+  },
   filterDropdownGroupCompact: { width: '100%', minWidth: 0, maxWidth: '100%' },
-  filterDropdownGroupOpen: { zIndex: 2 },
-  filterLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  filterDropdownGroupOpen: { zIndex: 160, elevation: 12 },
+  filterLabel: {
+    marginBottom: 8,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  filterDropdownAnchor: {
+    position: 'relative',
+    overflow: 'visible',
+  },
+  filterDropdownAnchorOpen: {
+    zIndex: 180,
+    elevation: 14,
+  },
   filterDropdownTrigger: {
     borderWidth: 1,
     borderRadius: 12,
@@ -1555,11 +1623,20 @@ const styles = StyleSheet.create({
   },
   filterDropdownValue: { fontSize: 14, fontWeight: '700' },
   filterDropdownMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
     marginTop: 8,
     borderWidth: 1,
     borderRadius: 12,
     padding: 6,
     gap: 6,
+    zIndex: 220,
+    elevation: 18,
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
   },
   filterDropdownOption: {
     borderWidth: 1,
@@ -1594,6 +1671,7 @@ const styles = StyleSheet.create({
   userAvatarText: { fontSize: 15, fontWeight: '800' },
   userMeta: { flex: 1, gap: 2 },
   tags: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  tagsCentered: { alignSelf: 'center' },
   tagsCompact: { justifyContent: 'flex-start' },
   userFacts: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   userFactPill: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3 },

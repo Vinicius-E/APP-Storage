@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, StyleSheet, Text, Pressable, ScrollView } from 'react-native';
+import { Modal, View, StyleSheet, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
 
 interface Props {
   visible: boolean;
@@ -9,7 +9,12 @@ interface Props {
 }
 
 export default function AlertDialog({ visible, message, type, onDismiss }: Props) {
+  const { width, height } = useWindowDimensions();
   if (!visible) return null;
+  const isCompact = width < 420;
+  const dialogWidth = Math.min(width - (isCompact ? 24 : 32), 520);
+  const dialogMaxHeight = Math.max(220, height * 0.84);
+  const messageMaxHeight = Math.max(80, Math.min(height * 0.28, isCompact ? 180 : 320));
 
   const tone =
     {
@@ -33,24 +38,75 @@ export default function AlertDialog({ visible, message, type, onDismiss }: Props
 
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.overlay}>
+      <View
+        style={[
+          styles.overlay,
+          {
+            paddingHorizontal: isCompact ? 12 : 16,
+            paddingVertical: isCompact ? 16 : 20,
+          },
+        ]}
+      >
         <View
           style={[
             styles.modalContainer,
-            { borderColor: tone.accent, shadowColor: tone.accent, backgroundColor: '#fff' },
+            {
+              width: dialogWidth,
+              maxHeight: dialogMaxHeight,
+              borderColor: tone.accent,
+              shadowColor: tone.accent,
+              backgroundColor: '#fff',
+              borderRadius: isCompact ? 16 : 18,
+              paddingVertical: isCompact ? 22 : 28,
+              paddingHorizontal: isCompact ? 18 : 24,
+            },
           ]}
         >
-          <Text style={[styles.title, { color: tone.accent }]}>{getTitle()}</Text>
+          <Text
+            style={[
+              styles.title,
+              {
+                color: tone.accent,
+                fontSize: isCompact ? 20 : 22,
+                marginBottom: isCompact ? 10 : 12,
+              },
+            ]}
+          >
+            {getTitle()}
+          </Text>
           <ScrollView
-            style={styles.messageScroll}
+            style={[
+              styles.messageScroll,
+              {
+                maxHeight: messageMaxHeight,
+                marginBottom: isCompact ? 18 : 22,
+              },
+            ]}
             contentContainerStyle={styles.messageScrollContent}
             showsVerticalScrollIndicator
           >
-            <Text style={styles.message}>{message}</Text>
+            <Text
+              style={[
+                styles.message,
+                {
+                  fontSize: isCompact ? 15 : 16,
+                  lineHeight: isCompact ? 21 : 22,
+                },
+              ]}
+            >
+              {message}
+            </Text>
           </ScrollView>
 
           <Pressable
-            style={[styles.button, { backgroundColor: tone.accent }]}
+            style={[
+              styles.button,
+              {
+                backgroundColor: tone.accent,
+                alignSelf: isCompact ? 'stretch' : 'flex-end',
+                minWidth: isCompact ? 0 : 100,
+              },
+            ]}
             android_ripple={{ color: tone.subtle }}
             onPress={onDismiss}
           >
@@ -73,7 +129,6 @@ const styles = StyleSheet.create({
   },
 
   modalContainer: {
-    width: '92%',
     maxWidth: 520, // melhor proporcional com sua UI
     maxHeight: '84%',
     backgroundColor: '#fff',

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { NavigationProp, ParamListBase, useNavigation } from '@react-navigation/native';
 import { AxiosError } from 'axios';
 import { useAuth } from '../../auth/AuthContext';
@@ -15,6 +15,7 @@ type DialogType = 'success' | 'error' | 'warning';
 const MIN_PASSWORD_LENGTH = 6;
 
 export default function LoginScreen() {
+  const { width, height } = useWindowDimensions();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -26,10 +27,13 @@ export default function LoginScreen() {
   const [dialogVisible, setDialogVisible] = useState(false);
   const [dialogMsg, setDialogMsg] = useState('');
   const [dialogType, setDialogType] = useState<DialogType>('success');
+  const [navigateAfterDialog, setNavigateAfterDialog] = useState(false);
 
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { theme } = useThemeContext();
   const { signIn } = useAuth();
+  const isCompact = width < 420;
+  const isShortViewport = height < 760;
 
   const emailValue = email.trim();
   const emailValid = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue), [emailValue]);
@@ -42,10 +46,25 @@ export default function LoginScreen() {
       ? `A senha deve ter no minimo ${MIN_PASSWORD_LENGTH} caracteres.`
       : undefined;
 
-  const openDialog = (type: DialogType, message: string) => {
+  const openDialog = (type: DialogType, message: string, shouldNavigateAfterDismiss = false) => {
     setDialogType(type);
     setDialogMsg(message);
+    setNavigateAfterDialog(shouldNavigateAfterDismiss);
     setDialogVisible(true);
+  };
+
+  const handleDialogDismiss = () => {
+    const shouldNavigate = dialogType === 'success' && navigateAfterDialog;
+
+    setDialogVisible(false);
+    setNavigateAfterDialog(false);
+
+    if (shouldNavigate) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Dashboard' }],
+      });
+    }
   };
 
   const resolveLoginError = (error: unknown): string => {
@@ -69,12 +88,9 @@ export default function LoginScreen() {
 
     try {
       setLoading(true);
-      await signIn(emailValue, senha);
-      openDialog('success', 'Login realizado com sucesso.');
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Dashboard' }],
-      });
+      const authUser = await signIn(emailValue, senha);
+      const displayName = authUser.nome?.trim() || authUser.login?.trim() || emailValue;
+      openDialog('success', `Bem-vindo, ${displayName}!`, true);
     } catch (error) {
       openDialog('error', resolveLoginError(error));
     } finally {
@@ -90,10 +106,25 @@ export default function LoginScreen() {
       <ScrollView
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            justifyContent: isShortViewport ? 'flex-start' : 'center',
+            paddingHorizontal: isCompact ? 14 : 20,
+            paddingVertical: isShortViewport ? 18 : 28,
+          },
+        ]}
       >
         <AuthCard badge="Wester Estoque">
-          <View style={styles.form}>
+          <View
+            style={[
+              styles.form,
+              {
+                marginTop: isCompact ? 20 : 24,
+                gap: isCompact ? 14 : 16,
+              },
+            ]}
+          >
             <AuthInputField
               label="Email"
               icon="email-outline"
@@ -138,13 +169,16 @@ export default function LoginScreen() {
             disabled={!canSubmit}
           />
 
-          <AuthSecondaryLink label="Criar conta" onPress={() => navigation.navigate('Register')} />
+          <AuthSecondaryLink
+            label="Criar conta"
+            onPress={() => navigation.navigate('Criar conta')}
+          />
         </AuthCard>
       </ScrollView>
 
       <AlertDialog
         visible={dialogVisible}
-        onDismiss={() => setDialogVisible(false)}
+        onDismiss={handleDialogDismiss}
         message={dialogMsg}
         type={dialogType}
       />

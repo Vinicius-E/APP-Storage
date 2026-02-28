@@ -18,7 +18,7 @@ type AuthContextType = {
   isAuthenticated: boolean;
   isRestoring: boolean;
   user: AuthUser | null;
-  signIn: (login: string, senha: string) => Promise<void>;
+  signIn: (login: string, senha: string) => Promise<AuthUser>;
   signOut: () => Promise<void>;
   restore: () => Promise<void>;
 };
@@ -133,6 +133,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }),
       ],
     ]);
+
+    return authUser;
   }, []);
 
   useEffect(() => {

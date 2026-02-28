@@ -57,6 +57,41 @@ function getInitials(raw?: string) {
   return result || 'U';
 }
 
+function withAlpha(color: string, alpha: number): string {
+  const clamped = Math.max(0, Math.min(1, alpha));
+  const hexAlpha = Math.round(clamped * 255)
+    .toString(16)
+    .padStart(2, '0');
+
+  if (/^#[0-9a-f]{3}$/i.test(color)) {
+    const expanded = color.replace(
+      /^#(.)(.)(.)$/i,
+      (_match, r: string, g: string, b: string) => `#${r}${r}${g}${g}${b}${b}`
+    );
+    return `${expanded}${hexAlpha}`;
+  }
+
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    return `${color}${hexAlpha}`;
+  }
+
+  const rgbMatch = color.match(/^rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)$/i);
+  if (rgbMatch) {
+    const [, r, g, b] = rgbMatch;
+    return `rgba(${r}, ${g}, ${b}, ${clamped})`;
+  }
+
+  const rgbaMatch = color.match(
+    /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i
+  );
+  if (rgbaMatch) {
+    const [, r, g, b] = rgbaMatch;
+    return `rgba(${r}, ${g}, ${b}, ${clamped})`;
+  }
+
+  return color;
+}
+
 function ProfileScreen() {
   const { theme } = useThemeContext();
   const { user, signOut } = useAuth() as any;
@@ -64,6 +99,16 @@ function ProfileScreen() {
   const { width: screenWidth } = useWindowDimensions();
 
   const isWide = IS_WEB && screenWidth >= 900;
+  const dangerButtonWebStyle =
+    IS_WEB
+      ? ({
+          cursor: 'pointer',
+          transitionProperty:
+            'transform, box-shadow, background-color, border-color, opacity, color',
+          transitionDuration: '160ms',
+          transitionTimingFunction: 'ease-out',
+        } as any)
+      : null;
 
   const name = String(user?.nome ?? user?.name ?? 'Usuário');
   const email = String(user?.email ?? user?.username ?? user?.login ?? '');
@@ -130,14 +175,32 @@ function ProfileScreen() {
         <View style={[styles.profileActionsRow, { flexDirection: isWide ? 'row' : 'column' }]}>
           <Pressable
             onPress={onSignOut}
-            style={({ pressed }) => [
-              styles.profileDangerButton,
-              {
-                backgroundColor: pressed ? `${colors.error}15` : 'transparent',
-                borderColor: colors.error,
-                alignSelf: isWide ? 'flex-start' : 'stretch',
-              },
-            ]}
+            style={(state) => {
+              const pressed = Boolean(state.pressed);
+              const hovered = Boolean((state as any).hovered);
+              const active = hovered || pressed;
+
+              return [
+                styles.profileDangerButton,
+                dangerButtonWebStyle,
+                {
+                  backgroundColor: pressed
+                    ? withAlpha(colors.error, 0.18)
+                    : active
+                      ? withAlpha(colors.error, 0.12)
+                      : 'transparent',
+                  borderColor: active ? withAlpha(colors.error, 0.8) : colors.error,
+                  shadowColor: colors.error,
+                  shadowOpacity: active ? 0.2 : 0,
+                  shadowRadius: active ? 14 : 0,
+                  shadowOffset: { width: 0, height: active ? 8 : 0 },
+                  elevation: active ? 3 : 0,
+                  opacity: pressed ? 0.96 : 1,
+                  transform: [{ translateY: hovered ? -1 : 0 }],
+                  alignSelf: isWide ? 'flex-start' : 'stretch',
+                },
+              ];
+            }}
           >
             <Text style={[styles.profileDangerText, { color: colors.error }]}>Sair</Text>
           </Pressable>
@@ -333,7 +396,10 @@ function ThemedDrawerContent(props: any) {
           ) {
             return null;
           }
-          if (isAuthenticated && (route.name === 'Login' || route.name === 'Register')) {
+          if (
+            isAuthenticated &&
+            (route.name === 'Login' || route.name === 'Register' || route.name === 'Criar conta')
+          ) {
             return null;
           }
 
@@ -513,7 +579,7 @@ export default function DrawerNavigator() {
       >
         <Drawer.Screen name="Login" component={LoginScreen} options={{ title: 'Login' }} />
         <Drawer.Screen
-          name="Register"
+          name="Criar conta"
           component={RegisterScreen}
           options={{ title: 'Criar conta' }}
         />

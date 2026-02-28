@@ -36,7 +36,10 @@ function normalizeRole(user: any): string {
     if (typeof candidate !== 'string') {
       continue;
     }
-    const normalized = candidate.trim().toUpperCase().replace(/^ROLE_/, '');
+    const normalized = candidate
+      .trim()
+      .toUpperCase()
+      .replace(/^ROLE_/, '');
     if (normalized) {
       return normalized;
     }
@@ -74,9 +77,7 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
   }
 
-  const rgbaMatch = color.match(
-    /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i
-  );
+  const rgbaMatch = color.match(/^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i);
   if (rgbaMatch) {
     const [, r, g, b] = rgbaMatch;
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
@@ -109,27 +110,26 @@ export default function DashboardQuickActions({
   const availableRouteNames = getAvailableRouteNames(navigation);
   const hasRoute = (route: DrawerRouteName): boolean => availableRouteNames.has(route);
 
-  const thirdAction: QuickAction =
-    hasRoute('Usuários')
+  const thirdAction: QuickAction = hasRoute('Usuários')
+    ? {
+        key: 'users',
+        label: 'Usuários',
+        icon: 'account-group-outline',
+        route: 'Usuários',
+      }
+    : hasRoute('Perfil')
       ? {
-          key: 'users',
-          label: 'Usuários',
-          icon: 'account-group-outline',
-          route: 'Usuários',
+          key: 'profile',
+          label: 'Perfil',
+          icon: 'account',
+          route: 'Perfil',
         }
-      : hasRoute('Perfil')
-        ? {
-            key: 'profile',
-            label: 'Perfil',
-            icon: 'account',
-            route: 'Perfil',
-          }
-        : {
-            key: 'dashboard',
-            label: 'Dashboard',
-            icon: 'view-dashboard-outline',
-            route: 'Dashboard',
-          };
+      : {
+          key: 'dashboard',
+          label: 'Dashboard',
+          icon: 'view-dashboard-outline',
+          route: 'Dashboard',
+        };
 
   const candidates: QuickAction[] = [
     { key: 'warehouse', label: 'Armazém', icon: 'warehouse', route: 'Armazém' },
@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 12,
   },
-  title: { fontSize: 15, fontWeight: '800' },
+  title: { fontSize: 18, fontWeight: '800' },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

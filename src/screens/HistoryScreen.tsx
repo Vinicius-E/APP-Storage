@@ -2,6 +2,7 @@
 import {
   FlatList,
   Platform,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,9 +10,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import {
   Button,
-  Chip,
   IconButton,
   Modal,
   Portal,
@@ -751,6 +752,7 @@ export default function HistoryScreen() {
 
   const [search, setSearch] = useState('');
   const [operationFilter, setOperationFilter] = useState<QuickType>('');
+  const [isOperationDropdownOpen, setIsOperationDropdownOpen] = useState(false);
   const [isDateRangePickerOpen, setIsDateRangePickerOpen] = useState(false);
   const [compactDateStep, setCompactDateStep] = useState<'start' | 'end'>('start');
   const [rangeStartDate, setRangeStartDate] = useState<Date | undefined>(undefined);
@@ -787,6 +789,12 @@ export default function HistoryScreen() {
   const selectedDateRangeLabelCompact = useMemo(
     () => dateRangeLabelCompact(rangeStartDate, rangeEndDate),
     [rangeEndDate, rangeStartDate]
+  );
+  const selectedOperationLabel = useMemo(
+    () =>
+      QUICK_FILTERS.find((option) => option.value === operationFilter)?.label ??
+      QUICK_FILTERS[0].label,
+    [operationFilter]
   );
 
   const filterDto = useMemo<HistoricoMovimentacaoFilterRequestDTO>(() => {
@@ -982,6 +990,7 @@ export default function HistoryScreen() {
   const clearFilters = useCallback(async () => {
     setSearch('');
     setOperationFilter('');
+    setIsOperationDropdownOpen(false);
     setRangeStartDate(undefined);
     setRangeEndDate(undefined);
     const emptyFilter: HistoricoMovimentacaoFilterRequestDTO = {};
@@ -1108,6 +1117,11 @@ export default function HistoryScreen() {
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
         contentContainerStyle={styles.container}
+        removeClippedSubviews={false}
+        ListHeaderComponentStyle={
+          isOperationDropdownOpen ? styles.historyHeaderRaised : styles.historyHeaderBase
+        }
+        onScrollBeginDrag={() => setIsOperationDropdownOpen(false)}
         onEndReachedThreshold={0.3}
         onEndReached={() => void loadMore()}
         ListHeaderComponent={
@@ -1115,6 +1129,7 @@ export default function HistoryScreen() {
             <Surface
               style={[
                 styles.section,
+                isOperationDropdownOpen && styles.sectionRaised,
                 { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
               ]}
               elevation={0}
@@ -1122,69 +1137,218 @@ export default function HistoryScreen() {
               <AppTextInput
                 label="Buscar no histórico"
                 value={search}
-                onChangeText={setSearch}
+                onChangeText={(value) => {
+                  setSearch(value);
+                  setIsOperationDropdownOpen(false);
+                }}
                 left={<TextInput.Icon icon="magnify" />}
                 style={styles.input}
               />
 
               <View style={styles.filtersStack}>
-                <View style={styles.chipsRow}>
-                  {QUICK_FILTERS.map((opt) => (
-                    <Chip
-                      key={opt.value || 'todos'}
-                      selected={operationFilter === opt.value}
-                      onPress={() => setOperationFilter(opt.value)}
-                      accessibilityLabel={`action-historico-tipo-${(
-                        opt.value || 'todos'
-                      ).toLowerCase()}`}
-                      selectedColor="#000000"
-                      textStyle={{ color: '#000000' }}
+                <View style={[styles.filtersRow, isCompact && styles.filtersRowCompact]}>
+                  <View
+                    style={[
+                      styles.operationDropdownWrap,
+                      isCompact && styles.operationDropdownWrapCompact,
+                      isOperationDropdownOpen && styles.operationDropdownWrapOpen,
+                    ]}
+                  >
+                    <Text style={[styles.filterLabel, { color: theme.colors.primary }]}>Status</Text>
+
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="action-historico-tipo-toggle"
+                      accessibilityState={{ expanded: isOperationDropdownOpen }}
+                      onPress={() => setIsOperationDropdownOpen((prev) => !prev)}
+                      style={(state) => {
+                        const pressed = Boolean(state.pressed);
+                        const isHovered = Boolean((state as any).hovered);
+                        const active = isOperationDropdownOpen || isHovered || pressed;
+
+                        return [
+                          styles.operationDropdownTrigger,
+                          Platform.OS === 'web' ? styles.interactiveWeb : null,
+                          {
+                            backgroundColor: theme.colors.surfaceVariant,
+                            borderColor: active ? theme.colors.primary : theme.colors.outline,
+                            shadowColor: theme.colors.primary,
+                            shadowOpacity: active ? 0.12 : 0.04,
+                            shadowRadius: active ? 14 : 8,
+                            shadowOffset: { width: 0, height: active ? 8 : 4 },
+                            elevation: active ? 3 : 1,
+                            opacity: pressed ? 0.96 : 1,
+                            transform: [{ translateY: isHovered ? -1 : 0 }],
+                          },
+                        ];
+                      }}
                     >
-                      {opt.label}
-                    </Chip>
-                  ))}
-                </View>
-                <View style={[styles.filtersFooter, isCompact && styles.filtersFooterCompact]}>
-                  <View style={[styles.rangeRow, isCompact && styles.rangeRowCompact]}>
-                    <Button
-                      mode="outlined"
-                      icon="calendar-range"
-                      onPress={openDatePicker}
-                      accessibilityLabel="action-historico-periodo"
-                      style={[
-                        styles.rangePickerButton,
-                        isCompact && styles.rangePickerButtonCompact,
-                      ]}
-                      contentStyle={styles.rangePickerContent}
-                      labelStyle={styles.rangePickerLabel}
-                    >
-                      {isCompact ? selectedDateRangeLabelCompact : selectedDateRangeLabel}
-                    </Button>
+                      {(state) => {
+                        const pressed = Boolean(state.pressed);
+                        const isHovered = Boolean((state as any).hovered);
+                        const active = isOperationDropdownOpen || isHovered || pressed;
+                        const triggerTextColor = active ? theme.colors.primary : theme.colors.text;
+
+                        return (
+                          <>
+                            <Text style={[styles.operationDropdownValue, { color: triggerTextColor }]}>
+                              {selectedOperationLabel}
+                            </Text>
+                            <MaterialCommunityIcons
+                              name={isOperationDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                              size={18}
+                              color={theme.colors.primary}
+                            />
+                          </>
+                        );
+                      }}
+                    </Pressable>
+
+                    {isOperationDropdownOpen ? (
+                      <View
+                        style={[
+                          styles.operationDropdownMenu,
+                          {
+                            backgroundColor: theme.colors.surface,
+                            borderColor: theme.colors.outline,
+                            shadowColor: theme.colors.primary,
+                          },
+                        ]}
+                      >
+                        {QUICK_FILTERS.map((opt) => {
+                          const selected = operationFilter === opt.value;
+
+                          return (
+                            <Pressable
+                              key={opt.value || 'todos'}
+                              accessibilityRole="button"
+                              accessibilityLabel={`action-historico-tipo-${(
+                                opt.value || 'todos'
+                              ).toLowerCase()}`}
+                              accessibilityState={{ selected }}
+                              onPress={() => {
+                                setOperationFilter(opt.value);
+                                setIsOperationDropdownOpen(false);
+                              }}
+                              style={(state) => {
+                                const pressed = Boolean(state.pressed);
+                                const isHovered = Boolean((state as any).hovered);
+                                const active = selected || isHovered || pressed;
+
+                                return [
+                                  styles.operationDropdownOption,
+                                  Platform.OS === 'web' ? styles.interactiveWeb : null,
+                                  {
+                                    backgroundColor: active
+                                      ? theme.colors.surfaceVariant
+                                      : 'transparent',
+                                    borderColor: active
+                                      ? theme.colors.primary
+                                      : theme.colors.outline,
+                                    opacity: pressed ? 0.96 : 1,
+                                    transform: [{ translateY: isHovered ? -1 : 0 }],
+                                  },
+                                ];
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.operationDropdownOptionText,
+                                  {
+                                    color: selected ? theme.colors.primary : theme.colors.text,
+                                  },
+                                ]}
+                              >
+                                {opt.label}
+                              </Text>
+                              {selected ? (
+                                <MaterialCommunityIcons
+                                  name="check"
+                                  size={16}
+                                  color={theme.colors.primary}
+                                />
+                              ) : null}
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : null}
                   </View>
 
-                  <View style={[styles.headerActions, isCompact && styles.headerActionsCompact]}>
-                    <Button
-                      mode="outlined"
-                      onPress={() => void clearFilters()}
-                      accessibilityLabel="action-historico-limpar"
-                      style={[
-                        styles.headerActionButton,
-                        isCompact && styles.headerActionButtonCompact,
-                      ]}
+                  <View style={[styles.rangeRow, isCompact && styles.rangeRowCompact]}>
+                    <Text style={[styles.filterLabel, { color: theme.colors.primary }]}>
+                      Período
+                    </Text>
+
+                    <Pressable
+                      onPress={() => {
+                        setIsOperationDropdownOpen(false);
+                        openDatePicker();
+                      }}
+                      accessibilityLabel="action-historico-periodo"
+                      accessibilityRole="button"
+                      style={(state) => {
+                        const pressed = Boolean(state.pressed);
+                        const isHovered = Boolean((state as any).hovered);
+                        const active = isHovered || pressed;
+
+                        return [
+                          styles.periodTrigger,
+                          isCompact && styles.periodTriggerCompact,
+                          Platform.OS === 'web' ? styles.interactiveWeb : null,
+                          {
+                            backgroundColor: theme.colors.surfaceVariant,
+                            borderColor: active ? theme.colors.primary : theme.colors.outline,
+                            shadowColor: theme.colors.primary,
+                            shadowOpacity: active ? 0.12 : 0.04,
+                            shadowRadius: active ? 14 : 8,
+                            shadowOffset: { width: 0, height: active ? 8 : 4 },
+                            elevation: active ? 3 : 1,
+                            opacity: pressed ? 0.96 : 1,
+                            transform: [{ translateY: isHovered ? -1 : 0 }],
+                          },
+                        ];
+                      }}
                     >
-                      Limpar
-                    </Button>
-                    <Button
-                      mode="contained"
-                      onPress={() => void loadFirstPage(filterDto)}
-                      accessibilityLabel="action-historico-aplicar"
-                      style={[
-                        styles.headerActionButton,
-                        isCompact && styles.headerActionButtonCompact,
-                      ]}
-                    >
-                      Aplicar filtros
-                    </Button>
+                      <MaterialCommunityIcons
+                        name="calendar-range"
+                        size={16}
+                        color={theme.colors.primary}
+                      />
+                      <Text style={[styles.periodTriggerValue, { color: theme.colors.primary }]}>
+                        {isCompact ? selectedDateRangeLabelCompact : selectedDateRangeLabel}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={[styles.filtersFooter, isCompact && styles.filtersFooterCompact]}>
+                    <View style={[styles.headerActions, isCompact && styles.headerActionsCompact]}>
+                      <Button
+                        mode="outlined"
+                        onPress={() => void clearFilters()}
+                        accessibilityLabel="action-historico-limpar"
+                        style={[
+                          styles.headerActionButton,
+                          isCompact && styles.headerActionButtonCompact,
+                        ]}
+                      >
+                        Limpar
+                      </Button>
+                      <Button
+                        mode="contained"
+                        onPress={() => {
+                          setIsOperationDropdownOpen(false);
+                          void loadFirstPage(filterDto);
+                        }}
+                        accessibilityLabel="action-historico-aplicar"
+                        style={[
+                          styles.headerActionButton,
+                          isCompact && styles.headerActionButtonCompact,
+                        ]}
+                      >
+                        Aplicar filtros
+                      </Button>
+                    </View>
                   </View>
                 </View>
               </View>
@@ -1476,21 +1640,128 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 12, paddingBottom: 28 },
   frame: { width: '100%' },
-  headerFrame: { gap: 12 },
-  section: { borderRadius: 16, borderWidth: 1, padding: 14 },
+  historyHeaderBase: { zIndex: 1, position: 'relative' },
+  historyHeaderRaised: { zIndex: 220, position: 'relative' },
+  headerFrame: { gap: 12, overflow: 'visible', position: 'relative' },
+  section: { borderRadius: 16, borderWidth: 1, padding: 14, overflow: 'visible', position: 'relative' },
+  sectionRaised: { zIndex: 240, elevation: 10 },
   input: { marginBottom: 8 },
-  filtersStack: { flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 8 },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, width: '100%' },
-  filtersFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  filtersFooterCompact: { alignItems: 'stretch' },
-  rangeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 240 },
-  rangeRowCompact: { width: '100%', minWidth: 0, flexDirection: 'column', alignItems: 'stretch' },
-  rangePickerButton: { borderRadius: 12, flex: 1, minWidth: 0 },
-  rangePickerButtonCompact: { width: '100%' },
-  rangePickerContent: { minHeight: 40, justifyContent: 'flex-start' },
-  rangePickerLabel: { fontSize: 14, fontWeight: '700' },
-  headerActions: {
+  filtersStack: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 8,
+    marginBottom: 8,
+    overflow: 'visible',
+  },
+  filtersRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    overflow: 'visible',
+    position: 'relative',
+    zIndex: 40,
+  },
+  filtersRowCompact: { flexDirection: 'column', alignItems: 'stretch' },
+  operationDropdownWrap: {
+    width: 240,
+    minWidth: 200,
+    maxWidth: 320,
+    flexShrink: 0,
+    position: 'relative',
+    zIndex: 80,
+    overflow: 'visible',
+  },
+  operationDropdownWrapCompact: {
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+  },
+  operationDropdownWrapOpen: {
+    zIndex: 320,
+    elevation: 18,
+  },
+  filterLabel: {
+    marginBottom: 8,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  operationDropdownTrigger: {
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  operationDropdownValue: { fontSize: 14, fontWeight: '700' },
+  operationDropdownMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 6,
+    gap: 6,
+    zIndex: 420,
+    elevation: 22,
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+  },
+  operationDropdownOption: {
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  operationDropdownOptionText: { fontSize: 14, fontWeight: '700' },
+  filtersFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
     marginLeft: 'auto',
+    position: 'relative',
+    zIndex: 20,
+  },
+  filtersFooterCompact: { alignItems: 'stretch', width: '100%', marginLeft: 0 },
+  rangeRow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 0,
+    width: 320,
+    minWidth: 220,
+    maxWidth: 320,
+    flexShrink: 0,
+  },
+  rangeRowCompact: { width: '100%', minWidth: 0, maxWidth: '100%', flexShrink: 1 },
+  periodTrigger: {
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    width: '100%',
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  periodTriggerCompact: { width: '100%' },
+  periodTriggerValue: { fontSize: 14, fontWeight: '700' },
+  headerActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
@@ -1500,6 +1771,16 @@ const styles = StyleSheet.create({
   headerActionsCompact: { marginLeft: 0, width: '100%' },
   headerActionButton: { minWidth: 96 },
   headerActionButtonCompact: { flex: 1, minWidth: 0 },
+  interactiveWeb:
+    Platform.OS === 'web'
+      ? ({
+          transitionProperty:
+            'transform, box-shadow, background-color, border-color, opacity, color',
+          transitionDuration: '160ms',
+          transitionTimingFunction: 'ease-out',
+          cursor: 'pointer',
+        } as any)
+      : ({} as any),
   actions: { marginTop: 8, flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   card: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 10 },
   top: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },

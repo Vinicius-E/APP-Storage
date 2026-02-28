@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { NavigationProp, ParamListBase, useNavigation } from '@react-navigation/native';
 import AlertDialog from '../../components/AlertDialog';
 import AuthCard from '../../components/AuthCard';
@@ -12,6 +12,7 @@ import { useThemeContext } from '../../theme/ThemeContext';
 const MIN_PASSWORD_LENGTH = 6;
 
 export default function RegisterScreen() {
+  const { width, height } = useWindowDimensions();
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -36,6 +37,8 @@ export default function RegisterScreen() {
 
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { theme } = useThemeContext();
+  const isCompact = width < 420;
+  const isShortViewport = height < 760;
   const nomeValue = nome.trim();
   const emailValue = email.trim();
   const nomeValid = useMemo(() => nomeValue.length >= 2, [nomeValue]);
@@ -94,10 +97,25 @@ export default function RegisterScreen() {
       <ScrollView
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            justifyContent: isShortViewport ? 'flex-start' : 'center',
+            paddingHorizontal: isCompact ? 14 : 20,
+            paddingVertical: isShortViewport ? 18 : 28,
+          },
+        ]}
       >
         <AuthCard badge="Wester Estoque">
-          <View style={styles.form}>
+          <View
+            style={[
+              styles.form,
+              {
+                marginTop: isCompact ? 20 : 24,
+                gap: isCompact ? 14 : 16,
+              },
+            ]}
+          >
             <AuthInputField
               label="Nome"
               icon="account-outline"
