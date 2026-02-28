@@ -1,0 +1,78 @@
+:root {
+  --app-background: #efe7df;
+  --app-surface: #fff7ee;
+  --app-outline: #d6c6b9;
+  --app-primary: #9c5b17;
+  --app-text: #2a1c11;
+  color-scheme: light;
+  background-color: var(--app-background);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background-color: var(--app-background);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--app-background);
+  color: var(--app-text);
+  overflow-y: auto;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -ms-overflow-style: scrollbar;
+}
+
+#root {
+  display: flex;
+  flex: 1 0 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--app-background);
+  isolation: isolate;
+}
+
+img,
+svg,
+canvas,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+a,
+button {
+  touch-action: manipulation;
+}
+
+@media (max-width: 991px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
