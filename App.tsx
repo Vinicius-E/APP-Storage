@@ -10,6 +10,7 @@ import store from './src/store';
 import { Platform } from 'react-native';
 
 import { PaperProvider } from 'react-native-paper';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useThemeContext } from './src/theme/ThemeContext';
 import { AuthProvider } from './src/auth/AuthContext';
 import { PaperIcon } from './src/PaperIcon';
@@ -66,11 +67,13 @@ function AppWithTheme() {
 export default function App() {
   return (
     <Provider store={store}>
-      <ThemeProvider>
-        <AuthProvider>
-          <AppWithTheme />
-        </AuthProvider>
-      </ThemeProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <AppWithTheme />
+          </AuthProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
     </Provider>
   );
 }

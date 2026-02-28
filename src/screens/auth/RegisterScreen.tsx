@@ -1,6 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { NavigationProp, ParamListBase, useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AlertDialog from '../../components/AlertDialog';
 import AuthCard from '../../components/AuthCard';
 import AuthInputField from '../../components/AuthInputField';
@@ -90,126 +101,176 @@ export default function RegisterScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.page, { backgroundColor: theme.colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
+      edges={['top', 'left', 'right']}
     >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            justifyContent: isShortViewport ? 'flex-start' : 'center',
-            paddingHorizontal: isCompact ? 14 : 20,
-            paddingVertical: isShortViewport ? 18 : 28,
-          },
-        ]}
+      <KeyboardAvoidingView
+        style={[styles.page, { backgroundColor: theme.colors.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <AuthCard badge="Wester Estoque">
-          <View
-            style={[
-              styles.form,
-              {
-                marginTop: isCompact ? 20 : 24,
-                gap: isCompact ? 14 : 16,
-              },
-            ]}
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              borderBottomColor: theme.colors.outline,
+            },
+          ]}
+        >
+          <Pressable
+            onPress={() => (navigation as any).toggleDrawer?.()}
+            style={styles.headerMenuButton}
+            hitSlop={10}
           >
-            <AuthInputField
-              label="Nome"
-              icon="account-outline"
-              value={nome}
-              onChangeText={setNome}
-              onBlur={() => setTouched((prev) => ({ ...prev, nome: true }))}
-              autoCapitalize="words"
-              autoCorrect={false}
-              textContentType="name"
-              placeholder="Seu nome"
-              returnKeyType="next"
-              errorText={nomeError}
+            <MaterialCommunityIcons name="menu" size={24} color={theme.colors.primary} />
+          </Pressable>
+
+          <Text style={[styles.headerTitle, { color: theme.colors.primary }]}>Criar conta</Text>
+        </View>
+
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              justifyContent: isShortViewport ? 'flex-start' : 'center',
+              paddingHorizontal: isCompact ? 14 : 20,
+              paddingVertical: isShortViewport ? 18 : 28,
+            },
+          ]}
+        >
+          <AuthCard badge="Wester Estoque">
+            <View
+              style={[
+                styles.form,
+                {
+                  marginTop: isCompact ? 20 : 24,
+                  gap: isCompact ? 14 : 16,
+                },
+              ]}
+            >
+              <AuthInputField
+                label="Nome"
+                icon="account-outline"
+                value={nome}
+                onChangeText={setNome}
+                onBlur={() => setTouched((prev) => ({ ...prev, nome: true }))}
+                autoCapitalize="words"
+                autoCorrect={false}
+                textContentType="name"
+                placeholder="Seu nome"
+                returnKeyType="next"
+                errorText={nomeError}
+              />
+
+              <AuthInputField
+                label="Email"
+                icon="email-outline"
+                value={email}
+                onChangeText={setEmail}
+                onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                keyboardType="email-address"
+                placeholder="seu@email.com"
+                returnKeyType="next"
+                errorText={emailError}
+              />
+
+              <AuthInputField
+                label="Senha"
+                icon="lock-outline"
+                value={senha}
+                onChangeText={setSenha}
+                onBlur={() => setTouched((prev) => ({ ...prev, senha: true }))}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="new-password"
+                textContentType="newPassword"
+                placeholder="Crie uma senha"
+                secureTextEntry={!showPassword}
+                showPasswordToggle
+                isPasswordVisible={showPassword}
+                onTogglePasswordVisibility={() => setShowPassword((current) => !current)}
+                returnKeyType="next"
+                errorText={senhaError}
+              />
+
+              <AuthInputField
+                label="Confirmar senha"
+                icon="lock-check-outline"
+                value={confirmarSenha}
+                onChangeText={setConfirmarSenha}
+                onBlur={() => setTouched((prev) => ({ ...prev, confirmarSenha: true }))}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="new-password"
+                textContentType="newPassword"
+                placeholder="Repita sua senha"
+                secureTextEntry={!showConfirmPassword}
+                showPasswordToggle
+                isPasswordVisible={showConfirmPassword}
+                onTogglePasswordVisibility={() => setShowConfirmPassword((current) => !current)}
+                returnKeyType="done"
+                onSubmitEditing={handleRegister}
+                errorText={confirmarSenhaError}
+              />
+            </View>
+
+            <AuthPrimaryButton
+              label="Criar conta"
+              onPress={handleRegister}
+              loading={loading}
+              disabled={!canSubmit}
             />
 
-            <AuthInputField
-              label="Email"
-              icon="email-outline"
-              value={email}
-              onChangeText={setEmail}
-              onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              keyboardType="email-address"
-              placeholder="seu@email.com"
-              returnKeyType="next"
-              errorText={emailError}
+            <AuthSecondaryLink
+              label="Ja tenho conta"
+              onPress={() => navigation.navigate('Login')}
             />
+          </AuthCard>
+        </ScrollView>
 
-            <AuthInputField
-              label="Senha"
-              icon="lock-outline"
-              value={senha}
-              onChangeText={setSenha}
-              onBlur={() => setTouched((prev) => ({ ...prev, senha: true }))}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="new-password"
-              textContentType="newPassword"
-              placeholder="Crie uma senha"
-              secureTextEntry={!showPassword}
-              showPasswordToggle
-              isPasswordVisible={showPassword}
-              onTogglePasswordVisibility={() => setShowPassword((current) => !current)}
-              returnKeyType="next"
-              errorText={senhaError}
-            />
-
-            <AuthInputField
-              label="Confirmar senha"
-              icon="lock-check-outline"
-              value={confirmarSenha}
-              onChangeText={setConfirmarSenha}
-              onBlur={() => setTouched((prev) => ({ ...prev, confirmarSenha: true }))}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="new-password"
-              textContentType="newPassword"
-              placeholder="Repita sua senha"
-              secureTextEntry={!showConfirmPassword}
-              showPasswordToggle
-              isPasswordVisible={showConfirmPassword}
-              onTogglePasswordVisibility={() => setShowConfirmPassword((current) => !current)}
-              returnKeyType="done"
-              onSubmitEditing={handleRegister}
-              errorText={confirmarSenhaError}
-            />
-          </View>
-
-          <AuthPrimaryButton
-            label="Criar conta"
-            onPress={handleRegister}
-            loading={loading}
-            disabled={!canSubmit}
-          />
-
-          <AuthSecondaryLink label="Ja tenho conta" onPress={() => navigation.navigate('Login')} />
-        </AuthCard>
-      </ScrollView>
-
-      <AlertDialog
-        visible={dialogVisible}
-        onDismiss={() => setDialogVisible(false)}
-        message={dialogMsg}
-        type={dialogType}
-      />
-    </KeyboardAvoidingView>
+        <AlertDialog
+          visible={dialogVisible}
+          onDismiss={() => setDialogVisible(false)}
+          message={dialogMsg}
+          type={dialogType}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
   page: {
     flex: 1,
+  },
+  header: {
+    minHeight: 56,
+    borderBottomWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerMenuButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '900',
   },
   scrollContent: {
     flexGrow: 1,

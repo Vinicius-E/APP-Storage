@@ -3,7 +3,6 @@ import React, { useMemo, useState } from 'react';
 import {
   createDrawerNavigator,
   DrawerContentScrollView,
-  DrawerToggleButton,
 } from '@react-navigation/drawer';
 import {
   View,
@@ -18,6 +17,7 @@ import {
 } from 'react-native';
 import AntDesignBase from '@expo/vector-icons/AntDesign';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppLoadingState from '../components/AppLoadingState';
 
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -294,6 +294,7 @@ function ThemedDrawerContent(props: any) {
   const { theme } = useThemeContext();
   const { isAuthenticated, user } = useAuth() as any;
   const { colors } = theme;
+  const insets = useSafeAreaInsets();
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [hoveredRouteKey, setHoveredRouteKey] = useState<string | null>(null);
@@ -328,7 +329,14 @@ function ThemedDrawerContent(props: any) {
     <DrawerContentScrollView
       {...props}
       style={{ backgroundColor: colors.surface }}
-      contentContainerStyle={[styles.drawerScrollContent, { backgroundColor: colors.surface }]}
+      contentContainerStyle={[
+        styles.drawerScrollContent,
+        {
+          backgroundColor: colors.surface,
+          paddingTop: insets.top,
+          paddingBottom: Math.max(insets.bottom, 12),
+        },
+      ]}
     >
       {isAuthenticated ? (
         <>
@@ -519,6 +527,55 @@ const AntDesign = (props: any) => {
   return <AntDesignBase {...props} />;
 };
 
+function ScreenFrame({
+  title,
+  navigation,
+  right,
+  children,
+}: {
+  title: string;
+  navigation: any;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const { theme } = useThemeContext();
+
+  return (
+    <SafeAreaView
+      style={[styles.screenFrame, { backgroundColor: theme.colors.background }]}
+      edges={['top', 'left', 'right']}
+    >
+      <View
+        style={[
+          styles.screenHeader,
+          {
+            backgroundColor: theme.colors.surfaceVariant,
+            borderBottomColor: theme.colors.outline,
+          },
+        ]}
+      >
+        <View style={styles.screenHeaderLeft}>
+          <Pressable
+            onPress={() => navigation.toggleDrawer()}
+            style={styles.screenHeaderMenuButton}
+            hitSlop={10}
+          >
+            <MaterialCommunityIcons name="menu" size={24} color={theme.colors.primary} />
+          </Pressable>
+
+          <Text style={[styles.screenHeaderTitle, { color: theme.colors.primary }]} numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
+
+        {right ? <View style={styles.screenHeaderRight}>{right}</View> : null}
+      </View>
+
+      <View style={styles.screenBody}>{children}</View>
+    </SafeAreaView>
+  );
+}
+
 export default function DrawerNavigator() {
   const { theme } = useThemeContext();
   const { isAuthenticated, isRestoring } = useAuth();
@@ -537,9 +594,12 @@ export default function DrawerNavigator() {
 
   if (isRestoring) {
     return (
-      <View style={{ flex: 1, backgroundColor: theme.colors.background, paddingHorizontal: 20 }}>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: theme.colors.background, paddingHorizontal: 20 }}
+        edges={['top', 'left', 'right']}
+      >
         <AppLoadingState message="Carregando sessão..." style={{ flex: 1 }} />
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -549,14 +609,7 @@ export default function DrawerNavigator() {
         initialRouteName={isAuthenticated ? 'Dashboard' : 'Login'}
         drawerContent={(props) => <ThemedDrawerContent {...props} />}
         screenOptions={{
-          headerStyle: {
-            backgroundColor: theme.colors.surfaceVariant,
-            borderBottomWidth: 1,
-            borderBottomColor: theme.colors.outline,
-          },
-          headerTitleStyle: { color: theme.colors.primary, fontWeight: '900' },
-          headerTintColor: theme.colors.primary,
-          headerShadowVisible: true,
+          headerShown: false,
 
           drawerType: 'front',
           drawerStyle: {
@@ -573,8 +626,6 @@ export default function DrawerNavigator() {
           sceneContainerStyle: {
             backgroundColor: theme.colors.background,
           },
-
-          headerLeft: () => <DrawerToggleButton tintColor={theme.colors.primary} />,
         }}
       >
         <Drawer.Screen name="Login" component={LoginScreen} options={{ title: 'Login' }} />
@@ -586,9 +637,11 @@ export default function DrawerNavigator() {
 
         <Drawer.Screen
           name="Perfil"
-          component={() => (
+          component={(props: any) => (
             <RequireAuth>
-              <ProfileScreen />
+              <ScreenFrame title="Perfil" navigation={props.navigation}>
+                <ProfileScreen />
+              </ScreenFrame>
             </RequireAuth>
           )}
           options={{ title: 'Perfil', drawerItemStyle: { display: 'none' } }}
@@ -597,15 +650,21 @@ export default function DrawerNavigator() {
         {isAuthenticated ? (
           <Drawer.Screen
             name="Dashboard"
-            component={DashboardScreen}
+            component={(props: any) => (
+              <ScreenFrame title="Dashboard" navigation={props.navigation}>
+                <DashboardScreen {...props} />
+              </ScreenFrame>
+            )}
             options={{ title: 'Dashboard' }}
           />
         ) : (
           <Drawer.Screen
             name="Dashboard"
-            component={() => (
+            component={(props: any) => (
               <RequireAuth>
-                <DashboardScreen />
+                <ScreenFrame title="Dashboard" navigation={props.navigation}>
+                  <DashboardScreen {...props} />
+                </ScreenFrame>
               </RequireAuth>
             )}
             options={{ title: 'Dashboard', drawerItemStyle: { display: 'none' } }}
@@ -615,46 +674,55 @@ export default function DrawerNavigator() {
         {isAuthenticated ? (
           <Drawer.Screen
             name="Armazém"
-            component={Warehouse2DView}
-            options={{
-              title: 'Armazém',
-              headerRightContainerStyle: {
-                width: screenWidth * 0.5 + 20,
-                paddingRight: 10,
-              },
-              headerRight: () =>
-                showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null,
-            }}
+            component={(props: any) => (
+              <ScreenFrame
+                title="Armazém"
+                navigation={props.navigation}
+                right={showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null}
+              >
+                <Warehouse2DView {...props} />
+              </ScreenFrame>
+            )}
+            options={{ title: 'Armazém' }}
           />
         ) : (
           <Drawer.Screen
             name="Armazém"
-            component={() => (
+            component={(props: any) => (
               <RequireAuth>
-                <Warehouse2DView />
+                <ScreenFrame
+                  title="Armazém"
+                  navigation={props.navigation}
+                  right={
+                    showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null
+                  }
+                >
+                  <Warehouse2DView {...props} />
+                </ScreenFrame>
               </RequireAuth>
             )}
-            options={{
-              title: 'Armazém',
-              drawerItemStyle: { display: 'none' },
-              headerRightContainerStyle: {
-                width: screenWidth * 0.5 + 20,
-                paddingRight: 10,
-              },
-              headerRight: () =>
-                showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null,
-            }}
+            options={{ title: 'Armazém', drawerItemStyle: { display: 'none' } }}
           />
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen name="Usuários" component={UserScreen} options={{ title: 'Usuários' }} />
+          <Drawer.Screen
+            name="Usuários"
+            component={(props: any) => (
+              <ScreenFrame title="Usuários" navigation={props.navigation}>
+                <UserScreen {...props} />
+              </ScreenFrame>
+            )}
+            options={{ title: 'Usuários' }}
+          />
         ) : (
           <Drawer.Screen
             name="Usuários"
-            component={() => (
+            component={(props: any) => (
               <RequireAuth>
-                <UserScreen />
+                <ScreenFrame title="Usuários" navigation={props.navigation}>
+                  <UserScreen {...props} />
+                </ScreenFrame>
               </RequireAuth>
             )}
             options={{ title: 'Usuários', drawerItemStyle: { display: 'none' } }}
@@ -664,15 +732,21 @@ export default function DrawerNavigator() {
         {isAuthenticated ? (
           <Drawer.Screen
             name="Histórico"
-            component={HistoryScreen}
+            component={(props: any) => (
+              <ScreenFrame title="Histórico" navigation={props.navigation}>
+                <HistoryScreen {...props} />
+              </ScreenFrame>
+            )}
             options={{ title: 'Histórico' }}
           />
         ) : (
           <Drawer.Screen
             name="Histórico"
-            component={() => (
+            component={(props: any) => (
               <RequireAuth>
-                <HistoryScreen />
+                <ScreenFrame title="Histórico" navigation={props.navigation}>
+                  <HistoryScreen {...props} />
+                </ScreenFrame>
               </RequireAuth>
             )}
             options={{ title: 'Histórico', drawerItemStyle: { display: 'none' } }}
@@ -687,6 +761,44 @@ const styles = StyleSheet.create({
   drawerScrollContent: {
     paddingTop: 0,
     paddingBottom: 12,
+  },
+  screenFrame: {
+    flex: 1,
+  },
+  screenHeader: {
+    minHeight: 56,
+    borderBottomWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  screenHeaderLeft: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  screenHeaderMenuButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenHeaderTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  screenHeaderRight: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  screenBody: {
+    flex: 1,
+    minWidth: 0,
   },
   drawerHeader: {
     flexDirection: 'row',
