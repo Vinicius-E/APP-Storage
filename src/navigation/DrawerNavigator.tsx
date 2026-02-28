@@ -1,9 +1,6 @@
 ﻿// src/navigation/DrawerNavigator.tsx
 import React, { useMemo, useState } from 'react';
-import {
-  createDrawerNavigator,
-  DrawerContentScrollView,
-} from '@react-navigation/drawer';
+import { createDrawerNavigator, DrawerContentScrollView } from '@react-navigation/drawer';
 import {
   View,
   Text,
@@ -81,9 +78,7 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
   }
 
-  const rgbaMatch = color.match(
-    /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i
-  );
+  const rgbaMatch = color.match(/^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i);
   if (rgbaMatch) {
     const [, r, g, b] = rgbaMatch;
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
@@ -99,16 +94,14 @@ function ProfileScreen() {
   const { width: screenWidth } = useWindowDimensions();
 
   const isWide = IS_WEB && screenWidth >= 900;
-  const dangerButtonWebStyle =
-    IS_WEB
-      ? ({
-          cursor: 'pointer',
-          transitionProperty:
-            'transform, box-shadow, background-color, border-color, opacity, color',
-          transitionDuration: '160ms',
-          transitionTimingFunction: 'ease-out',
-        } as any)
-      : null;
+  const dangerButtonWebStyle = IS_WEB
+    ? ({
+        cursor: 'pointer',
+        transitionProperty: 'transform, box-shadow, background-color, border-color, opacity, color',
+        transitionDuration: '160ms',
+        transitionTimingFunction: 'ease-out',
+      } as any)
+    : null;
 
   const name = String(user?.nome ?? user?.name ?? 'Usuário');
   const email = String(user?.email ?? user?.username ?? user?.login ?? '');
@@ -563,7 +556,10 @@ function ScreenFrame({
             <MaterialCommunityIcons name="menu" size={24} color={theme.colors.primary} />
           </Pressable>
 
-          <Text style={[styles.screenHeaderTitle, { color: theme.colors.primary }]} numberOfLines={1}>
+          <Text
+            style={[styles.screenHeaderTitle, { color: theme.colors.primary }]}
+            numberOfLines={1}
+          >
             {title}
           </Text>
         </View>
@@ -707,30 +703,6 @@ export default function DrawerNavigator() {
 
         {isAuthenticated ? (
           <Drawer.Screen
-            name="Usuários"
-            component={(props: any) => (
-              <ScreenFrame title="Usuários" navigation={props.navigation}>
-                <UserScreen {...props} />
-              </ScreenFrame>
-            )}
-            options={{ title: 'Usuários' }}
-          />
-        ) : (
-          <Drawer.Screen
-            name="Usuários"
-            component={(props: any) => (
-              <RequireAuth>
-                <ScreenFrame title="Usuários" navigation={props.navigation}>
-                  <UserScreen {...props} />
-                </ScreenFrame>
-              </RequireAuth>
-            )}
-            options={{ title: 'Usuários', drawerItemStyle: { display: 'none' } }}
-          />
-        )}
-
-        {isAuthenticated ? (
-          <Drawer.Screen
             name="Histórico"
             component={(props: any) => (
               <ScreenFrame title="Histórico" navigation={props.navigation}>
@@ -750,6 +722,30 @@ export default function DrawerNavigator() {
               </RequireAuth>
             )}
             options={{ title: 'Histórico', drawerItemStyle: { display: 'none' } }}
+          />
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen
+            name="Usuários"
+            component={(props: any) => (
+              <ScreenFrame title="Usuários" navigation={props.navigation}>
+                <UserScreen {...props} />
+              </ScreenFrame>
+            )}
+            options={{ title: 'Usuários' }}
+          />
+        ) : (
+          <Drawer.Screen
+            name="Usuários"
+            component={(props: any) => (
+              <RequireAuth>
+                <ScreenFrame title="Usuários" navigation={props.navigation}>
+                  <UserScreen {...props} />
+                </ScreenFrame>
+              </RequireAuth>
+            )}
+            options={{ title: 'Usuários', drawerItemStyle: { display: 'none' } }}
           />
         )}
       </Drawer.Navigator>

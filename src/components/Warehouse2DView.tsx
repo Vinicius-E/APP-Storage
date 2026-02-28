@@ -285,8 +285,8 @@ export default function Warehouse2DView() {
   const successColor = '#2E7D32';
   const errorColor = '#C62828';
 
-  const baseGradeWidth = 110;
-  const perNivelWidth = 96;
+  const baseGradeWidth = 140;
+  const perNivelWidth = 116;
 
   const AREA_ID = 1;
 
@@ -1966,6 +1966,8 @@ export default function Warehouse2DView() {
                               <View style={styles.gradeHeader}>
                                 <View style={styles.gradeHeaderTop}>
                                   <Text
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
                                     style={[
                                       styles.gradeTitle,
                                       { color: colors.text },
@@ -2331,6 +2333,8 @@ export default function Warehouse2DView() {
                               <View style={styles.gradeHeader}>
                                 <View style={styles.gradeHeaderTop}>
                                   <Text
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
                                     style={[
                                       styles.gradeTitle,
                                       { color: colors.text },
@@ -2964,11 +2968,12 @@ const styles = StyleSheet.create({
   },
 
   gradeContainer: {
-    minWidth: 110,
+    width: '100%',
+    minWidth: 140,
     borderRadius: 10,
     padding: 9,
     borderWidth: 1,
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
   },
 
   gradeExpanded: {
@@ -3005,7 +3010,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
 
-  gradeTitle: { fontSize: 16, fontWeight: 600 },
+  gradeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    flexShrink: 1,
+    minWidth: 0,
+
+    ...(IS_WEB
+      ? ({
+          whiteSpace: 'nowrap',
+        } as any)
+      : null),
+  },
 
   gradeControls: {
     flexDirection: 'row',
@@ -3027,15 +3043,16 @@ const styles = StyleSheet.create({
   },
 
   niveisRow: {
+    width: '100%',
     flexDirection: 'row',
     flexWrap: 'nowrap',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
   },
 
   nivelBox: {
-    width: 90,
+    width: 110,
     height: 90,
     justifyContent: 'center',
     alignItems: 'center',
