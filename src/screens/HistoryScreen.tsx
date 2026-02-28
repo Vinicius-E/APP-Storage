@@ -1312,43 +1312,135 @@ export default function HistoryScreen() {
                         ];
                       }}
                     >
-                      <MaterialCommunityIcons
-                        name="calendar-range"
-                        size={16}
-                        color={theme.colors.primary}
-                      />
-                      <Text style={[styles.periodTriggerValue, { color: theme.colors.primary }]}>
-                        {isCompact ? selectedDateRangeLabelCompact : selectedDateRangeLabel}
-                      </Text>
+                      {(state) => {
+                        const pressed = Boolean(state.pressed);
+                        const isHovered = Boolean((state as any).hovered);
+                        const active = isHovered || pressed;
+                        const contentColor = active ? theme.colors.primary : theme.colors.text;
+
+                        return (
+                          <>
+                            <MaterialCommunityIcons
+                              name="calendar-range"
+                              size={16}
+                              color={contentColor}
+                            />
+                            <Text style={[styles.periodTriggerValue, { color: contentColor }]}>
+                              {isCompact ? selectedDateRangeLabelCompact : selectedDateRangeLabel}
+                            </Text>
+                          </>
+                        );
+                      }}
                     </Pressable>
                   </View>
 
                   <View style={[styles.filtersFooter, isCompact && styles.filtersFooterCompact]}>
                     <View style={[styles.headerActions, isCompact && styles.headerActionsCompact]}>
-                      <Button
-                        mode="outlined"
+                      <Pressable
                         onPress={() => void clearFilters()}
                         accessibilityLabel="action-historico-limpar"
-                        style={[
-                          styles.headerActionButton,
-                          isCompact && styles.headerActionButtonCompact,
-                        ]}
+                        accessibilityRole="button"
+                        style={(state) => {
+                          const pressed = Boolean(state.pressed);
+                          const isHovered = Boolean((state as any).hovered);
+                          const active = isHovered || pressed;
+
+                          return [
+                            styles.clearActionButton,
+                            isCompact && styles.headerActionButtonCompact,
+                            Platform.OS === 'web' ? styles.interactiveWeb : null,
+                            {
+                              backgroundColor: theme.colors.surface,
+                              borderColor: active ? theme.colors.primary : theme.colors.outline,
+                              shadowColor: theme.colors.primary,
+                              shadowOpacity: active ? 0.1 : 0.03,
+                              shadowRadius: active ? 12 : 6,
+                              shadowOffset: { width: 0, height: active ? 8 : 4 },
+                              elevation: active ? 2 : 1,
+                              opacity: pressed ? 0.96 : 1,
+                              transform: [{ translateY: isHovered ? -1 : 0 }],
+                            },
+                          ];
+                        }}
                       >
-                        Limpar
-                      </Button>
-                      <Button
-                        mode="contained"
+                        {(state) => {
+                          const pressed = Boolean(state.pressed);
+                          const isHovered = Boolean((state as any).hovered);
+                          const active = isHovered || pressed;
+
+                          return (
+                            <Text
+                              style={[
+                                styles.clearActionText,
+                                { color: active ? theme.colors.primary : theme.colors.text },
+                              ]}
+                            >
+                              Limpar
+                            </Text>
+                          );
+                        }}
+                      </Pressable>
+                      <Pressable
                         onPress={() => void handleApplyFilters()}
                         accessibilityLabel="action-historico-aplicar"
-                        loading={isApplyingFilters}
+                        accessibilityRole="button"
                         disabled={isApplyingFilters}
-                        style={[
-                          styles.headerActionButton,
-                          isCompact && styles.headerActionButtonCompact,
-                        ]}
+                        style={(state) => {
+                          const pressed = Boolean(state.pressed);
+                          const isHovered = Boolean((state as any).hovered);
+                          const active = isHovered || pressed;
+
+                          return [
+                            styles.filterActionButton,
+                            isCompact && styles.headerActionButtonCompact,
+                            Platform.OS === 'web' ? styles.interactiveWeb : null,
+                            {
+                              backgroundColor: theme.colors.surface,
+                              borderColor: active ? theme.colors.primary : theme.colors.outline,
+                              shadowColor: theme.colors.primary,
+                              shadowOpacity: active ? 0.1 : 0.03,
+                              shadowRadius: active ? 12 : 6,
+                              shadowOffset: { width: 0, height: active ? 8 : 4 },
+                              elevation: active ? 2 : 1,
+                              opacity: isApplyingFilters ? 0.72 : pressed ? 0.96 : 1,
+                              transform: [{ translateY: isHovered ? -1 : 0 }],
+                            },
+                          ];
+                        }}
                       >
-                        Filtrar
-                      </Button>
+                        {(state) => {
+                          const pressed = Boolean(state.pressed);
+                          const isHovered = Boolean((state as any).hovered);
+                          const active = isHovered || pressed;
+                          const contentColor = active ? theme.colors.primary : theme.colors.text;
+
+                          return (
+                            <>
+                              {isApplyingFilters ? (
+                                <MaterialCommunityIcons
+                                  name="loading"
+                                  size={18}
+                                  color={theme.colors.primary}
+                                />
+                              ) : (
+                                <MaterialCommunityIcons
+                                  name="magnify"
+                                  size={18}
+                                  color={active ? theme.colors.primary : theme.colors.primary}
+                                />
+                              )}
+                              <Text
+                                style={[
+                                  styles.filterActionText,
+                                  { color: contentColor },
+                                ]}
+                              >
+                                Filtrar
+                              </Text>
+                            </>
+                          );
+                        }}
+                      </Pressable>
                     </View>
                   </View>
                 </View>
@@ -1779,6 +1871,30 @@ const styles = StyleSheet.create({
   },
   headerActionsCompact: { marginLeft: 0, width: '100%' },
   headerActionButton: { minWidth: 96 },
+  clearActionButton: {
+    minWidth: 96,
+    minHeight: 40,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearActionText: { fontSize: 14, fontWeight: '700' },
+  filterActionButton: {
+    minWidth: 112,
+    minHeight: 40,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  filterActionText: { fontSize: 14, fontWeight: '700' },
   headerActionButtonCompact: { flex: 1, minWidth: 0 },
   interactiveWeb:
     Platform.OS === 'web'

@@ -1104,7 +1104,7 @@ export default function DashboardScreen() {
                   </Pressable>
 
                   <View style={[styles.itemsPerPage, !isWide && styles.itemsPerPageMobile]}>
-                    {[5, 8, 10].map((size) => (
+                    {[5, 10, 20, 50, 100].map((size) => (
                       <Pressable
                         key={size}
                         accessibilityRole="button"
