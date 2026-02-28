@@ -1,22 +1,26 @@
 import React, { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { NavigationProp, ParamListBase, useNavigation } from '@react-navigation/native';
 import { AxiosError } from 'axios';
-import { Button, Text, TextInput } from 'react-native-paper';
 import { useAuth } from '../../auth/AuthContext';
 import AlertDialog from '../../components/AlertDialog';
-import AppTextInput from '../../components/AppTextInput';
+import AuthCard from '../../components/AuthCard';
+import AuthInputField from '../../components/AuthInputField';
+import AuthPrimaryButton from '../../components/AuthPrimaryButton';
+import AuthSecondaryLink from '../../components/AuthSecondaryLink';
 import { useThemeContext } from '../../theme/ThemeContext';
 
 type DialogType = 'success' | 'error' | 'warning';
 
+const MIN_PASSWORD_LENGTH = 6;
+
 export default function LoginScreen() {
-  const [login, setLogin] = useState('');
+  const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [touched, setTouched] = useState<{ login: boolean; senha: boolean }>({
-    login: false,
+  const [touched, setTouched] = useState<{ email: boolean; senha: boolean }>({
+    email: false,
     senha: false,
   });
   const [dialogVisible, setDialogVisible] = useState(false);
@@ -26,11 +30,17 @@ export default function LoginScreen() {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { theme } = useThemeContext();
   const { signIn } = useAuth();
-  const colors = theme.colors as typeof theme.colors & { textSecondary?: string };
 
-  const loginValid = useMemo(() => login.trim().length >= 3, [login]);
-  const senhaValid = useMemo(() => senha.trim().length >= 6, [senha]);
-  const canSubmit = loginValid && senhaValid && !loading;
+  const emailValue = email.trim();
+  const emailValid = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue), [emailValue]);
+  const senhaValid = useMemo(() => senha.trim().length >= MIN_PASSWORD_LENGTH, [senha]);
+  const canSubmit = emailValid && senhaValid && !loading;
+
+  const emailError = touched.email && !emailValid ? 'Informe um email valido.' : undefined;
+  const senhaError =
+    touched.senha && !senhaValid
+      ? `A senha deve ter no minimo ${MIN_PASSWORD_LENGTH} caracteres.`
+      : undefined;
 
   const openDialog = (type: DialogType, message: string) => {
     setDialogType(type);
@@ -40,32 +50,26 @@ export default function LoginScreen() {
 
   const resolveLoginError = (error: unknown): string => {
     if (error instanceof AxiosError) {
-      if (error.response?.status === 401 || error.response?.status === 400) {
-        return 'Login ou senha inválidos.';
+      if (error.response?.status === 400 || error.response?.status === 401) {
+        return 'Email ou senha invalidos.';
       }
-      return 'Não foi possível conectar ao servidor. Tente novamente.';
+
+      return 'Nao foi possivel conectar ao servidor. Tente novamente.';
     }
+
     return 'Falha ao autenticar. Confira suas credenciais.';
   };
 
   const handleLogin = async () => {
-    setTouched({ login: true, senha: true });
+    setTouched({ email: true, senha: true });
 
-    if (!canSubmit) {
-      if (!loginValid) {
-        openDialog('warning', 'Informe seu login.');
-        return;
-      }
-      if (!senhaValid) {
-        openDialog('warning', 'A senha deve ter pelo menos 6 caracteres.');
-        return;
-      }
+    if (loading || !emailValid || !senhaValid) {
       return;
     }
 
     try {
       setLoading(true);
-      await signIn(login.trim(), senha);
+      await signIn(emailValue, senha);
       openDialog('success', 'Login realizado com sucesso.');
       navigation.reset({
         index: 0,
@@ -80,72 +84,63 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      style={[styles.page, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
-        ]}
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
-        <Text style={[styles.title, { color: theme.colors.primary }]}>Armazém</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary ?? theme.colors.onSurfaceVariant }]}>
-          Entre com suas credenciais
-        </Text>
-
-        <AppTextInput
-          label="Email / Login"
-          value={login}
-          onChangeText={setLogin}
-          onBlur={() => setTouched((prev) => ({ ...prev, login: true }))}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          returnKeyType="next"
-          left={<TextInput.Icon icon="email-outline" />}
-          error={touched.login && !loginValid}
-          style={styles.input}
-        />
-
-        <AppTextInput
-          label="Senha"
-          value={senha}
-          onChangeText={setSenha}
-          onBlur={() => setTouched((prev) => ({ ...prev, senha: true }))}
-          secureTextEntry={!showPassword}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="done"
-          onSubmitEditing={handleLogin}
-          left={<TextInput.Icon icon="lock-outline" />}
-          right={
-            <TextInput.Icon
-              icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
-              onPress={() => setShowPassword((state) => !state)}
-              forceTextInputFocus={false}
+        <AuthCard badge="Wester Estoque">
+          <View style={styles.form}>
+            <AuthInputField
+              label="Email"
+              icon="email-outline"
+              value={email}
+              onChangeText={setEmail}
+              onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              keyboardType="email-address"
+              placeholder="seu@email.com"
+              returnKeyType="next"
+              errorText={emailError}
             />
-          }
-          error={touched.senha && !senhaValid}
-          style={styles.input}
-        />
 
-        <Button
-          mode="contained"
-          onPress={handleLogin}
-          loading={loading}
-          disabled={!canSubmit}
-          style={[styles.button, { backgroundColor: theme.colors.primary }]}
-          contentStyle={styles.buttonContent}
-          textColor={theme.colors.onPrimary}
-        >
-          Entrar
-        </Button>
+            <AuthInputField
+              label="Senha"
+              icon="lock-outline"
+              value={senha}
+              onChangeText={setSenha}
+              onBlur={() => setTouched((prev) => ({ ...prev, senha: true }))}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="current-password"
+              textContentType="password"
+              placeholder="Sua senha"
+              secureTextEntry={!showPassword}
+              showPasswordToggle
+              isPasswordVisible={showPassword}
+              onTogglePasswordVisibility={() => setShowPassword((current) => !current)}
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+              errorText={senhaError}
+            />
+          </View>
 
-        <Pressable onPress={() => navigation.navigate('Register')}>
-          <Text style={[styles.link, { color: theme.colors.primary }]}>Não tem conta? Criar</Text>
-        </Pressable>
-      </View>
+          <AuthPrimaryButton
+            label="Entrar"
+            onPress={handleLogin}
+            loading={loading}
+            disabled={!canSubmit}
+          />
+
+          <AuthSecondaryLink label="Criar conta" onPress={() => navigation.navigate('Register')} />
+        </AuthCard>
+      </ScrollView>
 
       <AlertDialog
         visible={dialogVisible}
@@ -158,53 +153,17 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  page: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 28,
   },
-  card: {
-    width: '100%',
-    maxWidth: 420,
-    paddingHorizontal: 28,
-    paddingTop: 26,
-    paddingBottom: 20,
-    borderRadius: 18,
-    borderWidth: 1,
-    shadowColor: '#000000',
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 3,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  subtitle: {
-    marginTop: 6,
-    fontSize: 13,
-    textAlign: 'center',
-    marginBottom: 18,
-  },
-  input: {
-    marginBottom: 14,
-    width: '100%',
-    alignSelf: 'stretch',
-  },
-  button: {
-    marginTop: 8,
-    borderRadius: 12,
-    justifyContent: 'center',
-  },
-  buttonContent: {
-    height: 48,
-  },
-  link: {
-    marginTop: 14,
-    textAlign: 'center',
-    fontWeight: '700',
+  form: {
+    marginTop: 24,
+    gap: 16,
   },
 });

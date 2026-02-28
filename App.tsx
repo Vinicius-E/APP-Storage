@@ -17,6 +17,43 @@ import { PaperIcon } from './src/PaperIcon';
 function AppWithTheme() {
   const { theme } = useThemeContext();
 
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+
+    const doc = (globalThis as any).document;
+
+    if (!doc?.head) {
+      return;
+    }
+
+    const styleId = 'storage-system-web-autofill-override';
+    let styleTag = doc.getElementById(styleId);
+
+    if (!styleTag) {
+      styleTag = doc.createElement('style');
+      styleTag.id = styleId;
+      doc.head.appendChild(styleTag);
+    }
+
+    styleTag.textContent = `
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover,
+      input:-webkit-autofill:focus,
+      textarea:-webkit-autofill,
+      textarea:-webkit-autofill:hover,
+      textarea:-webkit-autofill:focus {
+        -webkit-text-fill-color: ${theme.colors.onSurface} !important;
+        -webkit-box-shadow: 0 0 0 1000px ${theme.colors.surface} inset !important;
+        box-shadow: 0 0 0 1000px ${theme.colors.surface} inset !important;
+        caret-color: ${theme.colors.primary} !important;
+        border-radius: 16px !important;
+        transition: background-color 999999s ease-out 0s;
+      }
+    `;
+  }, [theme.colors.onSurface, theme.colors.primary, theme.colors.surface]);
+
   return (
     <PaperProvider theme={theme} settings={{ icon: PaperIcon }}>
       <NavigationContainer>

@@ -515,7 +515,7 @@ export default function DrawerNavigator() {
         <Drawer.Screen
           name="Register"
           component={RegisterScreen}
-          options={{ title: 'Registrar' }}
+          options={{ title: 'Criar conta' }}
         />
 
         <Drawer.Screen
