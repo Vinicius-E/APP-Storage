@@ -9,13 +9,16 @@ import {
   useWindowDimensions,
   type PressableStateCallbackType,
 } from 'react-native';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Modal, Portal, Snackbar, Surface, Text, TextInput } from 'react-native-paper';
+import { Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
+import AlertDialog from '../../components/AlertDialog';
 import AppEmptyState from '../../components/AppEmptyState';
 import FilterSelect from '../../components/FilterSelect';
 import AppLoadingState from '../../components/AppLoadingState';
 import AppTextInput from '../../components/AppTextInput';
+import ListActionButton from '../../components/ListActionButton';
+import StatusBadge from '../../components/StatusBadge';
 import { SCREEN_LABELS, usePermissions } from '../../security/permissions';
+import listScreenStyles from '../../styles/listScreen';
 import { useThemeContext } from '../../theme/ThemeContext';
 import { ProfileDTO, ProfileUpsertRequest, ProfileType, ScreenKey } from '../../types/ProfileDTO';
 import { getUserFacingErrorMessage } from '../../utils/userFacingError';
@@ -35,19 +38,15 @@ type SelectOption = {
 
 type HoverablePressableState = PressableStateCallbackType & { hovered?: boolean };
 
-type InlineActionButtonProps = {
-  label: string;
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  onPress: () => void;
-  disabled?: boolean;
-  compact?: boolean;
-  fill?: boolean;
-  tone?: 'neutral' | 'primary' | 'success' | 'danger';
-};
-
 type StatusConfirmation = {
   profile: ProfileDTO;
   nextActive: boolean;
+};
+
+type FeedbackState = {
+  visible: boolean;
+  message: string;
+  type: 'success' | 'error';
 };
 
 const SEARCH_DEBOUNCE_MS = 400;
@@ -85,9 +84,7 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
   }
 
-  const rgbaMatch = color.match(
-    /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i
-  );
+  const rgbaMatch = color.match(/^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i);
   if (rgbaMatch) {
     const [, r, g, b] = rgbaMatch;
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
@@ -145,109 +142,13 @@ function getInitials(value?: string, fallback = 'PF'): string {
 
   const chunks = normalized.split(/\s+/).filter(Boolean);
   const first = chunks[0]?.slice(0, 1) ?? '';
-  const second = chunks.length > 1 ? chunks[chunks.length - 1]?.slice(0, 1) ?? '' : chunks[0]?.slice(1, 2) ?? '';
+  const second =
+    chunks.length > 1
+      ? (chunks[chunks.length - 1]?.slice(0, 1) ?? '')
+      : (chunks[0]?.slice(1, 2) ?? '');
   const initials = `${first}${second}`.toUpperCase();
 
   return initials || fallback;
-}
-
-function InlineActionButton({
-  label,
-  icon,
-  onPress,
-  disabled,
-  compact = false,
-  fill = false,
-  tone = 'neutral',
-}: InlineActionButtonProps) {
-  const { theme } = useThemeContext();
-
-  const palette = useMemo(() => {
-    if (tone === 'danger') {
-      return {
-        border: theme.colors.error,
-        text: theme.colors.error,
-        hover: withAlpha(theme.colors.error, 0.08),
-      };
-    }
-
-    if (tone === 'success') {
-      const success = '#2E7D32';
-      return {
-        border: success,
-        text: success,
-        hover: withAlpha(success, 0.08),
-      };
-    }
-
-    if (tone === 'primary') {
-      return {
-        border: theme.colors.primary,
-        text: theme.colors.primary,
-        hover: withAlpha(theme.colors.primary, 0.08),
-      };
-    }
-
-    return {
-      border: theme.colors.outline,
-      text: theme.colors.text,
-      hover: withAlpha(theme.colors.primary, 0.06),
-    };
-  }, [theme.colors.error, theme.colors.outline, theme.colors.primary, theme.colors.text, tone]);
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={(state) => {
-        const hovered = Boolean((state as HoverablePressableState).hovered);
-
-        return [
-          styles.inlineActionButton,
-          compact ? styles.inlineActionButtonCompact : null,
-          fill ? styles.inlineActionButtonFill : null,
-          {
-            backgroundColor: state.pressed ? palette.hover : hovered ? palette.hover : 'transparent',
-            borderColor: palette.border,
-            opacity: disabled ? 0.45 : 1,
-            transform: [{ translateY: hovered ? -1 : 0 }],
-          },
-        ];
-      }}
-    >
-      <MaterialCommunityIcons name={icon} size={compact ? 16 : 18} color={palette.text} />
-      <Text
-        numberOfLines={1}
-        style={[
-          styles.inlineActionLabel,
-          compact ? styles.inlineActionLabelCompact : null,
-          { color: palette.text },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function StatusBadge({ active }: { active: boolean }) {
-  const { theme } = useThemeContext();
-  const accent = active ? '#2E7D32' : theme.colors.error;
-
-  return (
-    <View
-      style={[
-        styles.statusBadge,
-        {
-          backgroundColor: withAlpha(accent, active ? 0.1 : 0.08),
-          borderColor: withAlpha(accent, 0.24),
-        },
-      ]}
-    >
-      <Text style={[styles.statusBadgeLabel, { color: accent }]}>{active ? 'Ativo' : 'Inativo'}</Text>
-    </View>
-  );
 }
 
 function ConfirmStatusDialog({
@@ -269,7 +170,11 @@ function ConfirmStatusDialog({
 
   return (
     <Portal>
-      <Modal visible={visible} onDismiss={processing ? undefined : onCancel} contentContainerStyle={styles.confirmModalOuter}>
+      <Modal
+        visible={visible}
+        onDismiss={processing ? undefined : onCancel}
+        contentContainerStyle={styles.confirmModalOuter}
+      >
         <Surface
           style={[
             styles.confirmModalSurface,
@@ -289,8 +194,14 @@ function ConfirmStatusDialog({
               : ''}
           </Text>
           <View style={[styles.confirmActions, isCompact ? styles.confirmActionsCompact : null]}>
-            <InlineActionButton label="Cancelar" icon="close" onPress={onCancel} disabled={processing} compact />
-            <InlineActionButton
+            <ListActionButton
+              label="Cancelar"
+              icon="close"
+              onPress={onCancel}
+              disabled={processing}
+              compact
+            />
+            <ListActionButton
               label={target?.nextActive ? 'Confirmar ativação' : 'Confirmar inativação'}
               icon={target?.nextActive ? 'check-circle-outline' : 'close-circle-outline'}
               onPress={onConfirm}
@@ -329,9 +240,10 @@ export default function ProfileManagement() {
   const [savingForm, setSavingForm] = useState(false);
   const [statusConfirmation, setStatusConfirmation] = useState<StatusConfirmation | null>(null);
   const [processingStatusId, setProcessingStatusId] = useState<number | null>(null);
-  const [snackbar, setSnackbar] = useState<{ visible: boolean; message: string }>({
+  const [feedback, setFeedback] = useState<FeedbackState>({
     visible: false,
     message: '',
+    type: 'success',
   });
 
   const textSecondary =
@@ -344,11 +256,24 @@ export default function ProfileManagement() {
   const canInactivateProfiles = hasPermission('PROFILES', 'INACTIVATE');
   const hasActiveFilters = debouncedSearch.length > 0;
 
-  const showSnackbar = useCallback((message: string) => {
-    setSnackbar({
+  const showSuccessFeedback = useCallback((message: string) => {
+    setFeedback({
       visible: true,
       message,
+      type: 'success',
     });
+  }, []);
+
+  const showErrorFeedback = useCallback((message: string) => {
+    setFeedback({
+      visible: true,
+      message,
+      type: 'error',
+    });
+  }, []);
+
+  const hideFeedback = useCallback(() => {
+    setFeedback((current) => ({ ...current, visible: false }));
   }, []);
 
   const fetchProfiles = useCallback(
@@ -387,7 +312,7 @@ export default function ProfileManagement() {
         setIsRefreshing(false);
       }
     },
-    [debouncedSearch, page, showSnackbar, size]
+    [debouncedSearch, page, size]
   );
 
   useEffect(() => {
@@ -436,17 +361,17 @@ export default function ProfileManagement() {
 
       if (editingProfile) {
         await updateProfile(editingProfile.id, payload);
-        showSnackbar('Perfil atualizado com sucesso.');
+        showSuccessFeedback('Perfil atualizado com sucesso.');
       } else {
         await createProfile(payload);
-        showSnackbar('Perfil criado com sucesso.');
+        showSuccessFeedback('Perfil criado com sucesso.');
       }
 
       setIsFormVisible(false);
       setEditingProfile(null);
       await fetchProfiles(page);
     } catch (requestError) {
-      showSnackbar(
+      showErrorFeedback(
         resolveRequestErrorMessage(
           requestError,
           editingProfile
@@ -484,16 +409,16 @@ export default function ProfileManagement() {
 
       if (statusConfirmation.nextActive) {
         await activateProfile(statusConfirmation.profile.id);
-        showSnackbar('Perfil ativado com sucesso.');
+        showSuccessFeedback('Perfil ativado com sucesso.');
       } else {
         await inactivateProfile(statusConfirmation.profile.id);
-        showSnackbar('Perfil inativado com sucesso.');
+        showSuccessFeedback('Perfil inativado com sucesso.');
       }
 
       setStatusConfirmation(null);
       await fetchProfiles(page);
     } catch (requestError) {
-      showSnackbar(
+      showErrorFeedback(
         resolveRequestErrorMessage(
           requestError,
           statusConfirmation.nextActive
@@ -549,7 +474,7 @@ export default function ProfileManagement() {
       );
     }
 
-if (isMobile) {
+    if (isMobile) {
       return (
         <View style={styles.cardList}>
           {items.map((profile) => {
@@ -621,14 +546,18 @@ if (isMobile) {
 
                 <View style={styles.mobileMetaGrid}>
                   <View style={[styles.mobileMetaItem, styles.mobileMetaItemFull]}>
-                    <Text style={[styles.mobileMetaLabel, { color: textSecondary }]}>Permissões</Text>
+                    <Text style={[styles.mobileMetaLabel, { color: textSecondary }]}>
+                      Permissões
+                    </Text>
                     <Text style={[styles.mobileMetaValue, { color: theme.colors.text }]}>
                       {allowedScreensLabel}
                     </Text>
                   </View>
 
                   <View style={[styles.mobileMetaItem, styles.mobileMetaItemFull]}>
-                    <Text style={[styles.mobileMetaLabel, { color: textSecondary }]}>Atualizado em</Text>
+                    <Text style={[styles.mobileMetaLabel, { color: textSecondary }]}>
+                      Atualizado em
+                    </Text>
                     <Text style={[styles.mobileMetaValue, { color: theme.colors.text }]}>
                       {formatTimestamp(profile.updatedAt ?? profile.createdAt)}
                     </Text>
@@ -637,7 +566,7 @@ if (isMobile) {
 
                 <View style={styles.mobileActionsRow}>
                   {canEditProfiles ? (
-                    <InlineActionButton
+                    <ListActionButton
                       label="Editar"
                       icon="pencil-outline"
                       onPress={() => handleOpenEdit(profile)}
@@ -648,7 +577,7 @@ if (isMobile) {
                   ) : null}
 
                   {isActive && canInactivateProfiles ? (
-                    <InlineActionButton
+                    <ListActionButton
                       label="Inativar"
                       icon="toggle-switch-off-outline"
                       onPress={() => handleAskStatusChange(profile)}
@@ -660,7 +589,7 @@ if (isMobile) {
                   ) : null}
 
                   {!isActive && canActivateProfiles ? (
-                    <InlineActionButton
+                    <ListActionButton
                       label="Ativar"
                       icon="toggle-switch-outline"
                       onPress={() => handleAskStatusChange(profile)}
@@ -697,12 +626,26 @@ if (isMobile) {
             },
           ]}
         >
-          <Text style={[styles.headerCell, styles.statusCell, { color: theme.colors.primary }]}>Status</Text>
-          <Text style={[styles.headerCell, styles.descriptionCell, { color: theme.colors.primary }]}>Descrição</Text>
-          <Text style={[styles.headerCell, styles.typeCell, { color: theme.colors.primary }]}>Tipo</Text>
-          <Text style={[styles.headerCell, styles.screensCell, { color: theme.colors.primary }]}>Telas permitidas</Text>
-          <Text style={[styles.headerCell, styles.updatedCell, { color: theme.colors.primary }]}>Atualizado</Text>
-          <Text style={[styles.headerCell, styles.actionsCell, { color: theme.colors.primary }]}>Ações</Text>
+          <Text style={[styles.headerCell, styles.statusCell, { color: theme.colors.primary }]}>
+            Status
+          </Text>
+          <Text
+            style={[styles.headerCell, styles.descriptionCell, { color: theme.colors.primary }]}
+          >
+            Descrição
+          </Text>
+          <Text style={[styles.headerCell, styles.typeCell, { color: theme.colors.primary }]}>
+            Tipo
+          </Text>
+          <Text style={[styles.headerCell, styles.screensCell, { color: theme.colors.primary }]}>
+            Telas permitidas
+          </Text>
+          <Text style={[styles.headerCell, styles.updatedCell, { color: theme.colors.primary }]}>
+            Atualizado
+          </Text>
+          <Text style={[styles.headerCell, styles.actionsCell, { color: theme.colors.primary }]}>
+            Ações
+          </Text>
         </View>
 
         {items.map((profile, index) => {
@@ -728,21 +671,33 @@ if (isMobile) {
               <View style={[styles.statusCell, styles.tableStatusWrap]}>
                 <StatusBadge active={isActive} />
               </View>
-              <Text numberOfLines={1} style={[styles.bodyCell, styles.descriptionCell, { color: theme.colors.text }]}>
+              <Text
+                numberOfLines={1}
+                style={[styles.bodyCell, styles.descriptionCell, { color: theme.colors.text }]}
+              >
                 {profile.description}
               </Text>
-              <Text numberOfLines={1} style={[styles.bodyCell, styles.typeCell, { color: theme.colors.text }]}>
+              <Text
+                numberOfLines={1}
+                style={[styles.bodyCell, styles.typeCell, { color: theme.colors.text }]}
+              >
                 {TYPE_LABELS[profile.type]}
               </Text>
-              <Text numberOfLines={2} style={[styles.bodyCell, styles.screensCell, { color: textSecondary }]}>
+              <Text
+                numberOfLines={2}
+                style={[styles.bodyCell, styles.screensCell, { color: textSecondary }]}
+              >
                 {summarizeAllowedScreens(profile.allowedScreens)}
               </Text>
-              <Text numberOfLines={1} style={[styles.bodyCell, styles.updatedCell, { color: textSecondary }]}>
+              <Text
+                numberOfLines={1}
+                style={[styles.bodyCell, styles.updatedCell, { color: textSecondary }]}
+              >
                 {formatTimestamp(profile.updatedAt ?? profile.createdAt)}
               </Text>
               <View style={[styles.actionsCell, styles.desktopActions]}>
                 {canEditProfiles ? (
-                  <InlineActionButton
+                  <ListActionButton
                     label="Editar"
                     icon="pencil-outline"
                     onPress={() => handleOpenEdit(profile)}
@@ -752,7 +707,7 @@ if (isMobile) {
                 ) : null}
 
                 {isActive && canInactivateProfiles ? (
-                  <InlineActionButton
+                  <ListActionButton
                     label="Inativar"
                     icon="toggle-switch-off-outline"
                     onPress={() => handleAskStatusChange(profile)}
@@ -763,7 +718,7 @@ if (isMobile) {
                 ) : null}
 
                 {!isActive && canActivateProfiles ? (
-                  <InlineActionButton
+                  <ListActionButton
                     label="Ativar"
                     icon="toggle-switch-outline"
                     onPress={() => handleAskStatusChange(profile)}
@@ -799,16 +754,21 @@ if (isMobile) {
         >
           <Surface
             style={[
-              styles.toolbarSurface,
-              openFilter ? styles.toolbarSurfaceRaised : null,
+              listScreenStyles.toolbarSurface,
+              openFilter ? listScreenStyles.toolbarSurfaceRaised : null,
               {
                 backgroundColor: theme.colors.surface,
                 borderColor: theme.colors.outline,
               },
             ]}
           >
-            <View style={[styles.toolbarTop, isMobile ? styles.toolbarTopCompact : null]}>
-              <View style={styles.searchFieldWrap}>
+            <View
+              style={[
+                listScreenStyles.toolbarTop,
+                isMobile ? listScreenStyles.toolbarTopCompact : null,
+              ]}
+            >
+              <View style={listScreenStyles.searchFieldWrap}>
                 <AppTextInput
                   label="Buscar perfil"
                   value={search}
@@ -822,48 +782,71 @@ if (isMobile) {
               </View>
 
               {canCreateProfiles ? (
-                <InlineActionButton
-                  label="Novo perfil"
-                  icon="account-plus-outline"
-                  onPress={handleOpenCreate}
-                  disabled={savingForm}
-                  tone="primary"
-                />
+                <View
+                  style={[
+                    listScreenStyles.toolbarActions,
+                    isMobile ? listScreenStyles.toolbarActionsCompact : null,
+                  ]}
+                >
+                  <ListActionButton
+                    label="Novo perfil"
+                    icon="account-plus-outline"
+                    onPress={handleOpenCreate}
+                    disabled={savingForm}
+                  />
+                </View>
               ) : null}
             </View>
 
-            <View style={[styles.toolbarBottom, isMobile ? styles.toolbarBottomCompact : null]}>
-              <FilterSelect
-                label="Tamanho"
-                value={String(size)}
-                valueLabel={sizeLabel}
-                options={PAGE_SIZE_OPTIONS.map((option) => ({
-                  ...option,
-                  accessibilityLabel: `action-profiles-filter-size-${option.value}`,
-                }))}
-                disabled={loading}
-                compact={isMobile}
-                open={openFilter === 'size'}
-                onOpenChange={(nextOpen) => setOpenFilter(nextOpen ? 'size' : null)}
-                accessibilityLabel="action-profiles-filter-size-toggle"
-                onSelect={(value) => {
-                  const nextSize = Number(value);
-                  if (!Number.isFinite(nextSize) || nextSize <= 0) {
-                    return;
-                  }
+            <View
+              style={[
+                listScreenStyles.toolbarBottom,
+                isMobile ? listScreenStyles.toolbarBottomCompact : null,
+              ]}
+            >
+              <View
+                style={[
+                  listScreenStyles.filtersRow,
+                  isMobile ? listScreenStyles.filtersRowCompact : null,
+                ]}
+              >
+                <FilterSelect
+                  label="Tamanho"
+                  value={String(size)}
+                  valueLabel={sizeLabel}
+                  options={PAGE_SIZE_OPTIONS.map((option) => ({
+                    ...option,
+                    accessibilityLabel: `action-profiles-filter-size-${option.value}`,
+                  }))}
+                  disabled={loading}
+                  compact={isMobile}
+                  open={openFilter === 'size'}
+                  onOpenChange={(nextOpen) => setOpenFilter(nextOpen ? 'size' : null)}
+                  accessibilityLabel="action-profiles-filter-size-toggle"
+                  onSelect={(value) => {
+                    const nextSize = Number(value);
+                    if (!Number.isFinite(nextSize) || nextSize <= 0) {
+                      return;
+                    }
 
-                  setSize(nextSize);
-                  setPage(0);
-                }}
-              />
+                    setSize(nextSize);
+                    setPage(0);
+                  }}
+                />
+              </View>
 
-              <View style={[styles.paginationSummary, isMobile ? styles.paginationSummaryCompact : null]}>
-                <Text style={[styles.paginationSummaryText, { color: textSecondary }]}>
+              <View
+                style={[
+                  listScreenStyles.paginationGroup,
+                  isMobile ? listScreenStyles.paginationGroupCompact : null,
+                ]}
+              >
+                <Text style={[listScreenStyles.paginationSummaryText, { color: textSecondary }]}>
                   {totalItems} perfil{totalItems === 1 ? '' : 'is'}
                 </Text>
 
-                <View style={styles.paginationControls}>
-                  <InlineActionButton
+                <View style={listScreenStyles.paginationControls}>
+                  <ListActionButton
                     label="Anterior"
                     icon="chevron-left"
                     onPress={() => setPage((current) => Math.max(current - 1, 0))}
@@ -871,11 +854,14 @@ if (isMobile) {
                     compact
                   />
 
-                  <Text style={[styles.paginationPageLabel, { color: theme.colors.text }]}>
-                    Página {Math.min(page + 1, Math.max(totalPages, 1))} de {Math.max(totalPages, 1)}
+                  <Text
+                    style={[listScreenStyles.paginationPageLabel, { color: theme.colors.text }]}
+                  >
+                    Página {Math.min(page + 1, Math.max(totalPages, 1))} de{' '}
+                    {Math.max(totalPages, 1)}
                   </Text>
 
-                  <InlineActionButton
+                  <ListActionButton
                     label="Próxima"
                     icon="chevron-right"
                     onPress={() => setPage((current) => current + 1)}
@@ -905,23 +891,18 @@ if (isMobile) {
         visible={Boolean(statusConfirmation)}
         target={statusConfirmation}
         processing={processingStatusId !== null}
-        onCancel={() => setStatusConfirmation((current) => (processingStatusId !== null ? current : null))}
+        onCancel={() =>
+          setStatusConfirmation((current) => (processingStatusId !== null ? current : null))
+        }
         onConfirm={handleConfirmStatusChange}
       />
 
-      <Snackbar
-        visible={snackbar.visible}
-        onDismiss={() => setSnackbar((current) => ({ ...current, visible: false }))}
-        duration={3200}
-        style={{ backgroundColor: theme.colors.surfaceVariant }}
-        action={{
-          label: 'Fechar',
-          onPress: () => setSnackbar((current) => ({ ...current, visible: false })),
-          textColor: theme.colors.primary,
-        }}
-      >
-        <Text style={{ color: theme.colors.text, fontWeight: '700' }}>{snackbar.message}</Text>
-      </Snackbar>
+      <AlertDialog
+        visible={feedback.visible}
+        message={feedback.message}
+        type={feedback.type}
+        onDismiss={hideFeedback}
+      />
     </>
   );
 }
@@ -934,73 +915,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    /* paddingHorizontal: 16,
+    paddingVertical: 16, */
     gap: 14,
-  },
-  toolbarSurface: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 16,
-    gap: 16,
-    overflow: 'visible',
-    shadowColor: '#000000',
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1,
-  },
-  toolbarSurfaceRaised: {
-    zIndex: 220,
-    elevation: 10,
-  },
-  toolbarTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-  toolbarTopCompact: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-  },
-  searchFieldWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  toolbarBottom: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-    overflow: 'visible',
-  },
-  toolbarBottomCompact: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-  },
-  paginationSummary: {
-    marginLeft: 'auto',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  paginationSummaryCompact: {
-    width: '100%',
-    marginLeft: 0,
-    alignItems: 'stretch',
-  },
-  paginationSummaryText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  paginationControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-  },
-  paginationPageLabel: {
-    fontSize: 13,
-    fontWeight: '800',
   },
   stateBlock: {
     minHeight: 220,
@@ -1172,51 +1089,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 8,
     flexWrap: 'wrap',
-  },
-  statusBadge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    alignSelf: 'flex-start',
-  },
-  statusBadgeLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  inlineActionButton: {
-    minHeight: 46,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
-  },
-  inlineActionButtonCompact: {
-    minHeight: 40,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  inlineActionButtonFill: {
-    flex: 1,
-    minWidth: 0,
-  },
-  inlineActionLabel: {
-    fontSize: 14,
-    fontWeight: '800',
-    flexShrink: 1,
-    textAlign: 'center',
-  },
-  inlineActionLabelCompact: {
-    fontSize: 13,
   },
   confirmModalOuter: {
     flex: 1,

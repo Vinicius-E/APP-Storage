@@ -1619,7 +1619,7 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12, paddingBottom: 28 },
+  container: { gap: 12 },
   frame: { width: '100%' },
   historyHeaderBase: { zIndex: 1, position: 'relative' },
   historyHeaderRaised: { zIndex: 220, position: 'relative' },

@@ -111,7 +111,11 @@ const STATUS_FILTER_OPTIONS: Array<{
 }> = [
   { value: 'all', label: 'Todos', accessibilityLabel: 'action-users-filter-status-all' },
   { value: 'active', label: 'Ativos', accessibilityLabel: 'action-users-filter-status-active' },
-  { value: 'inactive', label: 'Inativos', accessibilityLabel: 'action-users-filter-status-inactive' },
+  {
+    value: 'inactive',
+    label: 'Inativos',
+    accessibilityLabel: 'action-users-filter-status-inactive',
+  },
 ];
 
 const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: string }> = [
@@ -230,7 +234,10 @@ function buildFallbackProfileOption(value: string): ProfileOption {
   };
 }
 
-function findProfileOption(profileOptions: ProfileOption[], value: string): ProfileOption | undefined {
+function findProfileOption(
+  profileOptions: ProfileOption[],
+  value: string
+): ProfileOption | undefined {
   const normalized = normalizeProfileToken(value);
   return profileOptions.find((option) => option.value === normalized);
 }
@@ -247,7 +254,9 @@ function mapRoleToPerfil(role: UserRole, profileOptions: ProfileOption[] = []): 
     return byValue.value;
   }
 
-  const byLabel = profileOptions.find((option) => normalizeProfileToken(option.label) === normalized);
+  const byLabel = profileOptions.find(
+    (option) => normalizeProfileToken(option.label) === normalized
+  );
   if (byLabel) {
     return byLabel.value;
   }
@@ -355,9 +364,7 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
   }
 
-  const rgbaMatch = color.match(
-    /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i
-  );
+  const rgbaMatch = color.match(/^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i);
   if (rgbaMatch) {
     const [, r, g, b] = rgbaMatch;
     return `rgba(${r}, ${g}, ${b}, ${clamped})`;
@@ -493,7 +500,10 @@ export default function UserScreen() {
         selected?: boolean;
       }
     ) => {
-      const { palette, pressed, hovered, active, disabled } = resolveInteractiveState(state, options);
+      const { palette, pressed, hovered, active, disabled } = resolveInteractiveState(
+        state,
+        options
+      );
 
       return {
         backgroundColor: disabled
@@ -553,11 +563,13 @@ export default function UserScreen() {
     [resolveInteractiveState, resolveInteractiveTextColor, theme.colors.primary]
   );
 
-  const roleFilterOptions = useMemo<Array<{
-    value: RoleFilter;
-    label: string;
-    accessibilityLabel: string;
-  }>>(
+  const roleFilterOptions = useMemo<
+    Array<{
+      value: RoleFilter;
+      label: string;
+      accessibilityLabel: string;
+    }>
+  >(
     () => [
       {
         value: ALL_ROLE_FILTER,
@@ -621,30 +633,33 @@ export default function UserScreen() {
     }
   }, []);
 
-  const fetchUsers = useCallback(async (isRefresh = false) => {
-    setErrorMessage('');
+  const fetchUsers = useCallback(
+    async (isRefresh = false) => {
+      setErrorMessage('');
 
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      const data = await listarUsuarios();
-      setUsers(data.map((user) => toManagedUser(user, profileOptions)));
-    } catch (error) {
-      console.error('Falha ao listar usuários:', error);
-      const backendMessage = resolveRequestErrorMessage(error, '');
-      setErrorMessage(backendMessage || API_STATE_MESSAGES.users.error.description);
-    } finally {
       if (isRefresh) {
-        setRefreshing(false);
+        setRefreshing(true);
       } else {
-        setLoading(false);
+        setLoading(true);
       }
-    }
-  }, [profileOptions]);
+
+      try {
+        const data = await listarUsuarios();
+        setUsers(data.map((user) => toManagedUser(user, profileOptions)));
+      } catch (error) {
+        console.error('Falha ao listar usuários:', error);
+        const backendMessage = resolveRequestErrorMessage(error, '');
+        setErrorMessage(backendMessage || API_STATE_MESSAGES.users.error.description);
+      } finally {
+        if (isRefresh) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [profileOptions]
+  );
 
   useEffect(() => {
     void fetchProfileOptions();
@@ -926,7 +941,7 @@ export default function UserScreen() {
         editForm.password.trim() === editForm.confirmPassword.trim()
       : true);
 
-  const renderFilterDropdown = <T extends string,>(params: {
+  const renderFilterDropdown = <T extends string>(params: {
     dropdownKey: FilterDropdownKey;
     label: string;
     value: T;
@@ -947,12 +962,7 @@ export default function UserScreen() {
       >
         <Text style={[styles.filterLabel, { color: theme.colors.primary }]}>{label}</Text>
 
-        <View
-          style={[
-            styles.filterDropdownAnchor,
-            isOpen && styles.filterDropdownAnchorOpen,
-          ]}
-        >
+        <View style={[styles.filterDropdownAnchor, isOpen && styles.filterDropdownAnchorOpen]}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`action-users-filter-${dropdownKey}-toggle`}
@@ -976,7 +986,9 @@ export default function UserScreen() {
 
               return (
                 <>
-                  <Text style={[styles.filterDropdownValue, { color: textColor }]}>{selectedLabel}</Text>
+                  <Text style={[styles.filterDropdownValue, { color: textColor }]}>
+                    {selectedLabel}
+                  </Text>
                   <MaterialCommunityIcons
                     name={isOpen ? 'chevron-up' : 'chevron-down'}
                     size={18}
@@ -1177,8 +1189,14 @@ export default function UserScreen() {
 
                   return (
                     <>
-                      <MaterialCommunityIcons name="account-plus-outline" size={18} color={iconColor} />
-                      <Text style={[styles.actionButtonText, { color: contentColor }]}>Novo usuário</Text>
+                      <MaterialCommunityIcons
+                        name="account-plus-outline"
+                        size={18}
+                        color={iconColor}
+                      />
+                      <Text style={[styles.actionButtonText, { color: contentColor }]}>
+                        Novo usuário
+                      </Text>
                     </>
                   );
                 }}
@@ -1217,65 +1235,68 @@ export default function UserScreen() {
           </Surface>
         ) : null}
 
-        {!loading && !errorMessage ? <View style={styles.listBlock}>
-          {filteredUsers.map((user) => {
-            const enabled = Object.values(user.permissions).filter(Boolean).length;
-            const isUserActive = user.status === 'active';
-            const permissionPercent = Math.round((enabled / PERMISSIONS.length) * 100);
-            const initials = getUserInitials(user.name);
+        {!loading && !errorMessage ? (
+          <View style={styles.listBlock}>
+            {filteredUsers.map((user) => {
+              const enabled = Object.values(user.permissions).filter(Boolean).length;
+              const isUserActive = user.status === 'active';
+              const permissionPercent = Math.round((enabled / PERMISSIONS.length) * 100);
+              const initials = getUserInitials(user.name);
 
-            return (
-              <Surface
-                key={user.id}
-                style={[
-                  styles.userCard,
-                  {
-                    backgroundColor: theme.colors.surface,
-                    borderColor: theme.colors.outlineVariant,
-                  },
-                ]}
-                elevation={0}
-              >
-                <View style={[styles.userTop, isCompact && styles.userTopCompact]}>
-                  <View style={styles.userIdentityRow}>
-                    <View
-                      style={[
-                        styles.userAvatar,
-                        {
-                          backgroundColor: theme.colors.secondaryContainer,
-                          borderColor: theme.colors.outlineVariant,
-                        },
-                      ]}
-                    >
-                      <Text
+              return (
+                <Surface
+                  key={user.id}
+                  style={[
+                    styles.userCard,
+                    {
+                      backgroundColor: theme.colors.surface,
+                      borderColor: theme.colors.outlineVariant,
+                    },
+                  ]}
+                  elevation={0}
+                >
+                  <View style={[styles.userTop, isCompact && styles.userTopCompact]}>
+                    <View style={styles.userIdentityRow}>
+                      <View
                         style={[
-                          styles.userAvatarText,
-                          { color: theme.colors.onSecondaryContainer },
+                          styles.userAvatar,
+                          {
+                            backgroundColor: theme.colors.secondaryContainer,
+                            borderColor: theme.colors.outlineVariant,
+                          },
                         ]}
                       >
-                        {initials}
-                      </Text>
-                    </View>
-
-                    <View style={styles.userMeta}>
-                      <Text style={[styles.userName, { color: textColor }]}>{user.name}</Text>
-                      <Text style={[styles.userInfo, { color: textSecondary }]}>{user.login}</Text>
-
-                      <View style={styles.userFacts}>
-                        <View
+                        <Text
                           style={[
-                            styles.userFactPill,
-                            {
-                              backgroundColor: theme.colors.surfaceVariant,
-                              borderColor: theme.colors.outlineVariant,
-                            },
+                            styles.userAvatarText,
+                            { color: theme.colors.onSecondaryContainer },
                           ]}
                         >
-                          <Text style={[styles.userFactText, { color: textSecondary }]}>
-                            ID #{user.id}
-                          </Text>
-                        </View>
-                        {/* <View
+                          {initials}
+                        </Text>
+                      </View>
+
+                      <View style={styles.userMeta}>
+                        <Text style={[styles.userName, { color: textColor }]}>{user.name}</Text>
+                        <Text style={[styles.userInfo, { color: textSecondary }]}>
+                          {user.login}
+                        </Text>
+
+                        <View style={styles.userFacts}>
+                          <View
+                            style={[
+                              styles.userFactPill,
+                              {
+                                backgroundColor: theme.colors.surfaceVariant,
+                                borderColor: theme.colors.outlineVariant,
+                              },
+                            ]}
+                          >
+                            <Text style={[styles.userFactText, { color: textSecondary }]}>
+                              ID #{user.id}
+                            </Text>
+                          </View>
+                          {/* <View
                           style={[
                             styles.userFactPill,
                             {
@@ -1301,165 +1322,183 @@ export default function UserScreen() {
                             Último acesso {user.lastAccess}
                           </Text>
                         </View> */}
+                        </View>
+                      </View>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.tags,
+                        !isCompact && styles.tagsCentered,
+                        isCompact && styles.tagsCompact,
+                      ]}
+                    >
+                      <View pointerEvents="none">
+                        <Chip compact>{user.role}</Chip>
+                      </View>
+                      <View pointerEvents="none">
+                        <Chip compact>{statusLabel[user.status]}</Chip>
+                      </View>
+                      <View pointerEvents="none">
+                        <Chip compact>
+                          {enabled}/{PERMISSIONS.length} permissões
+                        </Chip>
                       </View>
                     </View>
                   </View>
 
-                  <View
-                    style={[
-                      styles.tags,
-                      !isCompact && styles.tagsCentered,
-                      isCompact && styles.tagsCompact,
-                    ]}
-                  >
-                    <View pointerEvents="none">
-                      <Chip compact>{user.role}</Chip>
-                    </View>
-                    <View pointerEvents="none">
-                      <Chip compact>{statusLabel[user.status]}</Chip>
-                    </View>
-                    <View pointerEvents="none">
-                      <Chip compact>
-                        {enabled}/{PERMISSIONS.length} permissões
-                      </Chip>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={[styles.userMiddle, isCompact && styles.userMiddleCompact]}>
-                  <View
-                    style={[
-                      styles.permissionPanel,
-                      {
-                        backgroundColor: theme.colors.surfaceVariant,
-                        borderColor: theme.colors.outlineVariant,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.permissionLabel, { color: textSecondary }]}>
-                      Permissões habilitadas
-                    </Text>
-                    <Text style={[styles.permissionValue, { color: textColor }]}>
-                      {enabled} de {PERMISSIONS.length} ({permissionPercent}%)
-                    </Text>
-
+                  <View style={[styles.userMiddle, isCompact && styles.userMiddleCompact]}>
                     <View
                       style={[
-                        styles.permissionTrack,
+                        styles.permissionPanel,
                         {
-                          backgroundColor: theme.colors.outlineVariant,
+                          backgroundColor: theme.colors.surfaceVariant,
+                          borderColor: theme.colors.outlineVariant,
                         },
                       ]}
                     >
+                      <Text style={[styles.permissionLabel, { color: textSecondary }]}>
+                        Permissões habilitadas
+                      </Text>
+                      <Text style={[styles.permissionValue, { color: textColor }]}>
+                        {enabled} de {PERMISSIONS.length} ({permissionPercent}%)
+                      </Text>
+
                       <View
                         style={[
-                          styles.permissionFill,
+                          styles.permissionTrack,
                           {
-                            backgroundColor: theme.colors.primary,
-                            width: `${permissionPercent}%`,
+                            backgroundColor: theme.colors.outlineVariant,
                           },
                         ]}
-                      />
+                      >
+                        <View
+                          style={[
+                            styles.permissionFill,
+                            {
+                              backgroundColor: theme.colors.primary,
+                              width: `${permissionPercent}%`,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+
+                    <View style={[styles.actions, isCompact && styles.actionsCompact]}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`action-edit-user-${user.id}`}
+                        onPress={() => openEdit(user)}
+                        disabled={actionBusy}
+                        style={(state) => [
+                          styles.actionButtonBase,
+                          styles.rowActionBtn,
+                          actionTransitionStyle,
+                          resolveInteractiveStyle(state, {
+                            variant: 'neutral',
+                            disabled: actionBusy,
+                          }),
+                        ]}
+                      >
+                        {(state) => {
+                          const contentColor = resolveInteractiveTextColor(state, {
+                            variant: 'neutral',
+                            disabled: actionBusy,
+                          });
+                          const iconColor = resolveInteractiveIconColor(state, {
+                            variant: 'neutral',
+                            disabled: actionBusy,
+                          });
+
+                          return (
+                            <>
+                              <MaterialCommunityIcons
+                                name="pencil-outline"
+                                size={18}
+                                color={iconColor}
+                              />
+                              <Text style={[styles.actionButtonText, { color: contentColor }]}>
+                                Editar
+                              </Text>
+                            </>
+                          );
+                        }}
+                      </Pressable>
+
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          isUserActive
+                            ? `action-status-inactivate-${user.id}`
+                            : `action-status-activate-${user.id}`
+                        }
+                        onPress={() => void handleToggleStatus(user)}
+                        disabled={actionBusy}
+                        style={(state) => [
+                          styles.actionButtonBase,
+                          styles.rowActionBtn,
+                          actionTransitionStyle,
+                          resolveInteractiveStyle(state, {
+                            variant: isUserActive ? 'danger' : 'success',
+                            disabled: actionBusy,
+                          }),
+                        ]}
+                      >
+                        {(state) => {
+                          const contentColor = resolveInteractiveTextColor(state, {
+                            variant: isUserActive ? 'danger' : 'success',
+                            disabled: actionBusy,
+                          });
+
+                          return (
+                            <>
+                              <MaterialCommunityIcons
+                                name={
+                                  isUserActive ? 'account-off-outline' : 'account-check-outline'
+                                }
+                                size={18}
+                                color={contentColor}
+                              />
+                              <Text style={[styles.actionButtonText, { color: contentColor }]}>
+                                {isUserActive ? 'Inativar' : 'Ativar'}
+                              </Text>
+                            </>
+                          );
+                        }}
+                      </Pressable>
                     </View>
                   </View>
+                </Surface>
+              );
+            })}
 
-                  <View style={[styles.actions, isCompact && styles.actionsCompact]}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`action-edit-user-${user.id}`}
-                      onPress={() => openEdit(user)}
-                      disabled={actionBusy}
-                      style={(state) => [
-                        styles.actionButtonBase,
-                        styles.rowActionBtn,
-                        actionTransitionStyle,
-                        resolveInteractiveStyle(state, {
-                          variant: 'neutral',
-                          disabled: actionBusy,
-                        }),
-                      ]}
-                    >
-                      {(state) => {
-                        const contentColor = resolveInteractiveTextColor(state, {
-                          variant: 'neutral',
-                          disabled: actionBusy,
-                        });
-                        const iconColor = resolveInteractiveIconColor(state, {
-                          variant: 'neutral',
-                          disabled: actionBusy,
-                        });
-
-                        return (
-                          <>
-                            <MaterialCommunityIcons name="pencil-outline" size={18} color={iconColor} />
-                            <Text style={[styles.actionButtonText, { color: contentColor }]}>Editar</Text>
-                          </>
-                        );
-                      }}
-                    </Pressable>
-
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        isUserActive
-                          ? `action-status-inactivate-${user.id}`
-                          : `action-status-activate-${user.id}`
-                      }
-                      onPress={() => void handleToggleStatus(user)}
-                      disabled={actionBusy}
-                      style={(state) => [
-                        styles.actionButtonBase,
-                        styles.rowActionBtn,
-                        actionTransitionStyle,
-                        resolveInteractiveStyle(state, {
-                          variant: isUserActive ? 'danger' : 'success',
-                          disabled: actionBusy,
-                        }),
-                      ]}
-                    >
-                      {(state) => {
-                        const contentColor = resolveInteractiveTextColor(state, {
-                          variant: isUserActive ? 'danger' : 'success',
-                          disabled: actionBusy,
-                        });
-
-                        return (
-                          <>
-                            <MaterialCommunityIcons
-                              name={isUserActive ? 'account-off-outline' : 'account-check-outline'}
-                              size={18}
-                              color={contentColor}
-                            />
-                            <Text style={[styles.actionButtonText, { color: contentColor }]}>
-                              {isUserActive ? 'Inativar' : 'Ativar'}
-                            </Text>
-                          </>
-                        );
-                      }}
-                    </Pressable>
-                  </View>
-                </View>
+            {filteredUsers.length === 0 ? (
+              <Surface
+                style={[
+                  styles.empty,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.outlineVariant,
+                  },
+                ]}
+                elevation={0}
+              >
+                <AppEmptyState
+                  title={usersEmptyCopy.title}
+                  description={usersEmptyCopy.description}
+                  icon="account-search-outline"
+                  tipo={
+                    search.trim().length > 0 ||
+                    statusFilter !== 'all' ||
+                    roleFilter !== ALL_ROLE_FILTER
+                      ? 'semResultado'
+                      : 'vazio'
+                  }
+                />
               </Surface>
-            );
-          })}
-
-          {filteredUsers.length === 0 ? (
-            <Surface
-              style={[
-                styles.empty,
-                { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-              ]}
-              elevation={0}
-            >
-              <AppEmptyState
-                title={usersEmptyCopy.title}
-                description={usersEmptyCopy.description}
-                icon="account-search-outline"
-                tipo={search.trim().length > 0 || statusFilter !== 'all' || roleFilter !== ALL_ROLE_FILTER ? 'semResultado' : 'vazio'}
-              />
-            </Surface>
-          ) : null}
-        </View> : null}
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
 
       <Portal>
@@ -1754,7 +1793,7 @@ export default function UserScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 14 },
+  container: { gap: 12 },
   sectionCard: { borderRadius: 16, borderWidth: 1, padding: 14, overflow: 'visible' },
   sectionCardRaised: {
     zIndex: 120,

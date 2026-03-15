@@ -17,10 +17,9 @@ export type Product = {
 
 export type ProductUpsertRequest = {
   codigo: string;
-  nome: string;
+  nomeModelo: string;
+  cor: string;
   descricao?: string;
-  marca?: string;
-  categoria?: string;
 };
 
 export type PageResponse<T> = {

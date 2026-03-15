@@ -1,5 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { Button } from 'react-native-paper';
 import ModalFrame from './ModalFrame';
 
 type WarehouseItemDetails = {
@@ -18,7 +19,6 @@ type WarehouseItemDetailsModalProps = {
   loading?: boolean;
   onClose: () => void;
   onEdit?: () => void;
-  onMoveStock?: () => void;
   onAddProduct?: () => void;
   primaryColor: string;
   surfaceColor: string;
@@ -40,7 +40,6 @@ export default function WarehouseItemDetailsModal({
   loading = false,
   onClose,
   onEdit,
-  onMoveStock,
   onAddProduct,
   primaryColor,
   surfaceColor,
@@ -88,23 +87,26 @@ export default function WarehouseItemDetailsModal({
           </View>
 
           <View style={styles.actions}>
-            <Pressable onPress={onClose} style={[styles.actionButton, { borderColor: outlineColor }]}>
-              <Text style={[styles.actionText, { color: textColor }]}>Fechar</Text>
-            </Pressable>
+            <Button
+              mode="text"
+              onPress={onClose}
+              contentStyle={styles.secondaryButtonContent}
+              labelStyle={[styles.secondaryButtonLabel, { color: primaryColor }]}
+            >
+              Fechar
+            </Button>
 
             {onAddProduct ? (
-              <Pressable
+              <Button
+                mode="contained"
                 onPress={onAddProduct}
-                style={[
-                  styles.actionButton,
-                  {
-                    backgroundColor: primaryColor,
-                    borderColor: primaryColor,
-                  },
-                ]}
+                buttonColor={primaryColor}
+                textColor="#fff"
+                contentStyle={styles.primaryButtonContent}
+                labelStyle={styles.primaryButtonLabel}
               >
-                <Text style={[styles.actionText, { color: '#fff' }]}>Adicionar produto</Text>
-              </Pressable>
+                Adicionar produto
+              </Button>
             ) : null}
           </View>
         </>
@@ -193,36 +195,27 @@ export default function WarehouseItemDetailsModal({
           </View>
 
           <View style={styles.actionsWrap}>
-            <View style={styles.actions}>
-              <Pressable
+            <View style={[styles.actions, { borderTopColor: outlineColor }]}>
+              <Button
+                mode="text"
                 onPress={onClose}
-                style={[styles.actionButton, { borderColor: outlineColor }]}
+                contentStyle={styles.secondaryButtonContent}
+                labelStyle={[styles.secondaryButtonLabel, { color: primaryColor }]}
               >
-                <Text style={[styles.actionText, { color: textColor }]}>Fechar</Text>
-              </Pressable>
-
-              {onMoveStock ? (
-                <Pressable
-                  onPress={onMoveStock}
-                  style={[styles.actionButton, { borderColor: outlineColor }]}
-                >
-                  <Text style={[styles.actionText, { color: textColor }]}>Movimentar estoque</Text>
-                </Pressable>
-              ) : null}
+                Fechar
+              </Button>
 
               {onEdit ? (
-                <Pressable
+                <Button
+                  mode="contained"
                   onPress={onEdit}
-                  style={[
-                    styles.actionButton,
-                    {
-                      backgroundColor: primaryColor,
-                      borderColor: primaryColor,
-                    },
-                  ]}
+                  buttonColor={primaryColor}
+                  textColor="#fff"
+                  contentStyle={styles.primaryButtonContent}
+                  labelStyle={styles.primaryButtonLabel}
                 >
-                  <Text style={[styles.actionText, { color: '#fff' }]}>Editar</Text>
-                </Pressable>
+                  Editar
+                </Button>
               ) : null}
             </View>
           </View>
@@ -324,21 +317,25 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   actions: {
+    borderTopWidth: 1,
+    paddingTop: 16,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     flexWrap: 'wrap',
     gap: 10,
   },
-  actionButton: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    minWidth: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
+  secondaryButtonContent: {
+    minHeight: 46,
+    paddingHorizontal: 8,
   },
-  actionText: {
+  secondaryButtonLabel: {
+    fontWeight: '800',
+  },
+  primaryButtonContent: {
+    minHeight: 48,
+    paddingHorizontal: 10,
+  },
+  primaryButtonLabel: {
     fontWeight: '800',
   },
 });

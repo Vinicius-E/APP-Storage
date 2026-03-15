@@ -866,11 +866,12 @@ export default function Warehouse2DView() {
   };
 
   useEffect(() => {
-    if ((!productModalVisible && !productEditModalVisible) || !selectedNivelCtx) {
+    if (!selectedNivelCtx) {
       return;
     }
+
     void loadItemEstoque(selectedNivelCtx.nivelId);
-  }, [productEditModalVisible, productModalVisible, selectedNivelCtx, loadItemEstoque]);
+  }, [loadItemEstoque, selectedNivelCtx?.nivelId]);
 
   const currentNivelItemDetails = useMemo(() => {
     const fallbackProduto = selectedNivelCtx?.nivel.produto ?? null;
@@ -2068,7 +2069,7 @@ export default function Warehouse2DView() {
                           shouldShowFileiraHover && [
                             styles.fileiraHover,
                             {
-                              backgroundColor: withAlpha(colors.primary, 0.03),
+                              backgroundColor: 'rgba(165, 94, 32, 0.03)',
                               shadowColor: '#000000',
                             },
                           ],
@@ -2828,7 +2829,6 @@ export default function Warehouse2DView() {
           loading={itemLoading}
           onClose={closeProductModal}
           onEdit={nivelHasLinkedProduct ? openProductEditModal : undefined}
-          onMoveStock={nivelHasLinkedProduct ? openProductEditModal : undefined}
           onAddProduct={!nivelHasLinkedProduct ? openProductEditModal : undefined}
           primaryColor={colors.primary}
           surfaceColor={colors.surface}

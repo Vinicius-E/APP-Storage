@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -7,12 +7,16 @@ import {
   StyleSheet,
   View,
   useWindowDimensions,
+  type PressableStateCallbackType,
 } from 'react-native';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Modal, Portal, Snackbar, Surface, Text, TextInput } from 'react-native-paper';
+import { Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
 import { useAreaContext } from '../../areas/AreaContext';
+import AlertDialog from '../../components/AlertDialog';
 import AppEmptyState from '../../components/AppEmptyState';
 import AppLoadingState from '../../components/AppLoadingState';
+import ConfirmStatusDialog from '../../components/ConfirmStatusDialog';
+import ListActionButton from '../../components/ListActionButton';
+import ListPaginationControls from '../../components/ListPaginationControls';
 import StatusBadge from '../../components/StatusBadge';
 import AppTextInput from '../../components/AppTextInput';
 import {
@@ -23,9 +27,23 @@ import {
   updateArea,
 } from '../../services/areaApi';
 import { usePermissions } from '../../security/permissions';
+import listScreenStyles from '../../styles/listScreen';
 import { useThemeContext } from '../../theme/ThemeContext';
 import { AreaDTO } from '../../types/Area';
 import { getUserFacingErrorMessage } from '../../utils/userFacingError';
+
+type HoverablePressableState = PressableStateCallbackType & { hovered?: boolean };
+
+type StatusConfirmation = {
+  area: AreaDTO;
+  nextActive: boolean;
+};
+
+type FeedbackState = {
+  visible: boolean;
+  message: string;
+  type: 'success' | 'error';
+};
 
 function errorMessage(error: unknown, fallback: string) {
   return getUserFacingErrorMessage(error, fallback);
@@ -70,6 +88,9 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
   const { hasPermission } = usePermissions();
   const isMobile = width < 920;
   const hasWideActions = width >= 1180;
+  const textSecondary =
+    (theme.colors as typeof theme.colors & { textSecondary?: string }).textSecondary ??
+    theme.colors.onSurfaceVariant;
   const [items, setItems] = useState<AreaDTO[]>([]);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
@@ -84,15 +105,29 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
   const [draftName, setDraftName] = useState('');
   const [draftDescription, setDraftDescription] = useState('');
   const [saving, setSaving] = useState(false);
-  const [snackbar, setSnackbar] = useState({ visible: false, message: '' });
+  const [statusConfirmation, setStatusConfirmation] = useState<StatusConfirmation | null>(null);
+  const [processingStatusId, setProcessingStatusId] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackState>({
+    visible: false,
+    message: '',
+    type: 'success',
+  });
 
   const canCreate = hasPermission('WAREHOUSE', 'CREATE');
   const canEdit = hasPermission('WAREHOUSE', 'EDIT');
   const canToggle = hasPermission('WAREHOUSE', 'ACTIVATE');
   const canViewWarehouse = hasPermission('WAREHOUSE', 'VIEW');
 
-  const showMessage = useCallback((message: string) => {
-    setSnackbar({ visible: true, message });
+  const showSuccessFeedback = useCallback((message: string) => {
+    setFeedback({ visible: true, message, type: 'success' });
+  }, []);
+
+  const showErrorFeedback = useCallback((message: string) => {
+    setFeedback({ visible: true, message, type: 'error' });
+  }, []);
+
+  const hideFeedback = useCallback(() => {
+    setFeedback((current) => ({ ...current, visible: false }));
   }, []);
 
   const fetchAreas = useCallback(
@@ -120,7 +155,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
         setRefreshing(false);
       }
     },
-    [appliedSearch, page, showMessage]
+    [appliedSearch, page]
   );
 
   useEffect(() => {
@@ -181,21 +216,21 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
           descricao: draftDescription.trim() || undefined,
           ativo: editingArea.active,
         });
-        showMessage('Setor atualizado com sucesso.');
+        showSuccessFeedback('Setor atualizado com sucesso.');
       } else {
         await createArea({
           nome: name,
           descricao: draftDescription.trim() || undefined,
           ativo: true,
         });
-        showMessage('Setor criado com sucesso.');
+        showSuccessFeedback('Setor criado com sucesso.');
       }
       setFormVisible(false);
       setEditingArea(null);
       await refreshAreas();
       await fetchAreas(page);
     } catch (requestError) {
-      showMessage(
+      showErrorFeedback(
         errorMessage(
           requestError,
           editingArea ? 'Não foi possível atualizar o setor.' : 'Não foi possível criar o setor.'
@@ -206,7 +241,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
     }
   };
 
-  const confirmToggle = (area: AreaDTO) => {
+  const confirmToggleLegacy = (area: AreaDTO) => {
     if (!canToggle) return;
     const nextActive = area.active === false;
     Alert.alert(
@@ -220,13 +255,13 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
             try {
               if (nextActive) await activateArea(area.id);
               else await inactivateArea(area.id);
-              showMessage(
+              showSuccessFeedback(
                 nextActive ? 'Setor ativado com sucesso.' : 'Setor inativado com sucesso.'
               );
               await refreshAreas(area.id);
               await fetchAreas(page);
             } catch (requestError) {
-              showMessage(
+              showErrorFeedback(
                 errorMessage(requestError, 'Não foi possível atualizar o status do setor.')
               );
             }
@@ -236,16 +271,54 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
     );
   };
 
+  const confirmToggle = (area: AreaDTO) => {
+    if (!canToggle) return;
+    setStatusConfirmation({
+      area,
+      nextActive: area.active === false,
+    });
+  };
+
+  const handleCancelStatusChange = () => {
+    if (processingStatusId !== null) {
+      return;
+    }
+
+    setStatusConfirmation(null);
+  };
+
+  const handleConfirmStatusChange = async () => {
+    if (!statusConfirmation) {
+      return;
+    }
+
+    const { area, nextActive } = statusConfirmation;
+
+    try {
+      setProcessingStatusId(area.id);
+
+      if (nextActive) {
+        await activateArea(area.id);
+      } else {
+        await inactivateArea(area.id);
+      }
+
+      showSuccessFeedback(nextActive ? 'Setor ativado com sucesso.' : 'Setor inativado com sucesso.');
+      setStatusConfirmation(null);
+      await refreshAreas(area.id);
+      await fetchAreas(page);
+    } catch (requestError) {
+      showErrorFeedback(errorMessage(requestError, 'NÃ£o foi possÃ­vel atualizar o status do setor.'));
+    } finally {
+      setProcessingStatusId(null);
+    }
+  };
+
   const openWarehouse = async (area: AreaDTO) => {
     if (!canViewWarehouse) return;
     await selectAreaById(area.id);
     navigation.navigate('Armazém');
   };
-
-  const paginationLabel = useMemo(
-    () => `Página ${Math.min(page + 1, Math.max(totalPages, 1))} de ${Math.max(totalPages, 1)}`,
-    [page, totalPages]
-  );
 
   const renderActions = (area: AreaDTO) => {
     const isSelected = selectedAreaId === area.id;
@@ -253,52 +326,52 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
     if (isMobile) {
       return (
         <View style={styles.mobileActions}>
+          {isSelected ? (
+            <View
+              style={[
+                styles.selectedBadge,
+                styles.selectedBadgeCompact,
+                {
+                  backgroundColor: `${theme.colors.primary}14`,
+                  borderColor: `${theme.colors.primary}44`,
+                },
+              ]}
+            >
+              <Text style={{ color: theme.colors.primary, fontWeight: '800' }}>Selecionado</Text>
+            </View>
+          ) : null}
           {canViewWarehouse ? (
-            <Pressable
+            <ListActionButton
+              label="Abrir"
+              icon="warehouse"
               onPress={() => {
                 void openWarehouse(area);
               }}
-              style={[
-                styles.actionButton,
-                styles.mobilePrimaryAction,
-                { borderColor: theme.colors.primary },
-              ]}
-            >
-              <Text style={[styles.actionButtonText, { color: theme.colors.primary }]}>Abrir</Text>
-            </Pressable>
+              style={styles.mobilePrimaryAction}
+            />
           ) : null}
 
           <View style={styles.mobileSecondaryActions}>
             {canEdit ? (
-              <Pressable
+              <ListActionButton
+                label="Editar"
+                icon="pencil-outline"
                 onPress={() => openForm(area)}
-                style={[
-                  styles.actionButton,
-                  styles.mobileSecondaryAction,
-                  { borderColor: theme.colors.outline },
-                ]}
-              >
-                <Text style={[styles.actionButtonText, { color: theme.colors.text }]}>Editar</Text>
-              </Pressable>
+                compact
+                fill
+                style={styles.mobileSecondaryAction}
+              />
             ) : null}
             {canToggle ? (
-              <Pressable
+              <ListActionButton
+                label={area.active === false ? 'Ativar' : 'Inativar'}
+                icon={area.active === false ? 'toggle-switch-outline' : 'toggle-switch-off-outline'}
                 onPress={() => confirmToggle(area)}
-                style={[
-                  styles.actionButton,
-                  styles.mobileSecondaryAction,
-                  { borderColor: area.active === false ? '#2E7D32' : theme.colors.error },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.actionButtonText,
-                    { color: area.active === false ? '#2E7D32' : theme.colors.error },
-                  ]}
-                >
-                  {area.active === false ? 'Ativar' : 'Inativar'}
-                </Text>
-              </Pressable>
+                compact
+                fill
+                style={styles.mobileSecondaryAction}
+                tone={area.active === false ? 'success' : 'danger'}
+              />
             ) : null}
           </View>
         </View>
@@ -323,41 +396,32 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
               </View>
             ) : null}
 
-            <Pressable
+            <ListActionButton
+              label="Abrir"
+              icon="warehouse"
               onPress={() => {
                 void openWarehouse(area);
               }}
-              style={[styles.actionButton, { borderColor: theme.colors.primary }]}
-            >
-              <Text style={{ color: theme.colors.primary, fontWeight: '800' }}>Abrir</Text>
-            </Pressable>
+              compact
+            />
           </View>
         ) : null}
         {canEdit ? (
-          <Pressable
+          <ListActionButton
+            label="Editar"
+            icon="pencil-outline"
             onPress={() => openForm(area)}
-            style={[styles.actionButton, { borderColor: theme.colors.outline }]}
-          >
-            <Text style={{ color: theme.colors.text, fontWeight: '800' }}>Editar</Text>
-          </Pressable>
+            compact
+          />
         ) : null}
         {canToggle ? (
-          <Pressable
+          <ListActionButton
+            label={area.active === false ? 'Ativar' : 'Inativar'}
+            icon={area.active === false ? 'toggle-switch-outline' : 'toggle-switch-off-outline'}
             onPress={() => confirmToggle(area)}
-            style={[
-              styles.actionButton,
-              { borderColor: area.active === false ? '#2E7D32' : theme.colors.error },
-            ]}
-          >
-            <Text
-              style={{
-                color: area.active === false ? '#2E7D32' : theme.colors.error,
-                fontWeight: '800',
-              }}
-            >
-              {area.active === false ? 'Ativar' : 'Inativar'}
-            </Text>
-          </Pressable>
+            compact
+            tone={area.active === false ? 'success' : 'danger'}
+          />
         ) : null}
       </View>
     );
@@ -525,7 +589,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
                 borderBottomColor: theme.colors.outline,
                 backgroundColor: state.pressed
                   ? theme.colors.surfaceVariant
-                  : (state as any).hovered
+                  : (state as HoverablePressableState).hovered
                     ? `${theme.colors.primary}0A`
                     : 'transparent',
               },
@@ -573,12 +637,17 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
         >
           <Surface
             style={[
-              styles.toolbar,
+              listScreenStyles.toolbarSurface,
               { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
             ]}
           >
-            <View style={[styles.toolbarTop, isMobile && styles.toolbarTopCompact]}>
-              <View style={styles.searchWrap}>
+            <View
+              style={[
+                listScreenStyles.toolbarTop,
+                isMobile ? listScreenStyles.toolbarTopCompact : null,
+              ]}
+            >
+              <View style={listScreenStyles.searchFieldWrap}>
                 <AppTextInput
                   label="Buscar setor"
                   value={search}
@@ -588,7 +657,9 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
                   autoCorrect={false}
                   returnKeyType="search"
                   onKeyPress={(event) => {
-                    if ((event as { nativeEvent?: { key?: string } }).nativeEvent?.key === 'Enter') {
+                    if (
+                      (event as { nativeEvent?: { key?: string } }).nativeEvent?.key === 'Enter'
+                    ) {
                       applySearch();
                     }
                   }}
@@ -607,51 +678,38 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
                 />
               </View>
               {canCreate ? (
-                <Pressable
-                  onPress={() => openForm()}
-                  style={[styles.createButton, { borderColor: theme.colors.primary }]}
+                <View
+                  style={[
+                    listScreenStyles.toolbarActions,
+                    isMobile ? listScreenStyles.toolbarActionsCompact : null,
+                  ]}
                 >
-                  <MaterialCommunityIcons
-                    name="plus-circle-outline"
-                    size={18}
-                    color={theme.colors.primary}
+                  <ListActionButton
+                    label="Novo setor"
+                    icon="plus-circle-outline"
+                    onPress={() => openForm()}
                   />
-                  <Text style={{ color: theme.colors.primary, fontWeight: '800' }}>Novo setor</Text>
-                </Pressable>
+                </View>
               ) : null}
             </View>
-            <View style={[styles.toolbarBottom, isMobile && styles.toolbarBottomCompact]}>
-              <Text style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700' }}>
-                {totalItems} setor{totalItems === 1 ? '' : 'es'}
-              </Text>
-              <View style={styles.pagination}>
-                <Pressable
-                  onPress={() => setPage((current) => Math.max(current - 1, 0))}
-                  disabled={loading || page <= 0}
-                  style={[
-                    styles.pageButton,
-                    { borderColor: theme.colors.outline, opacity: loading || page <= 0 ? 0.45 : 1 },
-                  ]}
-                >
-                  <Text style={{ color: theme.colors.text }}>Anterior</Text>
-                </Pressable>
-                <Text style={{ color: theme.colors.text, fontWeight: '800' }}>
-                  {paginationLabel}
-                </Text>
-                <Pressable
-                  onPress={() => setPage((current) => current + 1)}
-                  disabled={loading || totalPages === 0 || page + 1 >= totalPages}
-                  style={[
-                    styles.pageButton,
-                    {
-                      borderColor: theme.colors.outline,
-                      opacity: loading || totalPages === 0 || page + 1 >= totalPages ? 0.45 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={{ color: theme.colors.text }}>Próxima</Text>
-                </Pressable>
-              </View>
+            <View
+              style={[
+                listScreenStyles.toolbarBottom,
+                isMobile ? listScreenStyles.toolbarBottomCompact : null,
+              ]}
+            >
+              <ListPaginationControls
+                summary={`${totalItems} setor${totalItems === 1 ? '' : 'es'}`}
+                page={page}
+                totalPages={totalPages}
+                onPrevious={() => setPage((current) => Math.max(current - 1, 0))}
+                onNext={() => setPage((current) => current + 1)}
+                previousDisabled={loading || page <= 0}
+                nextDisabled={loading || totalPages === 0 || page + 1 >= totalPages}
+                compact={isMobile}
+                textColor={theme.colors.text}
+                textSecondary={textSecondary}
+              />
             </View>
           </Surface>
           {renderContent()}
@@ -730,14 +788,33 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
           </Surface>
         </Modal>
       </Portal>
-      <Snackbar
-        visible={snackbar.visible}
-        onDismiss={() => setSnackbar((current) => ({ ...current, visible: false }))}
-        duration={3200}
-        style={{ backgroundColor: theme.colors.surfaceVariant }}
-      >
-        <Text style={{ color: theme.colors.text, fontWeight: '700' }}>{snackbar.message}</Text>
-      </Snackbar>
+
+      <ConfirmStatusDialog
+        visible={Boolean(statusConfirmation)}
+        title={statusConfirmation?.nextActive ? 'Ativar setor' : 'Inativar setor'}
+        description={
+          statusConfirmation
+            ? `Confirma ${statusConfirmation.nextActive ? 'a ativaÃ§Ã£o' : 'a inativaÃ§Ã£o'} de "${statusConfirmation.area.name}"?`
+            : ''
+        }
+        confirmLabel={
+          statusConfirmation?.nextActive ? 'Confirmar ativaÃ§Ã£o' : 'Confirmar inativaÃ§Ã£o'
+        }
+        confirmIcon={
+          statusConfirmation?.nextActive ? 'check-circle-outline' : 'close-circle-outline'
+        }
+        confirmTone={statusConfirmation?.nextActive ? 'success' : 'danger'}
+        processing={processingStatusId !== null}
+        onCancel={handleCancelStatusChange}
+        onConfirm={handleConfirmStatusChange}
+      />
+
+      <AlertDialog
+        visible={feedback.visible}
+        message={feedback.message}
+        type={feedback.type}
+        onDismiss={hideFeedback}
+      />
     </>
   );
 }
@@ -745,67 +822,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingVertical: 16, gap: 14 },
-  toolbar: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 16,
-    gap: 16,
-    shadowColor: '#000000',
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1,
-  },
-  toolbarTop: { flexDirection: 'row', alignItems: 'flex-end', gap: 12 },
-  toolbarTopCompact: { flexDirection: 'column', alignItems: 'stretch' },
-  searchWrap: { flex: 1, minWidth: 0 },
-  createButton: {
-    minHeight: 46,
-    flexShrink: 0,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
-  },
-  toolbarBottom: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  toolbarBottomCompact: { alignItems: 'stretch' },
-  pagination: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-  },
-  pageButton: {
-    minHeight: 40,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
+  content: { padding: 24, gap: 14 },
   stateBlock: { minHeight: 220, justifyContent: 'center' },
   cards: { gap: 12 },
   card: {
@@ -899,21 +916,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     minHeight: 34,
   },
-  actionButton: {
-    minHeight: 38,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  actionButtonText: { fontWeight: '800', textAlign: 'center' },
   modalOuter: {
     flex: 1,
     alignItems: 'center',

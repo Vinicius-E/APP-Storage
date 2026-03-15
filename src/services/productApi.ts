@@ -59,6 +59,7 @@ type ProductResponseShape = Partial<Product> & {
 };
 
 const PRODUCT_COLLECTION_ENDPOINTS = ['/api/produtos', '/api/products'];
+const PRODUCT_MUTATION_COLLECTION_ENDPOINT = '/api/produtos';
 const MOCK_STORAGE_KEY = '@storage-system/mock-products';
 const SEARCH_FETCH_SIZE = 1000;
 
@@ -127,8 +128,8 @@ function isBrokenProductCollectionFallbackError(path: string, error: unknown): b
   );
 }
 
-function buildProductDetailEndpoints(id: number): string[] {
-  return [`/api/products/${id}`, `/api/produtos/${id}`];
+function buildProductDetailEndpoint(id: number): string {
+  return `/api/produtos/${id}`;
 }
 
 function buildActivateEndpoints(id: number): string[] {
@@ -272,6 +273,18 @@ function matchesProductSearch(product: Product, search?: string): boolean {
   return haystack.includes(normalizedSearch);
 }
 
+function matchesProductStatus(product: Product, status: ProductStatusFilter): boolean {
+  if (status === 'ATIVO') {
+    return product.ativo;
+  }
+
+  if (status === 'INATIVO') {
+    return !product.ativo;
+  }
+
+  return true;
+}
+
 function paginateProducts(
   products: Product[],
   page: number,
@@ -402,10 +415,25 @@ async function saveMockProducts(products: Product[]): Promise<void> {
 function sanitizeUpsertPayload(payload: ProductUpsertRequest): ProductUpsertRequest {
   return {
     codigo: payload.codigo.trim(),
-    nome: payload.nome.trim(),
+    nomeModelo: payload.nomeModelo.trim(),
+    cor: payload.cor.trim(),
     descricao: payload.descricao?.trim() || undefined,
-    marca: payload.marca?.trim() || undefined,
-    categoria: payload.categoria?.trim() || undefined,
+  };
+}
+
+function buildBackendUpsertPayload(payload: ProductUpsertRequest): {
+  codigo?: string;
+  nomeModelo: string;
+  cor: string;
+  descricao?: string;
+} {
+  const normalizedPayload = sanitizeUpsertPayload(payload);
+
+  return {
+    ...(normalizedPayload.codigo ? { codigo: normalizedPayload.codigo } : {}),
+    nomeModelo: normalizedPayload.nomeModelo,
+    cor: normalizedPayload.cor,
+    ...(normalizedPayload.descricao ? { descricao: normalizedPayload.descricao } : {}),
   };
 }
 
@@ -456,10 +484,11 @@ async function createMockProduct(payload: ProductUpsertRequest): Promise<Product
   const created: Product = {
     id: nextId,
     codigo: normalizedPayload.codigo,
-    nome: normalizedPayload.nome,
+    nome: normalizedPayload.nomeModelo,
+    codigoSistemaWester: normalizedPayload.codigo || undefined,
+    nomeModelo: normalizedPayload.nomeModelo,
+    cor: normalizedPayload.cor,
     descricao: normalizedPayload.descricao,
-    marca: normalizedPayload.marca,
-    categoria: normalizedPayload.categoria,
     ativo: true,
     createdAt: now,
     updatedAt: now,
@@ -481,7 +510,12 @@ async function updateMockProduct(id: number, payload: ProductUpsertRequest): Pro
   const current = products[index];
   const updated: Product = {
     ...current,
-    ...normalizedPayload,
+    codigo: normalizedPayload.codigo,
+    codigoSistemaWester: normalizedPayload.codigo || undefined,
+    nome: normalizedPayload.nomeModelo,
+    nomeModelo: normalizedPayload.nomeModelo,
+    cor: normalizedPayload.cor,
+    descricao: normalizedPayload.descricao,
     updatedAt: new Date().toISOString(),
   };
 
@@ -543,6 +577,17 @@ export async function listProducts({
         });
 
         const response = normalizePageResponse(httpResponse.data, requestedPage, requestedSize);
+        const isRawArrayResponse = Array.isArray(httpResponse.data);
+
+        if (isRawArrayResponse) {
+          const filteredItems = response.items.filter(
+            (product) =>
+              matchesProductStatus(product, status) &&
+              (!hasSearch || matchesProductSearch(product, normalizedSearch))
+          );
+
+          return paginateProducts(filteredItems, page, size);
+        }
 
         if (!hasSearch) {
           return response;
@@ -568,14 +613,11 @@ export async function listProducts({
 
 export async function createProduct(payload: ProductUpsertRequest): Promise<Product> {
   if (!forceMockMode) {
-    const response = await runAgainstAvailableEndpoint(PRODUCT_COLLECTION_ENDPOINTS, async (path) => {
-      const httpResponse = await API.post<Product>(path, payload);
-      return sanitizeProduct(httpResponse.data);
-    });
-
-    if (response) {
-      return response;
-    }
+    const httpResponse = await API.post<Product>(
+      PRODUCT_MUTATION_COLLECTION_ENDPOINT,
+      buildBackendUpsertPayload(payload)
+    );
+    return sanitizeProduct(httpResponse.data);
   }
 
   return createMockProduct(payload);
@@ -583,14 +625,11 @@ export async function createProduct(payload: ProductUpsertRequest): Promise<Prod
 
 export async function updateProduct(id: number, payload: ProductUpsertRequest): Promise<Product> {
   if (!forceMockMode) {
-    const response = await runAgainstAvailableEndpoint(buildProductDetailEndpoints(id), async (path) => {
-      const httpResponse = await API.put<Product>(path, payload);
-      return sanitizeProduct(httpResponse.data);
-    });
-
-    if (response) {
-      return response;
-    }
+    const httpResponse = await API.put<Product>(
+      buildProductDetailEndpoint(id),
+      buildBackendUpsertPayload(payload)
+    );
+    return sanitizeProduct(httpResponse.data);
   }
 
   return updateMockProduct(id, payload);

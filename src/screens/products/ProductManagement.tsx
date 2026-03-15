@@ -10,14 +10,18 @@ import {
   type PressableStateCallbackType,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Modal, Portal, Snackbar, Surface, Text, TextInput } from 'react-native-paper';
+import AlertDialog from '../../components/AlertDialog';
 import AppEmptyState from '../../components/AppEmptyState';
+import SharedConfirmStatusDialog from '../../components/ConfirmStatusDialog';
 import FilterSelect from '../../components/FilterSelect';
 import AppLoadingState from '../../components/AppLoadingState';
+import ListActionButton from '../../components/ListActionButton';
 import StatusBadge from '../../components/StatusBadge';
 import AppTextInput from '../../components/AppTextInput';
+import { Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
 import { usePermissions } from '../../security/permissions';
 import ProductFormModal from './components/ProductFormModal';
+import listScreenStyles from '../../styles/listScreen';
 import { useThemeContext } from '../../theme/ThemeContext';
 import { getUserFacingErrorMessage } from '../../utils/userFacingError';
 import {
@@ -36,20 +40,15 @@ type SelectOption = {
 
 type HoverablePressableState = PressableStateCallbackType & { hovered?: boolean };
 
-type InlineActionButtonProps = {
-  label: string;
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  onPress: () => void;
-  disabled?: boolean;
-  compact?: boolean;
-  fill?: boolean;
-  tone?: 'neutral' | 'primary' | 'success' | 'danger';
-  accessibilityLabel?: string;
-};
-
 type StatusConfirmation = {
   product: Product;
   nextActive: boolean;
+};
+
+type FeedbackState = {
+  visible: boolean;
+  message: string;
+  type: 'success' | 'error';
 };
 
 const IS_WEB = Platform.OS === 'web';
@@ -156,93 +155,6 @@ function getProductColorHex(color?: string): string {
   }
 }
 
-function InlineActionButton({
-  label,
-  icon,
-  onPress,
-  disabled,
-  compact = false,
-  fill = false,
-  tone = 'neutral',
-  accessibilityLabel,
-}: InlineActionButtonProps) {
-  const { theme } = useThemeContext();
-
-  const palette = useMemo(() => {
-    if (tone === 'danger') {
-      return {
-        border: theme.colors.error,
-        text: theme.colors.error,
-        hover: withAlpha(theme.colors.error, 0.08),
-      };
-    }
-
-    if (tone === 'success') {
-      const success = '#2E7D32';
-      return {
-        border: success,
-        text: success,
-        hover: withAlpha(success, 0.08),
-      };
-    }
-
-    if (tone === 'primary') {
-      return {
-        border: theme.colors.primary,
-        text: theme.colors.primary,
-        hover: withAlpha(theme.colors.primary, 0.08),
-      };
-    }
-
-    return {
-      border: theme.colors.outline,
-      text: theme.colors.text,
-      hover: withAlpha(theme.colors.primary, 0.06),
-    };
-  }, [theme.colors.error, theme.colors.outline, theme.colors.primary, theme.colors.text, tone]);
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
-      disabled={disabled}
-      onPress={onPress}
-      style={(state) => {
-        const hovered = Boolean((state as HoverablePressableState).hovered);
-
-        return [
-          styles.inlineActionButton,
-          IS_WEB ? styles.inlineActionButtonWeb : null,
-          compact ? styles.inlineActionButtonCompact : null,
-          fill ? styles.inlineActionButtonFill : null,
-          {
-            backgroundColor: state.pressed
-              ? palette.hover
-              : hovered
-                ? palette.hover
-                : 'transparent',
-            borderColor: palette.border,
-            opacity: disabled ? 0.45 : 1,
-            transform: [{ translateY: hovered ? -1 : 0 }],
-          },
-        ];
-      }}
-    >
-      <MaterialCommunityIcons name={icon} size={compact ? 16 : 18} color={palette.text} />
-      <Text
-        numberOfLines={1}
-        style={[
-          styles.inlineActionLabel,
-          compact ? styles.inlineActionLabelCompact : null,
-          { color: palette.text },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 function ConfirmStatusDialog({
   visible,
   target,
@@ -259,7 +171,6 @@ function ConfirmStatusDialog({
   const { theme } = useThemeContext();
   const { width } = useWindowDimensions();
   const isCompact = width < 640;
-  const accent = target?.nextActive ? '#2E7D32' : theme.colors.error;
 
   return (
     <Portal>
@@ -289,7 +200,7 @@ function ConfirmStatusDialog({
           </Text>
 
           <View style={[styles.confirmActions, isCompact ? styles.confirmActionsCompact : null]}>
-            <InlineActionButton
+            <ListActionButton
               label="Cancelar"
               icon="close"
               onPress={onCancel}
@@ -297,7 +208,7 @@ function ConfirmStatusDialog({
               compact
             />
 
-            <InlineActionButton
+            <ListActionButton
               label={target?.nextActive ? 'Confirmar ativação' : 'Confirmar inativação'}
               icon={target?.nextActive ? 'check-circle-outline' : 'close-circle-outline'}
               onPress={onConfirm}
@@ -339,9 +250,10 @@ export default function ProductManagement() {
   const [processingStatusId, setProcessingStatusId] = useState<number | null>(null);
   const [openFilter, setOpenFilter] = useState<'status' | 'size' | null>(null);
   const latestFetchRequestRef = useRef(0);
-  const [snackbar, setSnackbar] = useState<{ visible: boolean; message: string }>({
+  const [feedback, setFeedback] = useState<FeedbackState>({
     visible: false,
     message: '',
+    type: 'success',
   });
 
   const textSecondary =
@@ -354,11 +266,16 @@ export default function ProductManagement() {
 
   const hasActiveFilters = debouncedSearch.length > 0 || statusFilter !== 'TODOS';
 
-  const showSnackbar = useCallback((message: string) => {
-    setSnackbar({
+  const showFeedback = useCallback((type: FeedbackState['type'], message: string) => {
+    setFeedback({
       visible: true,
       message,
+      type,
     });
+  }, []);
+
+  const hideFeedback = useCallback(() => {
+    setFeedback((current) => ({ ...current, visible: false }));
   }, []);
 
   const fetchProducts = useCallback(
@@ -413,7 +330,7 @@ export default function ProductManagement() {
         setIsRefreshing(false);
       }
     },
-    [debouncedSearch, page, showSnackbar, size, statusFilter]
+    [debouncedSearch, page, size, statusFilter]
   );
 
   useEffect(() => {
@@ -477,17 +394,18 @@ export default function ProductManagement() {
 
       if (editingProduct) {
         await updateProduct(editingProduct.id, payload);
-        showSnackbar('Produto atualizado com sucesso.');
+        showFeedback('success', 'Produto atualizado com sucesso.');
       } else {
         await createProduct(payload);
-        showSnackbar('Produto criado com sucesso.');
+        showFeedback('success', 'Produto criado com sucesso.');
       }
 
       setIsFormVisible(false);
       setEditingProduct(null);
       await fetchProducts(page);
     } catch (requestError) {
-      showSnackbar(
+      showFeedback(
+        'error',
         resolveRequestErrorMessage(
           requestError,
           editingProduct
@@ -535,16 +453,17 @@ export default function ProductManagement() {
 
       if (nextActive) {
         await activateProduct(product.id);
-        showSnackbar('Produto ativado com sucesso.');
+        showFeedback('success', 'Produto ativado com sucesso.');
       } else {
         await inactivateProduct(product.id);
-        showSnackbar('Produto inativado com sucesso.');
+        showFeedback('success', 'Produto inativado com sucesso.');
       }
 
       setStatusConfirmation(null);
       await fetchProducts(page);
     } catch (requestError) {
-      showSnackbar(
+      showFeedback(
+        'error',
         resolveRequestErrorMessage(
           requestError,
           nextActive ? 'Não foi possível ativar o produto.' : 'Não foi possível inativar o produto.'
@@ -766,7 +685,7 @@ export default function ProductManagement() {
 
                   <View style={styles.mobileActionsRow}>
                     {canEditProducts ? (
-                      <InlineActionButton
+                      <ListActionButton
                         label="Editar"
                         icon="pencil-outline"
                         onPress={() => handleOpenEdit(product)}
@@ -777,7 +696,7 @@ export default function ProductManagement() {
                     ) : null}
 
                     {product.ativo && canInactivateProducts ? (
-                      <InlineActionButton
+                      <ListActionButton
                         label="Inativar"
                         icon="toggle-switch-off-outline"
                         onPress={() => handleAskStatusChange(product)}
@@ -789,7 +708,7 @@ export default function ProductManagement() {
                     ) : null}
 
                     {!product.ativo && canActivateProducts ? (
-                      <InlineActionButton
+                      <ListActionButton
                         label="Ativar"
                         icon="toggle-switch-outline"
                         onPress={() => handleAskStatusChange(product)}
@@ -904,7 +823,7 @@ export default function ProductManagement() {
                 </Text>
                 <View style={[styles.actionsCell, styles.desktopActions]}>
                   {canEditProducts ? (
-                    <InlineActionButton
+                    <ListActionButton
                       label="Editar"
                       icon="pencil-outline"
                       onPress={() => handleOpenEdit(product)}
@@ -914,7 +833,7 @@ export default function ProductManagement() {
                   ) : null}
 
                   {product.ativo && canInactivateProducts ? (
-                    <InlineActionButton
+                    <ListActionButton
                       label="Inativar"
                       icon="toggle-switch-off-outline"
                       onPress={() => handleAskStatusChange(product)}
@@ -925,7 +844,7 @@ export default function ProductManagement() {
                   ) : null}
 
                   {!product.ativo && canActivateProducts ? (
-                    <InlineActionButton
+                    <ListActionButton
                       label="Ativar"
                       icon="toggle-switch-outline"
                       onPress={() => handleAskStatusChange(product)}
@@ -965,9 +884,9 @@ export default function ProductManagement() {
         >
           <Surface
             style={[
-              styles.toolbarSurface,
-              openFilter ? styles.toolbarSurfaceRaised : null,
-              isDesktopWeb ? styles.toolbarSurfaceWeb : null,
+              listScreenStyles.toolbarSurface,
+              openFilter ? listScreenStyles.toolbarSurfaceRaised : null,
+              isDesktopWeb ? listScreenStyles.toolbarSurfaceDesktop : null,
               {
                 backgroundColor: theme.colors.surface,
                 borderColor: theme.colors.outline,
@@ -976,12 +895,11 @@ export default function ProductManagement() {
           >
             <View
               style={[
-                styles.toolbarTop,
-                isDesktopWeb ? styles.toolbarTopWeb : null,
-                isMobile ? styles.toolbarTopCompact : null,
+                listScreenStyles.toolbarTop,
+                isMobile ? listScreenStyles.toolbarTopCompact : null,
               ]}
             >
-              <View style={styles.searchFieldWrap}>
+              <View style={listScreenStyles.searchFieldWrap}>
                 <AppTextInput
                   label="Buscar produto"
                   value={search}
@@ -995,25 +913,35 @@ export default function ProductManagement() {
               </View>
 
               {canCreateProducts ? (
-                <InlineActionButton
-                  label="Novo produto"
-                  icon="package-variant-closed-plus"
-                  onPress={handleOpenCreate}
-                  disabled={savingForm}
-                  tone="primary"
-                  accessibilityLabel="Abrir cadastro de novo produto"
-                />
+                <View
+                  style={[
+                    listScreenStyles.toolbarActions,
+                    isMobile ? listScreenStyles.toolbarActionsCompact : null,
+                  ]}
+                >
+                  <ListActionButton
+                    label="Novo produto"
+                    icon="package-variant-closed-plus"
+                    onPress={handleOpenCreate}
+                    disabled={savingForm}
+                    accessibilityLabel="Abrir cadastro de novo produto"
+                  />
+                </View>
               ) : null}
             </View>
 
             <View
               style={[
-                styles.toolbarBottom,
-                isDesktopWeb ? styles.toolbarBottomWeb : null,
-                isMobile ? styles.toolbarBottomCompact : null,
+                listScreenStyles.toolbarBottom,
+                isMobile ? listScreenStyles.toolbarBottomCompact : null,
               ]}
             >
-              <View style={[styles.filtersRow, isMobile ? styles.filtersRowCompact : null]}>
+              <View
+                style={[
+                  listScreenStyles.filtersRow,
+                  isMobile ? listScreenStyles.filtersRowCompact : null,
+                ]}
+              >
                 <FilterSelect
                   label="Status"
                   value={statusFilter}
@@ -1049,22 +977,21 @@ export default function ProductManagement() {
 
               <View
                 style={[
-                  styles.paginationSummary,
-                  isDesktopWeb ? styles.paginationSummaryWeb : null,
-                  isMobile ? styles.paginationSummaryCompact : null,
+                  listScreenStyles.paginationGroup,
+                  isMobile ? listScreenStyles.paginationGroupCompact : null,
                 ]}
               >
-                <Text style={[styles.paginationSummaryText, { color: textSecondary }]}>
+                <Text style={[listScreenStyles.paginationSummaryText, { color: textSecondary }]}>
                   {totalItems} produto{totalItems === 1 ? '' : 's'}
                 </Text>
 
                 <View
                   style={[
-                    styles.paginationControls,
-                    isDesktopWeb ? styles.paginationControlsWeb : null,
+                    listScreenStyles.paginationControls,
+                    isDesktopWeb ? listScreenStyles.paginationControlsNoWrap : null,
                   ]}
                 >
-                  <InlineActionButton
+                  <ListActionButton
                     label="Anterior"
                     icon="chevron-left"
                     onPress={handleGoToPreviousPage}
@@ -1072,12 +999,12 @@ export default function ProductManagement() {
                     compact
                   />
 
-                  <Text style={[styles.paginationPageLabel, { color: theme.colors.text }]}>
+                  <Text style={[listScreenStyles.paginationPageLabel, { color: theme.colors.text }]}>
                     Página {Math.min(page + 1, Math.max(totalPages, 1))} de{' '}
                     {Math.max(totalPages, 1)}
                   </Text>
 
-                  <InlineActionButton
+                  <ListActionButton
                     label="Próxima"
                     icon="chevron-right"
                     onPress={handleGoToNextPage}
@@ -1102,27 +1029,32 @@ export default function ProductManagement() {
         onSubmit={handleSubmitForm}
       />
 
-      <ConfirmStatusDialog
+      <SharedConfirmStatusDialog
         visible={Boolean(statusConfirmation)}
-        target={statusConfirmation}
+        title={statusConfirmation?.nextActive ? 'Ativar produto' : 'Inativar produto'}
+        description={
+          statusConfirmation
+            ? `Confirma ${statusConfirmation.nextActive ? 'a ativaÃ§Ã£o' : 'a inativaÃ§Ã£o'} de "${statusConfirmation.product.nome}"?`
+            : ''
+        }
+        confirmLabel={
+          statusConfirmation?.nextActive ? 'Confirmar ativaÃ§Ã£o' : 'Confirmar inativaÃ§Ã£o'
+        }
+        confirmIcon={
+          statusConfirmation?.nextActive ? 'check-circle-outline' : 'close-circle-outline'
+        }
+        confirmTone={statusConfirmation?.nextActive ? 'success' : 'danger'}
         processing={processingStatusId !== null}
         onCancel={handleCancelStatusChange}
         onConfirm={handleConfirmStatusChange}
       />
 
-      <Snackbar
-        visible={snackbar.visible}
-        onDismiss={() => setSnackbar((current) => ({ ...current, visible: false }))}
-        duration={3200}
-        style={{ backgroundColor: theme.colors.surfaceVariant }}
-        action={{
-          label: 'Fechar',
-          onPress: () => setSnackbar((current) => ({ ...current, visible: false })),
-          textColor: theme.colors.primary,
-        }}
-      >
-        <Text style={{ color: theme.colors.text, fontWeight: '700' }}>{snackbar.message}</Text>
-      </Snackbar>
+      <AlertDialog
+        visible={feedback.visible}
+        message={feedback.message}
+        type={feedback.type}
+        onDismiss={hideFeedback}
+      />
     </>
   );
 }
@@ -1146,104 +1078,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 24,
     gap: 18,
-  },
-  toolbarSurface: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 16,
-    gap: 16,
-    overflow: 'visible',
-    shadowColor: '#000000',
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1,
-  },
-  toolbarSurfaceRaised: {
-    zIndex: 220,
-    elevation: 10,
-  },
-  toolbarSurfaceWeb: {
-    borderRadius: 24,
-    padding: 20,
-    gap: 18,
-  },
-  toolbarTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-  toolbarTopWeb: {
-    alignItems: 'center',
-    gap: 16,
-  },
-  toolbarTopCompact: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-  },
-  searchFieldWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  toolbarBottom: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-    overflow: 'visible',
-  },
-  toolbarBottomWeb: {
-    alignItems: 'center',
-    gap: 16,
-  },
-  toolbarBottomCompact: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-  },
-  filtersRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 10,
-    overflow: 'visible',
-    position: 'relative',
-    zIndex: 40,
-  },
-  filtersRowCompact: {
-    width: '100%',
-    flexDirection: 'column',
-  },
-  paginationSummary: {
-    marginLeft: 'auto',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  paginationSummaryWeb: {
-    minWidth: 320,
-    gap: 10,
-  },
-  paginationSummaryCompact: {
-    width: '100%',
-    marginLeft: 0,
-    alignItems: 'stretch',
-  },
-  paginationSummaryText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  paginationControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-  },
-  paginationControlsWeb: {
-    flexWrap: 'nowrap',
-    gap: 10,
-  },
-  paginationPageLabel: {
-    fontSize: 13,
-    fontWeight: '800',
   },
   listSection: {
     gap: 12,
@@ -1498,48 +1332,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     width: '100%',
-  },
-  inlineActionButton: {
-    minHeight: 46,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
-  },
-  inlineActionButtonWeb: IS_WEB
-    ? ({
-        cursor: 'pointer',
-        transitionProperty: 'transform, background-color, border-color, box-shadow, opacity',
-        transitionDuration: '160ms',
-        transitionTimingFunction: 'ease-out',
-      } as any)
-    : ({} as any),
-  inlineActionButtonCompact: {
-    minHeight: IS_WEB ? 36 : 40,
-    paddingHorizontal: IS_WEB ? 10 : 12,
-    paddingVertical: IS_WEB ? 6 : 8,
-  },
-  inlineActionButtonFill: {
-    flex: 1,
-    minWidth: 0,
-  },
-  inlineActionLabel: {
-    fontSize: 14,
-    fontWeight: '800',
-    flexShrink: 1,
-    textAlign: 'center',
-  },
-  inlineActionLabelCompact: {
-    fontSize: IS_WEB ? 12 : 13,
   },
   confirmModalOuter: {
     flex: 1,

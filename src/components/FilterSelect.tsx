@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     maxWidth: 320,
     flexShrink: 0,
     position: 'relative',
-    zIndex: 80,
+    zIndex: 400,
     overflow: 'visible',
   },
   wrapCompact: {
@@ -218,8 +218,8 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   wrapOpen: {
-    zIndex: 320,
-    elevation: 18,
+    zIndex: 2000,
+    elevation: 24,
   },
   label: {
     marginBottom: 8,
@@ -255,8 +255,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 6,
     gap: 6,
-    zIndex: 420,
-    elevation: 22,
+    zIndex: 2200,
+    elevation: 28,
     shadowOpacity: 0.18,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 10 },

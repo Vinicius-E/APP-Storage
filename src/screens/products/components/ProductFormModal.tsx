@@ -24,28 +24,25 @@ type ProductFormModalProps = {
 
 type FormState = {
   codigo: string;
-  nome: string;
+  nomeModelo: string;
+  cor: string;
   descricao: string;
-  marca: string;
-  categoria: string;
 };
 
 type TouchedState = Record<keyof FormState, boolean>;
 
 const EMPTY_FORM: FormState = {
   codigo: '',
-  nome: '',
+  nomeModelo: '',
+  cor: '',
   descricao: '',
-  marca: '',
-  categoria: '',
 };
 
 const EMPTY_TOUCHED: TouchedState = {
   codigo: false,
-  nome: false,
+  nomeModelo: false,
+  cor: false,
   descricao: false,
-  marca: false,
-  categoria: false,
 };
 
 function toFormState(product?: Product | null): FormState {
@@ -54,11 +51,10 @@ function toFormState(product?: Product | null): FormState {
   }
 
   return {
-    codigo: product.codigo ?? '',
-    nome: product.nome ?? '',
+    codigo: product.codigoSistemaWester ?? product.codigo ?? '',
+    nomeModelo: product.nomeModelo ?? product.nome ?? '',
+    cor: product.cor ?? '',
     descricao: product.descricao ?? '',
-    marca: product.marca ?? '',
-    categoria: product.categoria ?? '',
   };
 }
 
@@ -92,17 +88,19 @@ export default function ProductFormModal({
     theme.colors.onSurfaceVariant;
 
   const codigoValue = form.codigo.trim();
-  const nomeValue = form.nome.trim();
+  const nomeModeloValue = form.nomeModelo.trim();
+  const corValue = form.cor.trim();
 
   const errors = useMemo(
     () => ({
-      codigo: touched.codigo && !codigoValue ? 'Informe o código do produto.' : '',
-      nome: touched.nome && !nomeValue ? 'Informe o nome do produto.' : '',
+      nomeModelo:
+        touched.nomeModelo && !nomeModeloValue ? 'Informe o nome/modelo do produto.' : '',
+      cor: touched.cor && !corValue ? 'Informe a cor do produto.' : '',
     }),
-    [codigoValue, nomeValue, touched.codigo, touched.nome]
+    [corValue, nomeModeloValue, touched.cor, touched.nomeModelo]
   );
 
-  const isValid = codigoValue.length > 0 && nomeValue.length > 0;
+  const isValid = nomeModeloValue.length > 0 && corValue.length > 0;
 
   const updateField = (field: keyof FormState, value: string) => {
     setForm((current) => ({
@@ -121,10 +119,9 @@ export default function ProductFormModal({
   const handleSubmit = async () => {
     setTouched({
       codigo: true,
-      nome: true,
+      nomeModelo: true,
+      cor: true,
       descricao: true,
-      marca: true,
-      categoria: true,
     });
 
     if (!isValid || saving) {
@@ -133,16 +130,19 @@ export default function ProductFormModal({
 
     await onSubmit({
       codigo: codigoValue,
-      nome: nomeValue,
+      nomeModelo: nomeModeloValue,
+      cor: corValue,
       descricao: form.descricao.trim() || undefined,
-      marca: form.marca.trim() || undefined,
-      categoria: form.categoria.trim() || undefined,
     });
   };
 
   return (
     <Portal>
-      <Modal visible={visible} onDismiss={saving ? undefined : onDismiss} contentContainerStyle={styles.modalOuter}>
+      <Modal
+        visible={visible}
+        onDismiss={saving ? undefined : onDismiss}
+        contentContainerStyle={styles.modalOuter}
+      >
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Surface
             style={[
@@ -195,7 +195,7 @@ export default function ProductFormModal({
               <View style={styles.formGrid}>
                 <View style={styles.fieldGroup}>
                   <AppTextInput
-                    label="Código *"
+                    label="Código"
                     value={form.codigo}
                     onChangeText={(value) => updateField('codigo', value)}
                     onBlur={() => touchField('codigo')}
@@ -204,24 +204,41 @@ export default function ProductFormModal({
                     maxLength={60}
                     accessibilityLabel="Campo código do produto"
                   />
-                  {errors.codigo ? (
-                    <Text style={[styles.errorText, { color: theme.colors.error }]}>{errors.codigo}</Text>
-                  ) : null}
                 </View>
 
                 <View style={styles.fieldGroup}>
                   <AppTextInput
                     label="Nome *"
-                    value={form.nome}
-                    onChangeText={(value) => updateField('nome', value)}
-                    onBlur={() => touchField('nome')}
+                    value={form.nomeModelo}
+                    onChangeText={(value) => updateField('nomeModelo', value)}
+                    onBlur={() => touchField('nomeModelo')}
                     autoCapitalize="words"
                     autoCorrect={false}
                     maxLength={120}
                     accessibilityLabel="Campo nome do produto"
                   />
-                  {errors.nome ? (
-                    <Text style={[styles.errorText, { color: theme.colors.error }]}>{errors.nome}</Text>
+                  {errors.nomeModelo ? (
+                    <Text style={[styles.errorText, { color: theme.colors.error }]}>
+                      {errors.nomeModelo}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <AppTextInput
+                    label="Cor *"
+                    value={form.cor}
+                    onChangeText={(value) => updateField('cor', value)}
+                    onBlur={() => touchField('cor')}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    maxLength={100}
+                    accessibilityLabel="Campo cor do produto"
+                  />
+                  {errors.cor ? (
+                    <Text style={[styles.errorText, { color: theme.colors.error }]}>
+                      {errors.cor}
+                    </Text>
                   ) : null}
                 </View>
 
@@ -230,39 +247,12 @@ export default function ProductFormModal({
                     label="Descrição"
                     value={form.descricao}
                     onChangeText={(value) => updateField('descricao', value)}
+                    onBlur={() => touchField('descricao')}
                     multiline
                     numberOfLines={3}
                     accessibilityLabel="Campo descrição do produto"
                   />
                 </View>
-
-                {mode === 'create' ? (
-                  <View style={[styles.row, isCompact ? styles.rowCompact : null]}>
-                    <View style={[styles.fieldGroup, styles.rowField]}>
-                      <AppTextInput
-                        label="Marca"
-                        value={form.marca}
-                        onChangeText={(value) => updateField('marca', value)}
-                        autoCapitalize="words"
-                        autoCorrect={false}
-                        maxLength={80}
-                        accessibilityLabel="Campo marca do produto"
-                      />
-                    </View>
-
-                    <View style={[styles.fieldGroup, styles.rowField]}>
-                      <AppTextInput
-                        label="Categoria"
-                        value={form.categoria}
-                        onChangeText={(value) => updateField('categoria', value)}
-                        autoCapitalize="words"
-                        autoCorrect={false}
-                        maxLength={80}
-                        accessibilityLabel="Campo categoria do produto"
-                      />
-                    </View>
-                  </View>
-                ) : null}
               </View>
             </ScrollView>
 
@@ -363,17 +353,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginLeft: 2,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  rowCompact: {
-    flexDirection: 'column',
-    gap: 14,
-  },
-  rowField: {
-    flex: 1,
   },
   actions: {
     borderTopWidth: 1,

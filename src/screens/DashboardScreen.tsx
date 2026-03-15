@@ -13,20 +13,28 @@ import {
 } from 'react-native';
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Chip, Text, TextInput } from 'react-native-paper';
+import { Text, TextInput } from 'react-native-paper';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
 import DashboardQuickActions from '../components/DashboardQuickActions';
+import FilterSelect from '../components/FilterSelect';
 import ModalFrame from '../components/warehouse2d/modals/ModalFrame';
+import { useAreaContext } from '../areas/AreaContext';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
+import { listAllStockItems, listStockItems, type StockItemDTO } from '../services/stockItemApi';
 import { useThemeContext } from '../theme/ThemeContext';
-import { API } from '../axios';
+import { getUserFacingErrorMessage } from '../utils/userFacingError';
+
+type DashboardSortColumn = 'produto' | 'quantidade' | 'status';
 
 type StockRow = {
   id: string;
+  itemEstoqueId: number;
+  areaId: number | null;
+  areaNome: string;
   produto: string;
   fileira: string;
   grade: string;
@@ -38,34 +46,14 @@ type StockRow = {
   descricao: string;
 };
 
-type EstoquePosicao = {
-  areaId: number;
-
-  fileiraId: number;
-  fileiraIdentificador: string;
-
-  gradeId?: number | null;
-  gradeIdentificador?: string | null;
-
-  nivelId?: number | null;
-  nivelIdentificador?: string | null;
-
-  itemEstoqueId?: number | null;
-  quantidade: number;
-
-  produtoId?: number | null;
-  codigoSistemaWester?: string | null;
-  nomeModelo?: string | null;
-  cor?: string | null;
-  descricao?: string | null;
-
-  produto?: {
-    id: number;
-    codigoSistemaWester: string;
-    cor: string;
-    descricao: string;
-    nomeModelo: string;
-  } | null;
+type StockReportSummary = {
+  areas: number;
+  fileiras: number;
+  grades: number;
+  niveis: number;
+  itens: number;
+  linhas: number;
+  vazios: number;
 };
 
 const STATUS_COLOR: Record<StockRow['status'], string> = {
@@ -73,8 +61,6 @@ const STATUS_COLOR: Record<StockRow['status'], string> = {
   Reservado: '#E67E22',
   Baixo: '#C62828',
 };
-
-const AREA_ID = 1;
 
 function withAlpha(color: string, alpha: number): string {
   const clamped = Math.max(0, Math.min(1, alpha));
@@ -109,6 +95,24 @@ function withAlpha(color: string, alpha: number): string {
   return color;
 }
 
+function StockStatusBadge({ status }: { status: StockRow['status'] }) {
+  const accent = STATUS_COLOR[status];
+
+  return (
+    <View
+      style={[
+        styles.statusBadge,
+        {
+          backgroundColor: withAlpha(accent, 0.1),
+          borderColor: withAlpha(accent, 0.24),
+        },
+      ]}
+    >
+      <Text style={[styles.statusBadgeLabel, { color: accent }]}>{status}</Text>
+    </View>
+  );
+}
+
 function firstNonEmpty(...values: Array<string | null | undefined>): string {
   for (const value of values) {
     const normalized = String(value ?? '').trim();
@@ -128,10 +132,107 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#039;');
 }
 
+function normalizeText(value: string | null | undefined, fallback = '-'): string {
+  const normalized = String(value ?? '').trim();
+  return normalized !== '' ? normalized : fallback;
+}
+
+function computeStatus(quantidade: number): StockRow['status'] {
+  if (quantidade <= 10) {
+    return 'Baixo';
+  }
+
+  return 'Dispon\u00edvel' as StockRow['status'];
+}
+
+function buildLocationLabel(
+  row: Pick<StockRow, 'areaNome' | 'fileira' | 'grade' | 'nivel'>
+): string {
+  const areaPrefix = row.areaNome ? `Setor ${row.areaNome} / ` : '';
+  return `${areaPrefix}Fileira ${row.fileira} / Grade ${row.grade} / Nível ${row.nivel}`;
+}
+
+function compareStockRows(
+  left: StockRow,
+  right: StockRow,
+  sortBy: DashboardSortColumn,
+  sortDirection: 'asc' | 'desc'
+): number {
+  const direction = sortDirection === 'asc' ? 1 : -1;
+
+  if (sortBy === 'quantidade') {
+    return (left.quantidade - right.quantidade) * direction;
+  }
+
+  const leftValue = sortBy === 'status' ? left.status : left.produto;
+  const rightValue = sortBy === 'status' ? right.status : right.produto;
+
+  return leftValue.localeCompare(rightValue, 'pt-BR') * direction;
+}
+
+function buildSortParam(sortBy: DashboardSortColumn, sortDirection: 'asc' | 'desc'): string {
+  const field = sortBy === 'quantidade' || sortBy === 'status' ? 'quantidade' : 'nomeModelo';
+  return `${field},${sortDirection}`;
+}
+
+function mapStockItemToRow(item: StockItemDTO): StockRow {
+  const produto = firstNonEmpty(item.nomeModelo, item.codigoSistemaWester, 'Sem produto');
+
+  return {
+    id: String(item.itemEstoqueId),
+    itemEstoqueId: item.itemEstoqueId,
+    areaId: item.areaId,
+    areaNome: normalizeText(item.areaNome, ''),
+    produto,
+    fileira: normalizeText(item.fileiraIdentificador),
+    grade: normalizeText(item.gradeIdentificador),
+    nivel: normalizeText(item.nivelIdentificador),
+    status: computeStatus(item.quantidade),
+    quantidade: item.quantidade,
+    codigoSistemaWester: normalizeText(item.codigoSistemaWester, ''),
+    cor: normalizeText(item.cor, ''),
+    descricao: normalizeText(item.descricao, ''),
+  };
+}
+
+function buildReportSummary(rows: StockRow[]): StockReportSummary {
+  const areaKeys = new Set<string>();
+  const fileiraKeys = new Set<string>();
+  const gradeKeys = new Set<string>();
+  const nivelKeys = new Set<string>();
+  let itens = 0;
+
+  for (const row of rows) {
+    const areaKey = row.areaId != null ? String(row.areaId) : row.areaNome || 'sem-area';
+    const fileiraKey = `${areaKey}__${row.fileira}`;
+    const gradeKey = `${fileiraKey}__${row.grade}`;
+    const nivelKey = `${gradeKey}__${row.nivel}`;
+
+    if (row.areaNome) {
+      areaKeys.add(areaKey);
+    }
+
+    fileiraKeys.add(fileiraKey);
+    gradeKeys.add(gradeKey);
+    nivelKeys.add(nivelKey);
+    itens += row.quantidade;
+  }
+
+  return {
+    areas: areaKeys.size,
+    fileiras: fileiraKeys.size,
+    grades: gradeKeys.size,
+    niveis: nivelKeys.size,
+    itens,
+    linhas: rows.length,
+    vazios: 0,
+  };
+}
+
 function buildStockReportHtml(
   reportRows: StockRow[],
   generatedAt: string,
-  summary: { fileiras: number; grades: number; niveis: number; itens: number; vazios: number }
+  summary: StockReportSummary
 ): string {
   const rowsHtml = reportRows
     .map((row, index) => {
@@ -139,7 +240,7 @@ function buildStockReportHtml(
       return `
         <tr style="background:${rowBg};">
           <td>${escapeHtml(row.produto)}</td>
-          <td>${escapeHtml(`Fileira ${row.fileira} / Grade ${row.grade} / Nível ${row.nivel}`)}</td>
+          <td>${escapeHtml(buildLocationLabel(row))}</td>
           <td>${escapeHtml(row.status)}</td>
           <td style="text-align:right;font-weight:700;">${row.quantidade}</td>
         </tr>
@@ -223,8 +324,12 @@ export default function DashboardScreen() {
   const { width } = useWindowDimensions();
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
 
+  const { areas } = useAreaContext();
+
   const [filter, setFilter] = useState('');
-  const [sortBy, setSortBy] = useState<keyof StockRow>('produto');
+  const [appliedFilter, setAppliedFilter] = useState('');
+  const [selectedAreaFilter, setSelectedAreaFilter] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<DashboardSortColumn>('produto');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(5);
@@ -233,7 +338,8 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [isPdfHovered, setIsPdfHovered] = useState(false);
-  const [hoveredSortColumn, setHoveredSortColumn] = useState<keyof StockRow | null>(null);
+  const [hoveredSortColumn, setHoveredSortColumn] = useState<DashboardSortColumn | null>(null);
+  const [isAreaFilterOpen, setIsAreaFilterOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<StockRow | null>(null);
   const [isProductModalVisible, setIsProductModalVisible] = useState(false);
   const [rows, setRows] = useState<StockRow[]>([]);
@@ -245,274 +351,163 @@ export default function DashboardScreen() {
     itens: 0,
     vazios: 0,
   });
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   const isWide = width >= 900;
 
-  const computeStatus = (quantidade: number): StockRow['status'] => {
-    if (quantidade <= 10) {
-      return 'Baixo';
-    }
-    return 'Disponível';
-  };
+  const areaOptions = useMemo(
+    () => [
+      {
+        value: '',
+        label: 'Todos os setores',
+      },
+      ...[...areas]
+        .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'))
+        .map((area) => ({
+          value: String(area.id),
+          label: area.active === false ? `${area.name} (inativo)` : area.name,
+        })),
+    ],
+    [areas]
+  );
 
-  const normalizeProdutoNome = (pos: EstoquePosicao): string => {
-    const nome = (pos.produto?.nomeModelo ?? pos.nomeModelo ?? '').toString().trim();
-    if (nome !== '') {
-      return nome;
-    }
-    const codigo = (pos.produto?.codigoSistemaWester ?? pos.codigoSistemaWester ?? '')
-      .toString()
-      .trim();
-    if (codigo !== '') {
-      return codigo;
-    }
-    return 'Sem produto';
-  };
+  const selectedAreaValue = selectedAreaFilter == null ? '' : String(selectedAreaFilter);
+  const selectedAreaLabel =
+    areaOptions.find((option) => option.value === selectedAreaValue)?.label ?? 'Todos os setores';
 
-  const normalizeGradeIdentificador = (pos: EstoquePosicao): string => {
-    const grade = (pos.gradeIdentificador ?? '').toString().trim();
-    if (grade !== '') {
-      return grade;
-    }
-    return '-';
-  };
+  const hasDashboardFilters = appliedFilter.trim() !== '' || selectedAreaFilter != null;
+  const dashboardEmptyCopy = getApiEmptyCopy('dashboard', hasDashboardFilters);
+  const rangeStart = totalItems === 0 ? 0 : page * itemsPerPage + 1;
+  const rangeEnd = totalItems === 0 ? 0 : Math.min(page * itemsPerPage + rows.length, totalItems);
 
-  const normalizeFileiraIdentificador = (pos: EstoquePosicao): string => {
-    const fileira = (pos.fileiraIdentificador ?? '').toString().trim();
-    if (fileira !== '') {
-      return fileira;
-    }
-    return '-';
-  };
+  const loadDashboard = useCallback(
+    async (targetPage: number, isRefresh: boolean) => {
+      setLoadErrorMessage('');
 
-  const normalizeNivelIdentificador = (pos: EstoquePosicao): string => {
-    const nivel = (pos.nivelIdentificador ?? '').toString().trim();
-    if (nivel !== '') {
-      return nivel;
-    }
-    return '-';
-  };
-
-  const loadDashboard = useCallback(async (isRefresh: boolean) => {
-    setLoadErrorMessage('');
-
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      const res = await API.get<EstoquePosicao[]>(`/api/estoque/posicoes/area/${AREA_ID}`);
-
-      const data = Array.isArray(res.data) ? res.data : [];
-
-      const fileiraIds = new Set<number>();
-      const gradeIds = new Set<number>();
-      const nivelKeys = new Set<string>();
-      let itens = 0;
-      let vazios = 0;
-
-      for (const p of data) {
-        if (typeof p.fileiraId === 'number') {
-          fileiraIds.add(p.fileiraId);
-        }
-        if (typeof p.gradeId === 'number') {
-          gradeIds.add(p.gradeId);
-        }
-        const nivelLabel = (p.nivelIdentificador ?? '').toString().trim();
-        if (nivelLabel !== '') {
-          nivelKeys.add(nivelLabel);
-        } else if (typeof p.nivelId === 'number') {
-          nivelKeys.add(String(p.nivelId));
-        }
-
-        const qtd = typeof p.quantidade === 'number' ? p.quantidade : 0;
-
-        if ((p.itemEstoqueId ?? null) === null && qtd === 0) {
-          vazios += 1;
-        }
-
-        if (qtd > 0) {
-          itens += qtd;
-        }
-      }
-
-      const grouped = new Map<
-        string,
-        {
-          produto: string;
-          quantidade: number;
-          fileira: string;
-          grade: string;
-          nivel: string;
-          codigoSistemaWester: string;
-          cor: string;
-          descricao: string;
-        }
-      >();
-
-      for (const p of data) {
-        const qtd = typeof p.quantidade === 'number' ? p.quantidade : 0;
-        const produtoNome = normalizeProdutoNome(p);
-
-        if (produtoNome === 'Sem produto') {
-          continue;
-        }
-        if (qtd <= 0) {
-          continue;
-        }
-
-        const fileira = normalizeFileiraIdentificador(p);
-        const grade = normalizeGradeIdentificador(p);
-        const nivel = normalizeNivelIdentificador(p);
-        const codigoSistemaWester = firstNonEmpty(
-          p.produto?.codigoSistemaWester,
-          p.codigoSistemaWester
-        );
-        const cor = firstNonEmpty(p.produto?.cor, p.cor);
-        const descricao = firstNonEmpty(p.produto?.descricao, p.descricao);
-
-        const key = `${produtoNome}__${fileira}__${grade}__${nivel}`;
-        const current = grouped.get(key);
-
-        if (!current) {
-          grouped.set(key, {
-            produto: produtoNome,
-            quantidade: qtd,
-            fileira,
-            grade,
-            nivel,
-            codigoSistemaWester,
-            cor,
-            descricao,
-          });
-        } else {
-          grouped.set(key, {
-            ...current,
-            quantidade: current.quantidade + qtd,
-            codigoSistemaWester: firstNonEmpty(current.codigoSistemaWester, codigoSistemaWester),
-            cor: firstNonEmpty(current.cor, cor),
-            descricao: firstNonEmpty(current.descricao, descricao),
-          });
-        }
-      }
-
-      const mappedRows: StockRow[] = Array.from(grouped.values()).map((g) => {
-        return {
-          id: `${g.fileira}-${g.grade}-${g.nivel}-${g.produto}`.replace(/\s+/g, '_'),
-          produto: g.produto,
-          fileira: g.fileira,
-          grade: g.grade,
-          nivel: g.nivel,
-          status: computeStatus(g.quantidade),
-          quantidade: g.quantidade,
-          codigoSistemaWester: g.codigoSistemaWester,
-          cor: g.cor,
-          descricao: g.descricao,
-        };
-      });
-
-      setRows(mappedRows);
-      setSummary({
-        fileiras: fileiraIds.size,
-        grades: gradeIds.size,
-        niveis: nivelKeys.size,
-        itens,
-        vazios,
-      });
-    } catch (e: any) {
-      setRows([]);
-      setSummary({ fileiras: 0, grades: 0, niveis: 0, itens: 0, vazios: 0 });
-      setLoadErrorMessage(API_STATE_MESSAGES.dashboard.error.description);
-    } finally {
       if (isRefresh) {
-        setRefreshing(false);
+        setRefreshing(true);
       } else {
-        setLoading(false);
+        setLoading(true);
       }
-    }
-  }, []);
+
+      try {
+        const response = await listStockItems({
+          page: targetPage,
+          size: itemsPerPage,
+          areaId: selectedAreaFilter,
+          filtro: appliedFilter || undefined,
+          sort: buildSortParam(sortBy, sortDirection),
+        });
+
+        const mappedRows = response.content
+          .map(mapStockItemToRow)
+          .sort((left, right) => compareStockRows(left, right, sortBy, sortDirection));
+
+        const fileiraKeys = new Set<string>();
+        const gradeKeys = new Set<string>();
+        const nivelKeys = new Set<string>();
+        let itens = 0;
+
+        mappedRows.forEach((row) => {
+          const areaKey = row.areaId != null ? String(row.areaId) : row.areaNome || 'sem-area';
+          fileiraKeys.add(`${areaKey}__${row.fileira}`);
+          gradeKeys.add(`${areaKey}__${row.fileira}__${row.grade}`);
+          nivelKeys.add(`${areaKey}__${row.fileira}__${row.grade}__${row.nivel}`);
+          itens += row.quantidade;
+        });
+
+        setRows(mappedRows);
+        setPage((currentPage) => (currentPage === response.page ? currentPage : response.page));
+        setTotalItems(Math.max(response.totalElements, 0));
+        setTotalPages(Math.max(response.totalPages, 0));
+        setSummary({
+          fileiras: fileiraKeys.size,
+          grades: gradeKeys.size,
+          niveis: nivelKeys.size,
+          itens,
+          vazios: 0,
+        });
+      } catch (error) {
+        setRows([]);
+        setTotalItems(0);
+        setTotalPages(0);
+        setSummary({ fileiras: 0, grades: 0, niveis: 0, itens: 0, vazios: 0 });
+        setLoadErrorMessage(
+          getUserFacingErrorMessage(error, API_STATE_MESSAGES.dashboard.error.description)
+        );
+      } finally {
+        if (isRefresh) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [appliedFilter, itemsPerPage, selectedAreaFilter, sortBy, sortDirection]
+  );
 
   useEffect(() => {
-    void loadDashboard(false);
-  }, [loadDashboard]);
+    const timeoutId = setTimeout(() => {
+      const nextFilter = filter.trim();
+      setAppliedFilter((currentFilter) =>
+        currentFilter === nextFilter ? currentFilter : nextFilter
+      );
+      setPage((currentPage) => (currentPage === 0 ? currentPage : 0));
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [filter]);
+
+  useEffect(() => {
+    void loadDashboard(page, false);
+  }, [loadDashboard, page]);
 
   const onRefresh = useCallback(() => {
-    void loadDashboard(true);
-  }, [loadDashboard]);
+    void loadDashboard(page, true);
+  }, [loadDashboard, page]);
 
-  const filteredRows = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    if (!needle) {
-      return rows;
-    }
-    return rows.filter((row) => {
-      const haystack = [
-        row.id,
-        row.produto,
-        row.fileira,
-        row.grade,
-        row.nivel,
-        row.status,
-        String(row.quantidade),
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(needle);
-    });
-  }, [filter, rows]);
-  const hasDashboardFilters = filter.trim() !== '';
-  const dashboardEmptyCopy = getApiEmptyCopy('dashboard', hasDashboardFilters);
+  const handleSort = (column: DashboardSortColumn) => {
+    setPage(0);
 
-  const sortedRows = useMemo(() => {
-    const sorted = [...filteredRows];
-    sorted.sort((a, b) => {
-      const aValue = a[sortBy];
-      const bValue = b[sortBy];
-      if (aValue === bValue) {
-        return 0;
-      }
-      const direction = sortDirection === 'asc' ? 1 : -1;
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return (aValue - bValue) * direction;
-      }
-      return String(aValue).localeCompare(String(bValue)) * direction;
-    });
-    return sorted;
-  }, [filteredRows, sortBy, sortDirection]);
-
-  const pagedRows = useMemo(() => {
-    const start = page * itemsPerPage;
-    return sortedRows.slice(start, start + itemsPerPage);
-  }, [sortedRows, page, itemsPerPage]);
-
-  const totalItems = sortedRows.length;
-  const rangeStart = totalItems === 0 ? 0 : page * itemsPerPage + 1;
-  const rangeEnd = totalItems === 0 ? 0 : Math.min((page + 1) * itemsPerPage, totalItems);
-
-  const handleSort = (column: keyof StockRow) => {
     if (sortBy === column) {
       setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
       return;
     }
+
     setSortBy(column);
     setSortDirection('asc');
   };
-
   const handleGenerateReport = useCallback(async () => {
-    if (rows.length === 0) {
+    if (totalItems === 0) {
       Alert.alert('Gerar relatório', 'Não há itens de estoque para exportar no momento.');
       return;
     }
 
     setGeneratingReport(true);
     try {
-      const generatedAt = new Date().toLocaleString('pt-BR');
-      const orderedRows = [...rows].sort((a, b) => {
-        return a.produto.localeCompare(b.produto, 'pt-BR');
-      });
+      const reportRows = (
+        await listAllStockItems({
+          areaId: selectedAreaFilter,
+          filtro: appliedFilter || undefined,
+          sort: buildSortParam(sortBy, sortDirection),
+          size: Math.max(itemsPerPage, 100),
+        })
+      )
+        .map(mapStockItemToRow)
+        .sort((left, right) => compareStockRows(left, right, sortBy, sortDirection));
 
+      if (reportRows.length === 0) {
+        Alert.alert('Gerar relatório', 'Não há itens de estoque para exportar no momento.');
+        return;
+      }
+
+      const generatedAt = new Date().toLocaleString('pt-BR');
+      const orderedRows = reportRows;
+      const reportSummary = {
+        ...buildReportSummary(reportRows),
+        vazios: 0,
+      };
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         const [{ jsPDF }, { default: autoTable }] = await Promise.all([
           import('jspdf'),
@@ -540,13 +535,13 @@ export default function DashboardScreen() {
         doc.setFontSize(11);
         doc.text(`Gerado em: ${generatedAt}`, 40, 66);
         const summaryLine =
-          `Fileiras: ${summary.fileiras}  |  Grades: ${summary.grades}  |  ` +
-          `Níveis: ${summary.niveis}  |  Itens: ${summary.itens}  |  Vazios: ${summary.vazios}`;
+          `Fileiras: ${reportSummary.fileiras}  |  Grades: ${reportSummary.grades}  |  ` +
+          `Níveis: ${reportSummary.niveis}  |  Itens: ${reportSummary.itens}  |  Vazios: ${reportSummary.vazios}`;
         doc.text(summaryLine, 40, 84);
 
         const tableRows = orderedRows.map((row) => [
           row.produto,
-          `Fileira ${row.fileira} / Grade ${row.grade} / Nível ${row.nivel}`,
+          buildLocationLabel(row),
           row.status,
           String(row.quantidade),
         ]);
@@ -594,7 +589,7 @@ export default function DashboardScreen() {
           const pageHeight = doc.internal.pageSize.getHeight();
           doc.setFontSize(9);
           doc.setTextColor(100);
-          doc.text(`Pagina ${page}/${pageCount}`, footerPageWidth - 40, pageHeight - 18, {
+          doc.text(`Página ${page}/${pageCount}`, footerPageWidth - 40, pageHeight - 18, {
             align: 'right',
           });
         }
@@ -618,7 +613,7 @@ export default function DashboardScreen() {
         return;
       }
 
-      const html = buildStockReportHtml(orderedRows, generatedAt, summary);
+      const html = buildStockReportHtml(orderedRows, generatedAt, reportSummary);
       const file = await Print.printToFileAsync({ html });
       const canShare = await Sharing.isAvailableAsync();
 
@@ -637,7 +632,7 @@ export default function DashboardScreen() {
     } finally {
       setGeneratingReport(false);
     }
-  }, [rows, summary]);
+  }, [appliedFilter, itemsPerPage, selectedAreaFilter, sortBy, sortDirection, totalItems]);
 
   return (
     <ScrollView
@@ -715,7 +710,13 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
-        <View style={[styles.filtersRow, !isWide && styles.filtersRowMobile]}>
+        <View
+          style={[
+            styles.filtersRow,
+            !isWide && styles.filtersRowMobile,
+            isAreaFilterOpen && styles.filtersRowOpen,
+          ]}
+        >
           <AppTextInput
             label="Filtrar por produto, fileira, grade, nível"
             value={filter}
@@ -725,6 +726,24 @@ export default function DashboardScreen() {
             }}
             style={[styles.filterInput, !isWide && styles.filterInputMobile]}
             left={<TextInput.Icon icon="magnify" />}
+          />
+
+          <FilterSelect
+            label="Setor"
+            value={selectedAreaValue}
+            valueLabel={selectedAreaLabel}
+            options={areaOptions}
+            open={isAreaFilterOpen}
+            onOpenChange={setIsAreaFilterOpen}
+            onSelect={(value) => {
+              setSelectedAreaFilter(value ? Number(value) : null);
+              setPage(0);
+            }}
+            accessibilityLabel="Selecionar setor para filtrar itens de estoque"
+            compact={!isWide}
+            width={isWide ? 240 : '100%'}
+            minWidth={isWide ? 220 : 0}
+            maxWidth={isWide ? 320 : '100%'}
           />
 
           <View style={[styles.sortRow, !isWide && styles.sortRowMobile]}>
@@ -737,7 +756,7 @@ export default function DashboardScreen() {
             >
               Ordenar:
             </Text>
-            {(['produto', 'quantidade', 'status'] as Array<keyof StockRow>).map((col) => {
+            {(['produto', 'quantidade', 'status'] as DashboardSortColumn[]).map((col) => {
               const isSelected = sortBy === col;
               const isHovered = hoveredSortColumn === col;
               const label =
@@ -813,43 +832,24 @@ export default function DashboardScreen() {
           <>
             {isWide && (
               <View style={[styles.listHeader, { borderBottomColor: theme.colors.outlineVariant }]}>
+                <View style={styles.tableColStatus}>
+                  <Text style={[styles.listHeaderText, { color: theme.colors.primary }]}>
+                    Status
+                  </Text>
+                </View>
                 <View style={styles.tableColProduct}>
-                  <Text
-                    style={[
-                      styles.listHeaderText,
-                      { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-                    ]}
-                  >
+                  <Text style={[styles.listHeaderText, { color: theme.colors.primary }]}>
                     Produto
                   </Text>
                 </View>
                 <View style={styles.tableCol}>
-                  <Text
-                    style={[
-                      styles.listHeaderText,
-                      { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-                    ]}
-                  >
-                    Local
-                  </Text>
-                </View>
-                <View style={styles.tableCol}>
-                  <Text
-                    style={[
-                      styles.listHeaderText,
-                      { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-                    ]}
-                  >
-                    Status
+                  <Text style={[styles.listHeaderText, { color: theme.colors.primary }]}>
+                    Setor / Local
                   </Text>
                 </View>
                 <View style={styles.tableColQty}>
                   <Text
-                    style={[
-                      styles.listHeaderText,
-                      styles.qtyText,
-                      { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-                    ]}
+                    style={[styles.listHeaderText, styles.qtyText, { color: theme.colors.primary }]}
                   >
                     Quantidade
                   </Text>
@@ -858,7 +858,7 @@ export default function DashboardScreen() {
             )}
 
             <View style={styles.list}>
-              {pagedRows.map((row) => (
+              {rows.map((row) => (
                 <Pressable
                   key={row.id}
                   accessibilityRole="button"
@@ -898,6 +898,10 @@ export default function DashboardScreen() {
                 >
                   {isWide ? (
                     <View style={styles.stockDesktopRow}>
+                      <View style={styles.tableColStatus}>
+                        <StockStatusBadge status={row.status} />
+                      </View>
+
                       <View style={styles.tableColProduct}>
                         <Text style={[styles.stockTitle, { color: theme.colors.text }]}>
                           {row.produto}
@@ -911,13 +915,7 @@ export default function DashboardScreen() {
                             { color: (theme.colors as any).textSecondary ?? theme.colors.text },
                           ]}
                         >
-                          Fileira {row.fileira} / Grade {row.grade} / Nível {row.nivel}
-                        </Text>
-                      </View>
-
-                      <View style={styles.tableCol}>
-                        <Text style={[styles.stockMeta, { color: STATUS_COLOR[row.status] }]}>
-                          {row.status}
+                          {buildLocationLabel(row)}
                         </Text>
                       </View>
 
@@ -940,7 +938,7 @@ export default function DashboardScreen() {
                               { color: (theme.colors as any).textSecondary ?? theme.colors.text },
                             ]}
                           >
-                            Fileira {row.fileira} / Grade {row.grade} / Nível {row.nivel}
+                            {buildLocationLabel(row)}
                           </Text>
                         </View>
                         <Text style={[styles.stockQty, { color: theme.colors.text }]}>
@@ -949,31 +947,22 @@ export default function DashboardScreen() {
                       </View>
 
                       <View style={styles.stockMetaRow}>
-                        <Chip
-                          compact
-                          style={[
-                            styles.statusChip,
-                            { backgroundColor: `${STATUS_COLOR[row.status]}22` },
-                          ]}
-                          textStyle={{ color: STATUS_COLOR[row.status] }}
-                        >
-                          {row.status}
-                        </Chip>
+                        <StockStatusBadge status={row.status} />
                       </View>
                     </>
                   )}
                 </Pressable>
               ))}
 
-              {pagedRows.length === 0 ? (
+              {rows.length === 0 ? (
                 <View style={styles.emptyBox}>
                   {loadErrorMessage ? (
                     <AppEmptyState
                       title={API_STATE_MESSAGES.dashboard.error.title}
-                      description={API_STATE_MESSAGES.dashboard.error.description}
+                      description={loadErrorMessage}
                       icon="alert-circle-outline"
                       tone="error"
-                      onRetry={() => void loadDashboard(false)}
+                      onRetry={() => void loadDashboard(page, false)}
                     />
                   ) : (
                     <AppEmptyState
@@ -1055,15 +1044,13 @@ export default function DashboardScreen() {
                     accessibilityRole="button"
                     accessibilityLabel="action-dashboard-page-next"
                     onPress={() =>
-                      setPage((prev) =>
-                        Math.min(prev + 1, Math.ceil(totalItems / itemsPerPage) - 1)
-                      )
+                      setPage((prev) => Math.min(prev + 1, Math.max(totalPages - 1, 0)))
                     }
-                    disabled={rangeEnd >= totalItems}
+                    disabled={page >= Math.max(totalPages - 1, 0)}
                     style={(state: any) => {
                       const pressed = Boolean(state?.pressed);
                       const hovered = Boolean(state?.hovered);
-                      const disabled = rangeEnd >= totalItems;
+                      const disabled = page >= Math.max(totalPages - 1, 0);
                       const interactive = !disabled && (hovered || pressed);
 
                       return [
@@ -1096,7 +1083,7 @@ export default function DashboardScreen() {
                         styles.paginationActionLabel,
                         {
                           color:
-                            rangeEnd >= totalItems
+                            page >= Math.max(totalPages - 1, 0)
                               ? withAlpha(theme.colors.text, 0.65)
                               : theme.colors.text,
                         },
@@ -1241,24 +1228,23 @@ export default function DashboardScreen() {
               Código Wester
             </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
-              {selectedRow?.codigoSistemaWester || 'Nao informado'}
+              {selectedRow?.codigoSistemaWester || 'Não informado'}
             </Text>
           </View>
 
           <View style={styles.productModalInfoRow}>
             <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Cor</Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
-              {selectedRow?.cor || 'Nao informada'}
+              {selectedRow?.cor || 'Não informada'}
             </Text>
           </View>
 
           <View style={styles.productModalInfoRow}>
             <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
-              Loca
+              Localização
             </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
-              Fileira {selectedRow?.fileira ?? '-'} / Grade {selectedRow?.grade ?? '-'} / Nivel{' '}
-              {selectedRow?.nivel ?? '-'}
+              {selectedRow ? buildLocationLabel(selectedRow) : '-'}
             </Text>
           </View>
 
@@ -1267,7 +1253,7 @@ export default function DashboardScreen() {
               Descrição
             </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
-              {selectedRow?.descricao || 'Nao informada'}
+              {selectedRow?.descricao || 'Não informada'}
             </Text>
           </View>
         </View>
@@ -1312,7 +1298,7 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, gap: 20 },
+  container: { padding: 24, gap: 20 },
   tableCard: { borderRadius: 18, borderWidth: 1, padding: 16 },
   tableHeader: {
     flexDirection: 'row',
@@ -1343,7 +1329,11 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 12,
     marginBottom: 12,
+    position: 'relative',
+    zIndex: 1,
+    overflow: 'visible',
   },
+  filtersRowOpen: { zIndex: 2000, elevation: 24 },
   filtersRowMobile: { alignItems: 'stretch' },
   filterInput: { flexGrow: 1, minWidth: 220, borderRadius: 10, overflow: 'hidden' },
   filterInputMobile: { minWidth: 0, width: '100%' },
@@ -1379,6 +1369,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   listHeaderText: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  tableColStatus: { width: 120, minWidth: 120, maxWidth: 120 },
   tableColProduct: { flex: 2, minWidth: 0 },
   tableCol: { flex: 1, minWidth: 0 },
   tableColQty: { flex: 1, minWidth: 0, alignItems: 'flex-end' },
@@ -1411,7 +1402,14 @@ const styles = StyleSheet.create({
   stockMeta: { fontSize: 12, fontWeight: '600' },
   stockQty: { fontSize: 18, fontWeight: '800' },
   stockQtyDesktop: { fontSize: 22, fontWeight: '800', textAlign: 'right' },
-  statusChip: { borderRadius: 999 },
+  statusBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+  },
+  statusBadgeLabel: { fontSize: 12, fontWeight: '800' },
   paginationRow: {
     marginTop: 12,
     flexDirection: 'row',

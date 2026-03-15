@@ -125,10 +125,7 @@ function ProfileScreen() {
   return (
     <ScrollView
       style={[styles.profileRoot, { backgroundColor: 'transparent' }]}
-      contentContainerStyle={[
-        styles.profileContent,
-        { paddingHorizontal: 16, paddingVertical: 16 },
-      ]}
+      contentContainerStyle={[styles.profileContent]}
     >
       <View
         style={[
@@ -416,97 +413,95 @@ function ThemedDrawerContent(props: any) {
             return leftOrder - rightOrder;
           })
           .map((route: any) => {
-          const routeIndex = props.state.routes.findIndex((item: any) => item.key === route.key);
-          const screenKey = getScreenKeyFromRouteName(route.name);
-          const descriptor = props.descriptors?.[route.key];
-          const routeLabel =
-            descriptor?.options?.drawerLabel ??
-            descriptor?.options?.title ??
-            route.name;
+            const routeIndex = props.state.routes.findIndex((item: any) => item.key === route.key);
+            const screenKey = getScreenKeyFromRouteName(route.name);
+            const descriptor = props.descriptors?.[route.key];
+            const routeLabel =
+              descriptor?.options?.drawerLabel ?? descriptor?.options?.title ?? route.name;
 
-          if (
-            !isAuthenticated &&
-            (route.name === 'Dashboard' ||
-              route.name === 'Armazém' ||
-              route.name === 'Áreas' ||
-              route.name === 'Produtos' ||
-              route.name === 'Usuários' ||
-              route.name === 'Perfis' ||
-              route.name === 'Histórico' ||
-              route.name === 'Perfil')
-          ) {
-            return null;
-          }
-          if (
-            isAuthenticated &&
-            (route.name === 'Login' || route.name === 'Register' || route.name === 'Criar conta')
-          ) {
-            return null;
-          }
-          if (
-            isAuthenticated &&
-            ((screenKey && !canAccessScreen(screenKey)) ||
-              (route.name === 'Áreas' && !canAccessScreen('WAREHOUSE')))
-          ) {
-            return null;
-          }
+            if (
+              !isAuthenticated &&
+              (route.name === 'Dashboard' ||
+                route.name === 'Armazém' ||
+                route.name === 'Áreas' ||
+                route.name === 'Produtos' ||
+                route.name === 'Usuários' ||
+                route.name === 'Perfis' ||
+                route.name === 'Histórico' ||
+                route.name === 'Perfil')
+            ) {
+              return null;
+            }
+            if (
+              isAuthenticated &&
+              (route.name === 'Login' || route.name === 'Register' || route.name === 'Criar conta')
+            ) {
+              return null;
+            }
+            if (
+              isAuthenticated &&
+              ((screenKey && !canAccessScreen(screenKey)) ||
+                (route.name === 'Áreas' && !canAccessScreen('WAREHOUSE')))
+            ) {
+              return null;
+            }
 
-          const focused = props.state.index === routeIndex;
-          const hovered = hoveredRouteKey === route.key;
-          const showHover = hovered && !focused;
-          const backgroundColor = focused
-            ? colors.surfaceVariant
-            : showHover
-              ? `${colors.primary}14`
-              : 'transparent';
-          const borderLeftWidth = focused ? 4 : showHover ? 2 : 0;
-          const borderLeftColor = focused
-            ? colors.primary
-            : showHover
-              ? `${colors.primary}A0`
-              : 'transparent';
+            const focused = props.state.index === routeIndex;
+            const hovered = hoveredRouteKey === route.key;
+            const showHover = hovered && !focused;
+            const backgroundColor = focused
+              ? colors.surfaceVariant
+              : showHover
+                ? `${colors.primary}14`
+                : 'transparent';
+            const borderLeftWidth = focused ? 4 : showHover ? 2 : 0;
+            const borderLeftColor = focused
+              ? colors.primary
+              : showHover
+                ? `${colors.primary}A0`
+                : 'transparent';
 
-          return (
-            <Pressable
-              key={route.key}
-              accessibilityRole="button"
-              accessibilityState={{ selected: focused }}
-              onPress={() => {
-                setHoveredRouteKey(null);
-                props.navigation.navigate(route.name);
-              }}
-              onHoverIn={IS_WEB ? () => setHoveredRouteKey(route.key) : undefined}
-              onHoverOut={IS_WEB ? () => setHoveredRouteKey(null) : undefined}
-              style={({ pressed }) => [
-                styles.drawerItemButton,
-                {
-                  backgroundColor: pressed && !focused ? `${colors.primary}1D` : backgroundColor,
-                  borderLeftWidth,
-                  borderLeftColor,
-                  borderColor: showHover ? `${colors.primary}4D` : 'transparent',
-                  opacity: pressed ? 0.95 : 1,
-                  transform: [{ translateX: showHover ? 2 : 0 }],
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.drawerItemLabel,
+            return (
+              <Pressable
+                key={route.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: focused }}
+                onPress={() => {
+                  setHoveredRouteKey(null);
+                  props.navigation.navigate(route.name);
+                }}
+                onHoverIn={IS_WEB ? () => setHoveredRouteKey(route.key) : undefined}
+                onHoverOut={IS_WEB ? () => setHoveredRouteKey(null) : undefined}
+                style={({ pressed }) => [
+                  styles.drawerItemButton,
                   {
-                    fontWeight: focused ? '800' : '700',
-                    color: focused
-                      ? colors.primary
-                      : showHover
-                        ? colors.primary
-                        : `${colors.primary}D0`,
+                    backgroundColor: pressed && !focused ? `${colors.primary}1D` : backgroundColor,
+                    borderLeftWidth,
+                    borderLeftColor,
+                    borderColor: showHover ? `${colors.primary}4D` : 'transparent',
+                    opacity: pressed ? 0.95 : 1,
+                    transform: [{ translateX: showHover ? 2 : 0 }],
                   },
                 ]}
               >
-                {routeLabel}
-              </Text>
-            </Pressable>
-          );
-        })}
+                <Text
+                  style={[
+                    styles.drawerItemLabel,
+                    {
+                      fontWeight: focused ? '800' : '700',
+                      color: focused
+                        ? colors.primary
+                        : showHover
+                          ? colors.primary
+                          : `${colors.primary}D0`,
+                    },
+                  ]}
+                >
+                  {routeLabel}
+                </Text>
+              </Pressable>
+            );
+          })}
       </View>
     </DrawerContentScrollView>
   );
@@ -809,14 +804,14 @@ export default function DrawerNavigator() {
             component={(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="WAREHOUSE">
-                <ScreenFrame
-                  title="Armazém"
-                  navigation={props.navigation}
-                  fullWidth
-                  contentMaxWidth={null}
-                  right={
-                    showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null
-                  }
+                  <ScreenFrame
+                    title="Armazém"
+                    navigation={props.navigation}
+                    fullWidth
+                    contentMaxWidth={null}
+                    right={
+                      showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null
+                    }
                   >
                     <Warehouse2DView {...props} />
                   </ScreenFrame>
