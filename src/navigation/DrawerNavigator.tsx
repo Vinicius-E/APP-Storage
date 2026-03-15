@@ -19,14 +19,22 @@ import AppLoadingState from '../components/AppLoadingState';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import AreaManagement from '../screens/areas/AreaManagement';
 import DashboardScreen from '../screens/DashboardScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import UserScreen from '../screens/UserScreen';
+import ProductManagement from '../screens/products/ProductManagement';
+import ProfileManagement from '../screens/profiles/ProfileManagement';
 import Warehouse2DView from '../components/Warehouse2DView';
 import { useThemeContext } from '../theme/ThemeContext';
 import { RequireAuth } from '../auth/RequireAuth';
 import { useAuth } from '../auth/AuthContext';
 import { WarehouseSearchProvider, useWarehouseSearch } from '../search/WarehouseSearchContext';
+import {
+  getScreenKeyFromRouteName,
+  RequireScreenAccess,
+  usePermissions,
+} from '../security/permissions';
 
 const Drawer = createDrawerNavigator();
 const IS_WEB = Platform.OS === 'web';
@@ -116,7 +124,7 @@ function ProfileScreen() {
 
   return (
     <ScrollView
-      style={[styles.profileRoot, { backgroundColor: colors.background }]}
+      style={[styles.profileRoot, { backgroundColor: 'transparent' }]}
       contentContainerStyle={[
         styles.profileContent,
         { paddingHorizontal: 16, paddingVertical: 16 },
@@ -286,8 +294,23 @@ function ProfileScreen() {
 function ThemedDrawerContent(props: any) {
   const { theme } = useThemeContext();
   const { isAuthenticated, user } = useAuth() as any;
+  const { canAccessScreen } = usePermissions();
   const { colors } = theme;
   const insets = useSafeAreaInsets();
+  const drawerOrder = useMemo(
+    () =>
+      new Map([
+        ['Dashboard', 1],
+        ['Armazém', 2],
+        ['Produtos', 3],
+        ['Histórico', 4],
+        ['Áreas', 5],
+        ['Perfis', 6],
+        ['Usuários', 7],
+        ['Perfil', 8],
+      ]),
+    []
+  );
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [hoveredRouteKey, setHoveredRouteKey] = useState<string | null>(null);
@@ -321,11 +344,11 @@ function ThemedDrawerContent(props: any) {
   return (
     <DrawerContentScrollView
       {...props}
-      style={{ backgroundColor: colors.surface }}
+      style={{ backgroundColor: colors.surfaceVariant }}
       contentContainerStyle={[
         styles.drawerScrollContent,
         {
-          backgroundColor: colors.surface,
+          backgroundColor: colors.surfaceVariant,
           paddingTop: insets.top,
           paddingBottom: Math.max(insets.bottom, 12),
         },
@@ -338,7 +361,7 @@ function ThemedDrawerContent(props: any) {
             style={[
               styles.drawerHeader,
               {
-                backgroundColor: colors.surfaceVariant,
+                backgroundColor: colors.surface,
                 borderBottomColor: colors.outline,
               },
             ]}
@@ -386,12 +409,29 @@ function ThemedDrawerContent(props: any) {
       ) : null}
 
       <View style={styles.drawerMenuWrap}>
-        {props.state.routes.map((route: any, index: number) => {
+        {[...props.state.routes]
+          .sort((left: any, right: any) => {
+            const leftOrder = drawerOrder.get(left.name) ?? Number.MAX_SAFE_INTEGER;
+            const rightOrder = drawerOrder.get(right.name) ?? Number.MAX_SAFE_INTEGER;
+            return leftOrder - rightOrder;
+          })
+          .map((route: any) => {
+          const routeIndex = props.state.routes.findIndex((item: any) => item.key === route.key);
+          const screenKey = getScreenKeyFromRouteName(route.name);
+          const descriptor = props.descriptors?.[route.key];
+          const routeLabel =
+            descriptor?.options?.drawerLabel ??
+            descriptor?.options?.title ??
+            route.name;
+
           if (
             !isAuthenticated &&
             (route.name === 'Dashboard' ||
               route.name === 'Armazém' ||
+              route.name === 'Áreas' ||
+              route.name === 'Produtos' ||
               route.name === 'Usuários' ||
+              route.name === 'Perfis' ||
               route.name === 'Histórico' ||
               route.name === 'Perfil')
           ) {
@@ -403,8 +443,15 @@ function ThemedDrawerContent(props: any) {
           ) {
             return null;
           }
+          if (
+            isAuthenticated &&
+            ((screenKey && !canAccessScreen(screenKey)) ||
+              (route.name === 'Áreas' && !canAccessScreen('WAREHOUSE')))
+          ) {
+            return null;
+          }
 
-          const focused = props.state.index === index;
+          const focused = props.state.index === routeIndex;
           const hovered = hoveredRouteKey === route.key;
           const showHover = hovered && !focused;
           const backgroundColor = focused
@@ -446,6 +493,7 @@ function ThemedDrawerContent(props: any) {
                 style={[
                   styles.drawerItemLabel,
                   {
+                    fontWeight: focused ? '800' : '700',
                     color: focused
                       ? colors.primary
                       : showHover
@@ -454,7 +502,7 @@ function ThemedDrawerContent(props: any) {
                   },
                 ]}
               >
-                {route.name}
+                {routeLabel}
               </Text>
             </Pressable>
           );
@@ -469,11 +517,12 @@ function WarehouseHeaderRight({ screenWidth }: { screenWidth: number }) {
   const { colors } = theme;
   const { searchText, setSearchText } = useWarehouseSearch();
   const hasText = searchText.trim().length > 0;
+  const searchWidth = Math.max(260, Math.min(screenWidth * 0.42, 560));
 
   const placeholderColor = `${colors.primary}99`;
 
   return (
-    <View style={[styles.headerRight, { width: screenWidth * 0.5 }]}>
+    <View style={[styles.headerRight, { width: searchWidth, maxWidth: '100%' }]}>
       <View
         style={[
           styles.searchBox,
@@ -524,18 +573,32 @@ function ScreenFrame({
   title,
   navigation,
   right,
+  fullWidth = false,
+  contentMaxWidth = 1440,
   children,
 }: {
   title: string;
   navigation: any;
   right?: React.ReactNode;
+  fullWidth?: boolean;
+  contentMaxWidth?: number | null;
   children: React.ReactNode;
 }) {
   const { theme } = useThemeContext();
+  const { width } = useWindowDimensions();
+  const shellBackground =
+    (theme.colors as typeof theme.colors & { appShellBackground?: string }).appShellBackground ??
+    '#F7F1E8';
+  const pageBackground =
+    (theme.colors as typeof theme.colors & { pageBackground?: string }).pageBackground ??
+    theme.colors.background;
+  const bodyHorizontalPadding = width < 768 ? 16 : 24;
+  const shouldConstrain = !fullWidth;
+  const showLargeCanvas = IS_WEB && width > 1440;
 
   return (
     <SafeAreaView
-      style={[styles.screenFrame, { backgroundColor: theme.colors.background }]}
+      style={[styles.screenFrame, { backgroundColor: shellBackground }]}
       edges={['top', 'left', 'right']}
     >
       <View
@@ -543,7 +606,6 @@ function ScreenFrame({
           styles.screenHeader,
           {
             backgroundColor: theme.colors.surfaceVariant,
-            borderBottomColor: theme.colors.outline,
           },
         ]}
       >
@@ -567,7 +629,54 @@ function ScreenFrame({
         {right ? <View style={styles.screenHeaderRight}>{right}</View> : null}
       </View>
 
-      <View style={styles.screenBody}>{children}</View>
+      <View
+        style={[
+          styles.screenBody,
+          showLargeCanvas
+            ? ({
+                backgroundColor: shellBackground,
+                backgroundImage:
+                  'linear-gradient(rgba(139,105,20,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(139,105,20,0.04) 1px, transparent 1px)',
+                backgroundSize: '40px 40px',
+              } as any)
+            : { backgroundColor: shellBackground },
+        ]}
+      >
+        <View
+          style={[
+            styles.screenBodyInner,
+            shouldConstrain
+              ? {
+                  maxWidth: contentMaxWidth ?? 1440,
+                  width: '100%',
+                  alignSelf: 'center',
+                  paddingLeft: bodyHorizontalPadding,
+                  paddingRight: bodyHorizontalPadding,
+                  paddingTop: 16,
+                  paddingBottom: 16,
+                  backgroundColor: pageBackground,
+                  borderColor: withAlpha(theme.colors.outline, 0.78),
+                  shadowColor: '#000000',
+                  shadowOpacity: 0.05,
+                  shadowRadius: 30,
+                  shadowOffset: { width: 0, height: 10 },
+                  elevation: 2,
+                }
+              : [
+                  styles.screenBodyInnerFullWidth,
+                  contentMaxWidth == null
+                    ? styles.screenBodyInnerFullBleed
+                    : {
+                        maxWidth: contentMaxWidth,
+                        width: '100%',
+                        alignSelf: 'center',
+                      },
+                ],
+          ]}
+        >
+          {children}
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -576,7 +685,10 @@ export default function DrawerNavigator() {
   const { theme } = useThemeContext();
   const { isAuthenticated, isRestoring } = useAuth();
   const { width: screenWidth } = useWindowDimensions();
-  const showHeaderSearch = IS_WEB && screenWidth >= 900;
+  const shellBackground =
+    (theme.colors as typeof theme.colors & { appShellBackground?: string }).appShellBackground ??
+    '#F7F1E8';
+  const showHeaderSearch = IS_WEB && screenWidth >= 760;
 
   const drawerWidth = useMemo(() => {
     if (!IS_WEB) {
@@ -591,7 +703,7 @@ export default function DrawerNavigator() {
   if (isRestoring) {
     return (
       <SafeAreaView
-        style={{ flex: 1, backgroundColor: theme.colors.background, paddingHorizontal: 20 }}
+        style={{ flex: 1, backgroundColor: shellBackground, paddingHorizontal: 20 }}
         edges={['top', 'left', 'right']}
       >
         <AppLoadingState message="Carregando sessão..." style={{ flex: 1 }} />
@@ -609,18 +721,18 @@ export default function DrawerNavigator() {
 
           drawerType: 'front',
           drawerStyle: {
-            backgroundColor: theme.colors.surface,
+            backgroundColor: theme.colors.surfaceVariant,
             width: drawerWidth,
-            borderRightWidth: 1,
-            borderRightColor: theme.colors.outline,
+            borderRightWidth: 0,
+            borderRightColor: 'transparent',
           },
           drawerContentStyle: {
-            backgroundColor: theme.colors.surface,
+            backgroundColor: theme.colors.surfaceVariant,
           },
 
           overlayColor: 'rgba(0,0,0,0.08)',
           sceneContainerStyle: {
-            backgroundColor: theme.colors.background,
+            backgroundColor: shellBackground,
           },
         }}
       >
@@ -647,9 +759,11 @@ export default function DrawerNavigator() {
           <Drawer.Screen
             name="Dashboard"
             component={(props: any) => (
-              <ScreenFrame title="Dashboard" navigation={props.navigation}>
-                <DashboardScreen {...props} />
-              </ScreenFrame>
+              <RequireScreenAccess screenKey="DASHBOARD">
+                <ScreenFrame title="Dashboard" navigation={props.navigation} fullWidth>
+                  <DashboardScreen {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
             )}
             options={{ title: 'Dashboard' }}
           />
@@ -658,9 +772,11 @@ export default function DrawerNavigator() {
             name="Dashboard"
             component={(props: any) => (
               <RequireAuth>
-                <ScreenFrame title="Dashboard" navigation={props.navigation}>
-                  <DashboardScreen {...props} />
-                </ScreenFrame>
+                <RequireScreenAccess screenKey="DASHBOARD">
+                  <ScreenFrame title="Dashboard" navigation={props.navigation} fullWidth>
+                    <DashboardScreen {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
               </RequireAuth>
             )}
             options={{ title: 'Dashboard', drawerItemStyle: { display: 'none' } }}
@@ -671,13 +787,19 @@ export default function DrawerNavigator() {
           <Drawer.Screen
             name="Armazém"
             component={(props: any) => (
-              <ScreenFrame
-                title="Armazém"
-                navigation={props.navigation}
-                right={showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null}
-              >
-                <Warehouse2DView {...props} />
-              </ScreenFrame>
+              <RequireScreenAccess screenKey="WAREHOUSE">
+                <ScreenFrame
+                  title="Armazém"
+                  navigation={props.navigation}
+                  fullWidth
+                  contentMaxWidth={null}
+                  right={
+                    showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null
+                  }
+                >
+                  <Warehouse2DView {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
             )}
             options={{ title: 'Armazém' }}
           />
@@ -686,15 +808,19 @@ export default function DrawerNavigator() {
             name="Armazém"
             component={(props: any) => (
               <RequireAuth>
+                <RequireScreenAccess screenKey="WAREHOUSE">
                 <ScreenFrame
                   title="Armazém"
                   navigation={props.navigation}
+                  fullWidth
+                  contentMaxWidth={null}
                   right={
                     showHeaderSearch ? <WarehouseHeaderRight screenWidth={screenWidth} /> : null
                   }
-                >
-                  <Warehouse2DView {...props} />
-                </ScreenFrame>
+                  >
+                    <Warehouse2DView {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
               </RequireAuth>
             )}
             options={{ title: 'Armazém', drawerItemStyle: { display: 'none' } }}
@@ -703,11 +829,97 @@ export default function DrawerNavigator() {
 
         {isAuthenticated ? (
           <Drawer.Screen
+            name="Áreas"
+            component={(props: any) => (
+              <RequireScreenAccess screenKey="WAREHOUSE">
+                <ScreenFrame title="Setores" navigation={props.navigation} fullWidth={IS_WEB}>
+                  <AreaManagement {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
+            )}
+            options={{ title: 'Setores' }}
+          />
+        ) : (
+          <Drawer.Screen
+            name="Áreas"
+            component={(props: any) => (
+              <RequireAuth>
+                <RequireScreenAccess screenKey="WAREHOUSE">
+                  <ScreenFrame title="Setores" navigation={props.navigation} fullWidth={IS_WEB}>
+                    <AreaManagement {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
+              </RequireAuth>
+            )}
+            options={{ title: 'Setores', drawerItemStyle: { display: 'none' } }}
+          />
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen
+            name="Produtos"
+            component={(props: any) => (
+              <RequireScreenAccess screenKey="PRODUCTS">
+                <ScreenFrame title="Produtos" navigation={props.navigation} fullWidth={IS_WEB}>
+                  <ProductManagement {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
+            )}
+            options={{ title: 'Produtos' }}
+          />
+        ) : (
+          <Drawer.Screen
+            name="Produtos"
+            component={(props: any) => (
+              <RequireAuth>
+                <RequireScreenAccess screenKey="PRODUCTS">
+                  <ScreenFrame title="Produtos" navigation={props.navigation} fullWidth={IS_WEB}>
+                    <ProductManagement {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
+              </RequireAuth>
+            )}
+            options={{ title: 'Produtos', drawerItemStyle: { display: 'none' } }}
+          />
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen
+            name="Perfis"
+            component={(props: any) => (
+              <RequireScreenAccess screenKey="PROFILES">
+                <ScreenFrame title="Perfis" navigation={props.navigation}>
+                  <ProfileManagement {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
+            )}
+            options={{ title: 'Perfis' }}
+          />
+        ) : (
+          <Drawer.Screen
+            name="Perfis"
+            component={(props: any) => (
+              <RequireAuth>
+                <RequireScreenAccess screenKey="PROFILES">
+                  <ScreenFrame title="Perfis" navigation={props.navigation}>
+                    <ProfileManagement {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
+              </RequireAuth>
+            )}
+            options={{ title: 'Perfis', drawerItemStyle: { display: 'none' } }}
+          />
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen
             name="Histórico"
             component={(props: any) => (
-              <ScreenFrame title="Histórico" navigation={props.navigation}>
-                <HistoryScreen {...props} />
-              </ScreenFrame>
+              <RequireScreenAccess screenKey="HISTORY">
+                <ScreenFrame title="Histórico" navigation={props.navigation}>
+                  <HistoryScreen {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
             )}
             options={{ title: 'Histórico' }}
           />
@@ -716,9 +928,11 @@ export default function DrawerNavigator() {
             name="Histórico"
             component={(props: any) => (
               <RequireAuth>
-                <ScreenFrame title="Histórico" navigation={props.navigation}>
-                  <HistoryScreen {...props} />
-                </ScreenFrame>
+                <RequireScreenAccess screenKey="HISTORY">
+                  <ScreenFrame title="Histórico" navigation={props.navigation}>
+                    <HistoryScreen {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
               </RequireAuth>
             )}
             options={{ title: 'Histórico', drawerItemStyle: { display: 'none' } }}
@@ -729,9 +943,11 @@ export default function DrawerNavigator() {
           <Drawer.Screen
             name="Usuários"
             component={(props: any) => (
-              <ScreenFrame title="Usuários" navigation={props.navigation}>
-                <UserScreen {...props} />
-              </ScreenFrame>
+              <RequireScreenAccess screenKey="USERS">
+                <ScreenFrame title="Usuários" navigation={props.navigation}>
+                  <UserScreen {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
             )}
             options={{ title: 'Usuários' }}
           />
@@ -740,9 +956,11 @@ export default function DrawerNavigator() {
             name="Usuários"
             component={(props: any) => (
               <RequireAuth>
-                <ScreenFrame title="Usuários" navigation={props.navigation}>
-                  <UserScreen {...props} />
-                </ScreenFrame>
+                <RequireScreenAccess screenKey="USERS">
+                  <ScreenFrame title="Usuários" navigation={props.navigation}>
+                    <UserScreen {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
               </RequireAuth>
             )}
             options={{ title: 'Usuários', drawerItemStyle: { display: 'none' } }}
@@ -763,7 +981,6 @@ const styles = StyleSheet.create({
   },
   screenHeader: {
     minHeight: 56,
-    borderBottomWidth: 1,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -795,12 +1012,38 @@ const styles = StyleSheet.create({
   screenBody: {
     flex: 1,
     minWidth: 0,
+    width: '100%',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  screenBodyInner: {
+    flex: 1,
+    minWidth: 0,
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 14,
+    overflow: 'visible',
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
+  screenBodyInnerFullWidth: {
+    flex: 1,
+    minWidth: 0,
+    width: '100%',
+    maxWidth: '100%',
+    borderWidth: 0,
+    borderColor: 'transparent',
+  },
+  screenBodyInnerFullBleed: {
+    width: '100%',
+    maxWidth: '100%',
+    alignSelf: 'stretch',
   },
   drawerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderBottomWidth: 1,
   },
   avatarCircle: {
@@ -832,17 +1075,17 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   drawerItemButton: {
-    borderRadius: 12,
+    borderRadius: 8,
     marginHorizontal: 10,
     marginVertical: 4,
     minHeight: 44,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     justifyContent: 'center',
     borderWidth: 1,
   },
   drawerItemLabel: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
     paddingBottom: 2,
   },
 

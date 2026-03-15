@@ -36,7 +36,6 @@ export function AddFileiraButton({ onPress, primaryColor, creating }: Props) {
         <AntDesign name="plus" size={26} color={primaryColor} />
       )}
 
-      {/* Hover label */}
       {IS_WEB && hovered && !creating && (
         <View style={styles.labelWrapper}>
           <Text style={[styles.addFileiraButtonText, { color: primaryColor }]}>
@@ -65,7 +64,7 @@ const styles = StyleSheet.create({
     ...(IS_WEB
       ? ({
           cursor: 'pointer',
-          transitionProperty: 'transform, box-shadow, background-color',
+          transitionProperty: 'box-shadow, background-color, border-color',
           transitionDuration: '140ms',
           transitionTimingFunction: 'ease-out',
         } as any)
@@ -74,9 +73,8 @@ const styles = StyleSheet.create({
 
   addFileiraButtonHover: IS_WEB
     ? ({
-        transform: [{ scale: 1.02 }],
         backgroundColor: 'rgba(0,0,0,0.025)',
-        boxShadow: '0 8px 18px rgba(0,0,0,0.12)',
+        boxShadow: '0 6px 14px rgba(0,0,0,0.10)',
       } as any)
     : ({} as any),
 

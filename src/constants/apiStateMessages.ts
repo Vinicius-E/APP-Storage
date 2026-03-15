@@ -12,7 +12,7 @@ type ApiStateGroup = {
 };
 
 const FILTER_DESCRIPTION = 'Tente ajustar os filtros para visualizar resultados.';
-const RETRY_DESCRIPTION = 'Verifique a conexão com a API e tente novamente.';
+const RETRY_DESCRIPTION = 'Verifique sua conexão e tente novamente.';
 
 export const API_STATE_MESSAGES: Record<
   'users' | 'history' | 'dashboard' | 'warehouse',
@@ -21,8 +21,8 @@ export const API_STATE_MESSAGES: Record<
   users: {
     empty: {
       default: {
-        title: 'Nenhum usuário disponível',
-        description: 'Não há usuários cadastrados para exibir no momento.',
+        title: 'Nenhum usuário cadastrado',
+        description: "Clique em 'Novo usuário' para começar.",
       },
       filtered: {
         title: 'Nenhum usuário encontrado',
@@ -37,11 +37,11 @@ export const API_STATE_MESSAGES: Record<
   history: {
     empty: {
       default: {
-        title: 'Nenhum registro de histórico',
-        description: 'Ainda não há movimentações registradas para exibir.',
+        title: 'Nenhuma movimentação registrada',
+        description: 'As movimentações de estoque aparecerão aqui.',
       },
       filtered: {
-        title: 'Nenhum registro encontrado',
+        title: 'Nenhuma movimentação encontrada',
         description: FILTER_DESCRIPTION,
       },
     },
@@ -54,7 +54,7 @@ export const API_STATE_MESSAGES: Record<
     empty: {
       default: {
         title: 'Nenhum item em estoque',
-        description: 'Não há itens para exibir no momento.',
+        description: 'Não há itens cadastrados para exibir no momento.',
       },
       filtered: {
         title: 'Nenhum item encontrado',
@@ -62,14 +62,14 @@ export const API_STATE_MESSAGES: Record<
       },
     },
     error: {
-      title: 'Não foi possível carregar o dashboard',
+      title: 'Não foi possível carregar o estoque',
       description: RETRY_DESCRIPTION,
     },
   },
   warehouse: {
     empty: {
       default: {
-        title: 'Nenhum dado do armazém',
+        title: 'Nenhum dado nesta área',
         description: 'Não há fileiras, grades ou níveis cadastrados para exibir.',
       },
       filtered: {

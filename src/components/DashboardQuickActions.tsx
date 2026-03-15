@@ -3,11 +3,19 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { NavigationProp, ParamListBase } from '@react-navigation/native';
 import { Text } from 'react-native-paper';
+import { usePermissions } from '../security/permissions';
 import { useThemeContext } from '../theme/ThemeContext';
 
 const IS_WEB = Platform.OS === 'web';
 
-type DrawerRouteName = 'Armazém' | 'Histórico' | 'Usuários' | 'Perfil' | 'Dashboard';
+type DrawerRouteName =
+  | 'Armazém'
+  | 'Áreas'
+  | 'Histórico'
+  | 'Produtos'
+  | 'Usuários'
+  | 'Perfil'
+  | 'Dashboard';
 
 type QuickAction = {
   key: string;
@@ -19,38 +27,6 @@ type QuickAction = {
 type DashboardQuickActionsProps = {
   navigation: NavigationProp<ParamListBase>;
   isWide: boolean;
-  user: unknown;
-};
-
-function normalizeRole(user: any): string {
-  const rawRoleCandidates = [
-    user?.role,
-    user?.perfil,
-    user?.claims?.role,
-    user?.claims?.perfil,
-    user?.authorities?.[0],
-    user?.roles?.[0],
-  ];
-
-  for (const candidate of rawRoleCandidates) {
-    if (typeof candidate !== 'string') {
-      continue;
-    }
-    const normalized = candidate
-      .trim()
-      .toUpperCase()
-      .replace(/^ROLE_/, '');
-    if (normalized) {
-      return normalized;
-    }
-  }
-
-  return 'OPERADOR';
-}
-
-export const canAccessUsers = (user: any): boolean => {
-  const role = normalizeRole(user);
-  return role === 'ADMIN' || role === 'ADMINISTRADOR' || role === 'GERENTE';
 };
 
 function withAlpha(color: string, alpha: number): string {
@@ -101,22 +77,37 @@ function getAvailableRouteNames(navigation: NavigationProp<ParamListBase>): Set<
 export default function DashboardQuickActions({
   navigation,
   isWide,
-  user,
 }: DashboardQuickActionsProps) {
   const { theme } = useThemeContext();
+  const { hasPermission } = usePermissions();
   const colors = theme.colors;
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   const availableRouteNames = getAvailableRouteNames(navigation);
   const hasRoute = (route: DrawerRouteName): boolean => availableRouteNames.has(route);
+  const canViewProducts = hasPermission('PRODUCTS');
+  const canViewUsers = hasPermission('USERS');
+  const productsAction: QuickAction | null =
+    hasRoute('Produtos') && canViewProducts
+      ? {
+          key: 'products',
+          label: 'Produtos',
+          icon: 'package-variant-closed',
+          route: 'Produtos',
+        }
+      : null;
+  const usersAction: QuickAction | null =
+    hasRoute('Usuários') && canViewUsers
+      ? {
+          key: 'users',
+          label: 'Usuários',
+          icon: 'account-group-outline',
+          route: 'Usuários',
+        }
+      : null;
 
-  const thirdAction: QuickAction = hasRoute('Usuários')
-    ? {
-        key: 'users',
-        label: 'Usuários',
-        icon: 'account-group-outline',
-        route: 'Usuários',
-      }
+  const fallbackAction: QuickAction | null = hasRoute('Usuários')
+    ? null
     : hasRoute('Perfil')
       ? {
           key: 'profile',
@@ -124,17 +115,21 @@ export default function DashboardQuickActions({
           icon: 'account',
           route: 'Perfil',
         }
-      : {
-          key: 'dashboard',
-          label: 'Dashboard',
-          icon: 'view-dashboard-outline',
-          route: 'Dashboard',
-        };
+      : hasRoute('Dashboard')
+        ? {
+            key: 'dashboard',
+            label: 'Dashboard',
+            icon: 'view-dashboard-outline',
+            route: 'Dashboard',
+          }
+        : null;
 
   const candidates: QuickAction[] = [
-    { key: 'warehouse', label: 'Armazém', icon: 'warehouse', route: 'Armazém' },
+    { key: 'warehouse', label: 'Setores', icon: 'warehouse', route: 'Áreas' },
     { key: 'history', label: 'Histórico', icon: 'history', route: 'Histórico' },
-    thirdAction,
+    ...(productsAction ? [productsAction] : []),
+    ...(usersAction ? [usersAction] : []),
+    ...(fallbackAction ? [fallbackAction] : []),
   ];
   const actions = candidates.filter((action) => hasRoute(action.route));
 

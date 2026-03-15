@@ -1,0 +1,415 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API } from '../axios';
+import { getDefaultProfilesSeed } from '../security/permissions';
+import { ProfileDTO, ProfileUpsertRequest } from '../types/ProfileDTO';
+
+type PageResponse<T> = {
+  items: T[];
+  page: number;
+  size: number;
+  totalItems: number;
+  totalPages: number;
+};
+
+type ListProfilesParams = {
+  page: number;
+  size: number;
+  search?: string;
+};
+
+type SpringPageResponse<T> = {
+  content?: T[];
+  number?: number;
+  size?: number;
+  totalElements?: number;
+  totalPages?: number;
+};
+
+const PROFILE_COLLECTION_ENDPOINTS = ['/api/profiles', '/api/perfis'];
+const PROFILE_STORAGE_KEY = '@storage-system/mock-profiles';
+
+let forceMockMode = false;
+let cachedProfiles: ProfileDTO[] | null = null;
+
+function extractErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+
+  const response = (error as { response?: { status?: unknown } }).response;
+  return typeof response?.status === 'number' ? response.status : undefined;
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return '';
+  }
+
+  const responseData = (error as { response?: { data?: unknown } }).response?.data;
+  if (typeof responseData === 'string') {
+    return responseData;
+  }
+
+  if (responseData && typeof responseData === 'object') {
+    const message = (responseData as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+
+  const directMessage = (error as { message?: unknown }).message;
+  return typeof directMessage === 'string' ? directMessage : '';
+}
+
+function isRouteUnavailableError(error: unknown): boolean {
+  const status = extractErrorStatus(error);
+  const message = extractErrorMessage(error).toLowerCase();
+
+  if (status === 404) {
+    return true;
+  }
+
+  return (
+    message.includes('no static resource') ||
+    message.includes('/api/profiles') ||
+    message.includes('/api/perfis')
+  );
+}
+
+function buildProfileDetailEndpoints(id: number): string[] {
+  return [`/api/profiles/${id}`, `/api/perfis/${id}`];
+}
+
+function buildActivateEndpoints(id: number): string[] {
+  return [
+    `/api/profiles/${id}/activate`,
+    `/api/profiles/${id}/ativar`,
+    `/api/perfis/${id}/activate`,
+    `/api/perfis/${id}/ativar`,
+  ];
+}
+
+function buildInactivateEndpoints(id: number): string[] {
+  return [
+    `/api/profiles/${id}/inactivate`,
+    `/api/profiles/${id}/inativar`,
+    `/api/perfis/${id}/inactivate`,
+    `/api/perfis/${id}/inativar`,
+  ];
+}
+
+function sanitizeProfile(raw: Partial<ProfileDTO>): ProfileDTO {
+  return {
+    id: Number(raw.id ?? 0),
+    type: raw.type === 'READ_ONLY' ? 'READ_ONLY' : 'FULL_ACCESS',
+    description: String(raw.description ?? '').trim(),
+    allowedScreens: Array.isArray(raw.allowedScreens)
+      ? raw.allowedScreens.filter((item): item is ProfileDTO['allowedScreens'][number] => typeof item === 'string')
+      : [],
+    active: raw.active !== false,
+    createdAt: raw.createdAt?.toString() || undefined,
+    updatedAt: raw.updatedAt?.toString() || undefined,
+  };
+}
+
+function normalizePageResponse(
+  raw: unknown,
+  requestedPage: number,
+  requestedSize: number
+): PageResponse<ProfileDTO> {
+  if (raw && typeof raw === 'object' && Array.isArray((raw as PageResponse<ProfileDTO>).items)) {
+    const response = raw as PageResponse<ProfileDTO>;
+
+    return {
+      items: response.items.map((item) => sanitizeProfile(item)),
+      page: Number.isFinite(response.page) ? Math.max(response.page, 0) : requestedPage,
+      size: Number.isFinite(response.size) ? Math.max(response.size, 1) : requestedSize,
+      totalItems: Number.isFinite(response.totalItems) ? Math.max(response.totalItems, 0) : 0,
+      totalPages: Number.isFinite(response.totalPages) ? Math.max(response.totalPages, 0) : 0,
+    };
+  }
+
+  if (raw && typeof raw === 'object' && Array.isArray((raw as SpringPageResponse<ProfileDTO>).content)) {
+    const response = raw as SpringPageResponse<ProfileDTO>;
+
+    return {
+      items: (response.content ?? []).map((item) => sanitizeProfile(item)),
+      page: Number.isFinite(response.number) ? Math.max(response.number ?? 0, 0) : requestedPage,
+      size: Number.isFinite(response.size) ? Math.max(response.size ?? requestedSize, 1) : requestedSize,
+      totalItems: Number.isFinite(response.totalElements)
+        ? Math.max(response.totalElements ?? 0, 0)
+        : 0,
+      totalPages: Number.isFinite(response.totalPages)
+        ? Math.max(response.totalPages ?? 0, 0)
+        : 0,
+    };
+  }
+
+  if (Array.isArray(raw)) {
+    const items = raw.map((item) => sanitizeProfile(item as Partial<ProfileDTO>));
+    const totalItems = items.length;
+
+    return {
+      items,
+      page: requestedPage,
+      size: requestedSize,
+      totalItems,
+      totalPages: totalItems === 0 ? 0 : Math.ceil(totalItems / requestedSize),
+    };
+  }
+
+  return {
+    items: [],
+    page: requestedPage,
+    size: requestedSize,
+    totalItems: 0,
+    totalPages: 0,
+  };
+}
+
+async function runAgainstAvailableEndpoint<T>(
+  paths: string[],
+  request: (path: string) => Promise<T>
+): Promise<T | null> {
+  let sawUnavailableRoute = false;
+
+  for (const path of paths) {
+    try {
+      return await request(path);
+    } catch (error) {
+      if (isRouteUnavailableError(error)) {
+        sawUnavailableRoute = true;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  if (sawUnavailableRoute) {
+    forceMockMode = true;
+    return null;
+  }
+
+  return null;
+}
+
+async function loadMockProfiles(): Promise<ProfileDTO[]> {
+  if (cachedProfiles) {
+    return cachedProfiles.map((profile) => ({
+      ...profile,
+      allowedScreens: [...profile.allowedScreens],
+    }));
+  }
+
+  try {
+    const raw = await AsyncStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!raw) {
+      const seeded = getDefaultProfilesSeed();
+      cachedProfiles = seeded;
+      await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(seeded));
+      return seeded.map((profile) => ({ ...profile, allowedScreens: [...profile.allowedScreens] }));
+    }
+
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      cachedProfiles = parsed.map((item) => sanitizeProfile(item as Partial<ProfileDTO>));
+    } else {
+      cachedProfiles = getDefaultProfilesSeed();
+      await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(cachedProfiles));
+    }
+  } catch {
+    cachedProfiles = getDefaultProfilesSeed();
+  }
+
+  return cachedProfiles.map((profile) => ({
+    ...profile,
+    allowedScreens: [...profile.allowedScreens],
+  }));
+}
+
+async function saveMockProfiles(profiles: ProfileDTO[]): Promise<void> {
+  cachedProfiles = profiles.map((profile) => sanitizeProfile(profile));
+  await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(cachedProfiles));
+}
+
+function sanitizeUpsertPayload(payload: ProfileUpsertRequest): ProfileUpsertRequest {
+  return {
+    type: payload.type === 'READ_ONLY' ? 'READ_ONLY' : 'FULL_ACCESS',
+    description: payload.description.trim(),
+    allowedScreens: [...new Set(payload.allowedScreens)],
+    active: payload.active !== false,
+  };
+}
+
+async function listMockProfiles({
+  page,
+  size,
+  search,
+}: ListProfilesParams): Promise<PageResponse<ProfileDTO>> {
+  const profiles = await loadMockProfiles();
+  const normalizedSearch = (search ?? '').trim().toLowerCase();
+
+  const filtered = profiles.filter((profile) => {
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    return profile.description.toLowerCase().includes(normalizedSearch);
+  });
+
+  const start = page * size;
+  const items = filtered.slice(start, start + size);
+
+  return {
+    items,
+    page,
+    size,
+    totalItems: filtered.length,
+    totalPages: filtered.length === 0 ? 0 : Math.ceil(filtered.length / size),
+  };
+}
+
+async function createMockProfile(payload: ProfileUpsertRequest): Promise<ProfileDTO> {
+  const profiles = await loadMockProfiles();
+  const normalized = sanitizeUpsertPayload(payload);
+  const now = new Date().toISOString();
+  const nextId = profiles.reduce((maxValue, profile) => Math.max(maxValue, profile.id), 0) + 1;
+
+  const created: ProfileDTO = {
+    id: nextId,
+    type: normalized.type,
+    description: normalized.description,
+    allowedScreens: normalized.allowedScreens,
+    active: normalized.active !== false,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await saveMockProfiles([created, ...profiles]);
+  return created;
+}
+
+async function updateMockProfile(id: number, payload: ProfileUpsertRequest): Promise<ProfileDTO> {
+  const profiles = await loadMockProfiles();
+  const index = profiles.findIndex((profile) => profile.id === id);
+
+  if (index < 0) {
+    throw new Error('Perfil nao encontrado.');
+  }
+
+  const normalized = sanitizeUpsertPayload(payload);
+  const nextProfiles = [...profiles];
+  nextProfiles[index] = {
+    ...nextProfiles[index],
+    ...normalized,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await saveMockProfiles(nextProfiles);
+  return nextProfiles[index];
+}
+
+async function updateMockProfileStatus(id: number, active: boolean): Promise<void> {
+  const profiles = await loadMockProfiles();
+  const index = profiles.findIndex((profile) => profile.id === id);
+
+  if (index < 0) {
+    throw new Error('Perfil nao encontrado.');
+  }
+
+  const nextProfiles = [...profiles];
+  nextProfiles[index] = {
+    ...nextProfiles[index],
+    active,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await saveMockProfiles(nextProfiles);
+}
+
+export async function listProfiles({
+  page,
+  size,
+  search,
+}: ListProfilesParams): Promise<PageResponse<ProfileDTO>> {
+  if (!forceMockMode) {
+    const response = await runAgainstAvailableEndpoint(PROFILE_COLLECTION_ENDPOINTS, async (path) => {
+      const httpResponse = await API.get(path, {
+        params: {
+          page,
+          size,
+          ...(search?.trim() ? { search: search.trim() } : {}),
+        },
+      });
+
+      return normalizePageResponse(httpResponse.data, page, size);
+    });
+
+    if (response) {
+      return response;
+    }
+  }
+
+  return listMockProfiles({ page, size, search });
+}
+
+export async function createProfile(payload: ProfileUpsertRequest): Promise<ProfileDTO> {
+  if (!forceMockMode) {
+    const response = await runAgainstAvailableEndpoint(PROFILE_COLLECTION_ENDPOINTS, async (path) => {
+      const httpResponse = await API.post<ProfileDTO>(path, payload);
+      return sanitizeProfile(httpResponse.data);
+    });
+
+    if (response) {
+      return response;
+    }
+  }
+
+  return createMockProfile(payload);
+}
+
+export async function updateProfile(id: number, payload: ProfileUpsertRequest): Promise<ProfileDTO> {
+  if (!forceMockMode) {
+    const response = await runAgainstAvailableEndpoint(buildProfileDetailEndpoints(id), async (path) => {
+      const httpResponse = await API.put<ProfileDTO>(path, payload);
+      return sanitizeProfile(httpResponse.data);
+    });
+
+    if (response) {
+      return response;
+    }
+  }
+
+  return updateMockProfile(id, payload);
+}
+
+export async function activateProfile(id: number): Promise<void> {
+  if (!forceMockMode) {
+    const response = await runAgainstAvailableEndpoint(buildActivateEndpoints(id), async (path) => {
+      await API.patch(path);
+      return true;
+    });
+
+    if (response) {
+      return;
+    }
+  }
+
+  await updateMockProfileStatus(id, true);
+}
+
+export async function inactivateProfile(id: number): Promise<void> {
+  if (!forceMockMode) {
+    const response = await runAgainstAvailableEndpoint(buildInactivateEndpoints(id), async (path) => {
+      await API.patch(path);
+      return true;
+    });
+
+    if (response) {
+      return;
+    }
+  }
+
+  await updateMockProfileStatus(id, false);
+}

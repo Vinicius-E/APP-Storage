@@ -1,15 +1,17 @@
 import React from 'react';
-import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { StyleProp, ViewStyle } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Text } from 'react-native-paper';
-import { useThemeContext } from '../theme/ThemeContext';
+import EstadoVazio, { EstadoVazioTipo } from './EstadoVazio';
 
 type AppEmptyStateProps = {
   title: string;
   description: string;
   icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   tone?: 'default' | 'error';
+  tipo?: EstadoVazioTipo;
   style?: StyleProp<ViewStyle>;
+  onRetry?: () => void;
+  retryLabel?: string;
 };
 
 export default function AppEmptyState({
@@ -17,36 +19,20 @@ export default function AppEmptyState({
   description,
   icon = 'inbox-outline',
   tone = 'default',
+  tipo,
   style,
+  onRetry,
+  retryLabel,
 }: AppEmptyStateProps) {
-  const { theme } = useThemeContext();
-  const textSecondary = (theme.colors as any).textSecondary ?? theme.colors.onSurfaceVariant;
-  const iconColor = tone === 'error' ? '#B3261E' : textSecondary;
-
   return (
-    <View style={[styles.container, style]}>
-      <MaterialCommunityIcons name={icon} size={30} color={iconColor} />
-      <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
-      <Text style={[styles.description, { color: textSecondary }]}>{description}</Text>
-    </View>
+    <EstadoVazio
+      tipo={tipo ?? (tone === 'error' ? 'erro' : 'vazio')}
+      titulo={title}
+      subtitulo={description}
+      icon={icon}
+      style={style}
+      onRetry={onRetry}
+      retryLabel={retryLabel}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  description: {
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-});

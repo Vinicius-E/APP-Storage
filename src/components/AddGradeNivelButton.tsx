@@ -14,7 +14,7 @@ type Props = {
 export function AddGradeNivelButton({ onPress, borderColor, primaryColor, mode = 'add' }: Props) {
   const [hovered, setHovered] = useState(false);
 
-  const label = mode === 'add' ? 'Adicionar Produto' : 'Remover Produto';
+  const label = mode === 'add' ? 'Adicionar Grade' : 'Remover Produto';
   const iconName = mode === 'add' ? 'plus' : 'minus';
 
   const hoverStyle = useMemo(() => {

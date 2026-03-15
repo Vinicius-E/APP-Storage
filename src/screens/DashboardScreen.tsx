@@ -22,7 +22,6 @@ import AppTextInput from '../components/AppTextInput';
 import DashboardQuickActions from '../components/DashboardQuickActions';
 import ModalFrame from '../components/warehouse2d/modals/ModalFrame';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
-import { useAuth } from '../auth/AuthContext';
 import { useThemeContext } from '../theme/ThemeContext';
 import { API } from '../axios';
 
@@ -218,7 +217,9 @@ function buildStockReportHtml(
 
 export default function DashboardScreen() {
   const { theme } = useThemeContext();
-  const { user } = useAuth();
+  const pageBackground =
+    (theme.colors as typeof theme.colors & { pageBackground?: string }).pageBackground ??
+    theme.colors.background;
   const { width } = useWindowDimensions();
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
 
@@ -640,10 +641,10 @@ export default function DashboardScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={[styles.container, { backgroundColor: theme.colors.background }]}
+      contentContainerStyle={[styles.container, { backgroundColor: pageBackground }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
-      <DashboardQuickActions navigation={navigation} isWide={isWide} user={user} />
+      <DashboardQuickActions navigation={navigation} isWide={isWide} />
 
       <View
         style={[
@@ -969,15 +970,17 @@ export default function DashboardScreen() {
                   {loadErrorMessage ? (
                     <AppEmptyState
                       title={API_STATE_MESSAGES.dashboard.error.title}
-                      description={loadErrorMessage}
+                      description={API_STATE_MESSAGES.dashboard.error.description}
                       icon="alert-circle-outline"
                       tone="error"
+                      onRetry={() => void loadDashboard(false)}
                     />
                   ) : (
                     <AppEmptyState
                       title={dashboardEmptyCopy.title}
                       description={dashboardEmptyCopy.description}
                       icon="inbox-outline"
+                      tipo={hasDashboardFilters ? 'semResultado' : 'vazio'}
                     />
                   )}
                 </View>
@@ -1235,7 +1238,7 @@ export default function DashboardScreen() {
         >
           <View style={styles.productModalInfoRow}>
             <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
-              Codigo Wester
+              Código Wester
             </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
               {selectedRow?.codigoSistemaWester || 'Nao informado'}
@@ -1251,7 +1254,7 @@ export default function DashboardScreen() {
 
           <View style={styles.productModalInfoRow}>
             <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
-              Localizacao
+              Loca
             </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
               Fileira {selectedRow?.fileira ?? '-'} / Grade {selectedRow?.grade ?? '-'} / Nivel{' '}
@@ -1261,7 +1264,7 @@ export default function DashboardScreen() {
 
           <View style={[styles.productModalInfoRow, styles.productModalDescriptionRow]}>
             <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
-              Descricao
+              Descrição
             </Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
               {selectedRow?.descricao || 'Nao informada'}

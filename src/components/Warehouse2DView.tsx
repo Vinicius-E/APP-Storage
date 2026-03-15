@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useAreaContext } from '../areas/AreaContext';
 import { useThemeContext } from '../theme/ThemeContext';
 import { AddGradeNivelButton } from './AddGradeNivelButton';
 import { AddFileiraButton } from './AddFileiraButton';
@@ -24,10 +25,22 @@ import AppLoadingState from './AppLoadingState';
 import { API } from '../axios';
 import { AuthProvider } from '../auth/AuthContext';
 import { API_STATE_MESSAGES } from '../constants/apiStateMessages';
+import { getUserFacingErrorMessage } from '../utils/userFacingError';
 import { useWarehouseSearch } from '../search/WarehouseSearchContext';
+import { listProducts } from '../services/productApi';
+import {
+  buildStockItemUpsertPayload,
+  createEmptyLevelInGrade,
+  createLevelWithProductInGrade,
+} from '../services/warehouseLevelApi';
+import { Product as CatalogProduct } from '../types/Product';
+import AddGradeLevelDecisionModal from './warehouse2d/modals/AddGradeLevelDecisionModal';
+import AreaDropdownSelector from './warehouse2d/AreaDropdownSelector';
 import ConfirmActionModal from './warehouse2d/modals/ConfirmActionModal';
 import FeedbackModal from './warehouse2d/modals/FeedbackModal';
 import SearchResultsModal from './warehouse2d/modals/SearchResultsModal';
+import SelectGradeProductModal from './warehouse2d/modals/SelectGradeProductModal';
+import WarehouseItemDetailsModal from './warehouse2d/modals/WarehouseItemDetailsModal';
 import WarehouseItemFormModal from './warehouse2d/modals/WarehouseItemFormModal';
 
 interface Produto {
@@ -71,6 +84,7 @@ interface EstoquePosicao {
 
   gradeId: number;
   gradeIdentificador: string;
+  gradeOrdem?: number;
 
   nivelId: number;
   nivelIdentificador: string;
@@ -104,21 +118,20 @@ interface ItemEstoque {
   dataAtualizacao?: string | null;
 }
 
-type CreatedNivel = { id: number; identificador: string; ordem?: number };
 type CreatedGrade = { id: number; identificador: string; ordem?: number };
 
 const IS_WEB = Platform.OS === 'web';
 
-type SelectedGradeCtx = {
+type PendingStructureCreationCtx = {
+  kind: 'level' | 'grade';
   fileiraId: number;
+  fileiraIdentificador: string;
   gradeId?: number;
+  gradeIdentificador: string;
+  gradeOrdem?: number;
   label: string;
-
   nextNivelIdentificador: string;
   nextNivelOrdem: number;
-
-  nextGradeIdentificador?: string;
-  nextGradeOrdem?: number;
 };
 
 type SearchResult = {
@@ -150,7 +163,6 @@ export default function Warehouse2DView() {
   const [hoverNivel, setHoverNivel] = useState<Record<number, boolean>>({});
   const [activeGradeId, setActiveGradeId] = useState<number | null>(null);
 
-  const [creatingGradeId, setCreatingGradeId] = useState<number | null>(null);
   const [removingGradeId, setRemovingGradeId] = useState<number | null>(null);
   const [resequenceNivelId, setResequenceNivelId] = useState<number | null>(null);
 
@@ -161,6 +173,8 @@ export default function Warehouse2DView() {
   } | null>(null);
 
   const [productModalVisible, setProductModalVisible] = useState(false);
+  const [productEditModalVisible, setProductEditModalVisible] = useState(false);
+  const [editProductPickerVisible, setEditProductPickerVisible] = useState(false);
   const [selectedNivelCtx, setSelectedNivelCtx] = useState<{
     fileiraId: number;
     gradeId: number;
@@ -173,6 +187,8 @@ export default function Warehouse2DView() {
   const [itemEstoque, setItemEstoque] = useState<ItemEstoque | null>(null);
 
   const [editQuantidade, setEditQuantidade] = useState<number>(1);
+  const [editProductId, setEditProductId] = useState<number | null>(null);
+  const [pendingEditProductId, setPendingEditProductId] = useState<number | null>(null);
   const [editCodigo, setEditCodigo] = useState<string>('');
   const [editCor, setEditCor] = useState<string>('');
   const [editNomeModelo, setEditNomeModelo] = useState<string>('');
@@ -181,31 +197,17 @@ export default function Warehouse2DView() {
   const [confirmSaveVisible, setConfirmSaveVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [addItemModalVisible, setAddItemModalVisible] = useState(false);
-  const [selectedGradeCtx, setSelectedGradeCtx] = useState<SelectedGradeCtx | null>(null);
-
-  const [addLoading, setAddLoading] = useState(false);
-  const [addQuantidade, setAddQuantidade] = useState<number>(1);
-  const [addCodigo, setAddCodigo] = useState<string>('');
-  const [addCor, setAddCor] = useState<string>('');
-  const [addNomeModelo, setAddNomeModelo] = useState<string>('');
-  const [addDescricao, setAddDescricao] = useState<string>('');
-
-  const [addGradeModalVisible, setAddGradeModalVisible] = useState(false);
-  const [selectedFileiraCtx, setSelectedFileiraCtx] = useState<{
-    fileiraId: number;
-    fileiraIdentificador: string;
-    label: string;
-    suggestedGradeIdentificador: string;
-    suggestedGradeOrdem: number;
-  } | null>(null);
-
-  const [addGradeLoading, setAddGradeLoading] = useState(false);
-  const [addGradeQuantidade, setAddGradeQuantidade] = useState<number>(1);
-  const [addGradeCodigo, setAddGradeCodigo] = useState<string>('');
-  const [addGradeCor, setAddGradeCor] = useState<string>('');
-  const [addGradeNomeModelo, setAddGradeNomeModelo] = useState<string>('');
-  const [addGradeDescricao, setAddGradeDescricao] = useState<string>('');
+  const [pendingStructureCtx, setPendingStructureCtx] =
+    useState<PendingStructureCreationCtx | null>(null);
+  const [addLevelDecisionVisible, setAddLevelDecisionVisible] = useState(false);
+  const [selectGradeProductVisible, setSelectGradeProductVisible] = useState(false);
+  const [structureCreationLoading, setStructureCreationLoading] = useState(false);
+  const [activeProductsLoading, setActiveProductsLoading] = useState(false);
+  const [activeProducts, setActiveProducts] = useState<CatalogProduct[]>([]);
+  const [productFilter, setProductFilter] = useState('');
+  const [editProductFilter, setEditProductFilter] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [productQuantityInput, setProductQuantityInput] = useState('');
   const [successVisible, setSuccessVisible] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
 
@@ -227,28 +229,13 @@ export default function Warehouse2DView() {
     setSuccessVisible(true);
   };
 
-  const compactInsertSuccessMessage = (contextLabel: string) => {
-    const location = contextLabel
-      .replace(/^Inserir item\s*-\s*/i, '')
-      .replace(/\s*-\s*/g, ' / ')
-      .trim();
-    return `Produto inserido em ${location}.`;
-  };
-
   const showError = (message: string) => {
     setErrorMessage(message);
     setErrorVisible(true);
   };
 
   const extractErrorMessage = (error: any, fallback: string) => {
-    const apiMsg =
-      error?.response?.data?.message ??
-      error?.response?.data?.error ??
-      error?.response?.data ??
-      error?.message;
-
-    const msg = String(apiMsg ?? '').trim();
-    return msg !== '' ? msg : fallback;
+    return getUserFacingErrorMessage(error, fallback);
   };
 
   const normalizeErrorText = (value: any) =>
@@ -281,14 +268,17 @@ export default function Warehouse2DView() {
   };
 
   const { theme } = useThemeContext();
+  const { areas, selectedAreaId, isLoading: areaLoading, selectAreaById } = useAreaContext();
   const colors = theme.colors;
   const successColor = '#2E7D32';
   const errorColor = '#C62828';
 
-  const baseGradeWidth = 140;
-  const perNivelWidth = 116;
-
-  const AREA_ID = 1;
+  const baseGradeWidth = IS_WEB ? 140 : 160;
+  const perNivelWidth = IS_WEB ? 116 : 136;
+  const currentAreaId = useMemo(
+    () => selectedAreaId ?? areas.find((area) => area.active !== false)?.id ?? null,
+    [areas, selectedAreaId]
+  );
 
   useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -300,28 +290,6 @@ export default function Warehouse2DView() {
     if (!IS_WEB) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     }
-  };
-
-  const openAddItemModalForNewGrade = (fileira: Fileira) => {
-    const nextGrade = computeNextGradeForFileira(fileira);
-    const label = `Inserir item - Fileira ${fileira.identificador} - Grade ${nextGrade.identificador} - Nível N1`;
-
-    setSelectedGradeCtx({
-      fileiraId: fileira.id,
-      gradeId: undefined,
-      label,
-      nextNivelIdentificador: 'N1',
-      nextNivelOrdem: 1,
-      nextGradeIdentificador: nextGrade.identificador,
-      nextGradeOrdem: nextGrade.ordem,
-    });
-
-    setAddQuantidade(1);
-    setAddCodigo('');
-    setAddCor('');
-    setAddNomeModelo('');
-    setAddDescricao('');
-    setAddItemModalVisible(true);
   };
 
   const parseNivelOrder = (nivel: Nivel) => {
@@ -351,89 +319,278 @@ export default function Warehouse2DView() {
     return { identificador: `N${nextNumber}`, ordem: nextNumber };
   };
 
-  const fetchAllData = async (showInitialLoader = false): Promise<EstoquePosicao[] | null> => {
+  const getNivelProductDisplay = (nivel: Nivel) => {
+    const nomeModelo = String(nivel.produto?.nomeModelo ?? nivel.produtoNomeModelo ?? '').trim();
+
+    if (nomeModelo !== '') {
+      return {
+        text: nomeModelo,
+        empty: false,
+      };
+    }
+
+    return {
+      text: 'Adicionar Produto',
+      empty: true,
+    };
+  };
+
+  const getGradeDisplayIdentificador = (identificador: string) => {
+    const normalized = String(identificador ?? '').trim();
+    const letters = normalized.match(/[A-Za-z]+/g)?.join('').toUpperCase() ?? '';
+    return letters !== '' ? letters : normalized;
+  };
+
+  const formatGradeLabel = (identificador: string) =>
+    `Grade ${getGradeDisplayIdentificador(identificador)}`;
+
+  const normalizeWarehouseRow = (rawRow: any, areaId: number): EstoquePosicao => {
+    const produtoBruto = rawRow?.produto ?? null;
+    const produtoIdBruto = rawRow?.produtoId;
+    const produtoId =
+      typeof produtoIdBruto === 'number'
+        ? produtoIdBruto
+        : Number.isFinite(Number(produtoIdBruto))
+          ? Number(produtoIdBruto)
+          : null;
+    const nomeModelo = rawRow?.nomeModelo ?? produtoBruto?.nomeModelo ?? null;
+    const codigoSistemaWester =
+      rawRow?.codigoSistemaWester ?? produtoBruto?.codigoSistemaWester ?? null;
+    const cor = rawRow?.cor ?? produtoBruto?.cor ?? null;
+    const descricao = rawRow?.descricao ?? produtoBruto?.descricao ?? null;
+    const hasProdutoData =
+      produtoId != null ||
+      [nomeModelo, codigoSistemaWester, cor, descricao].some(
+        (value) => String(value ?? '').trim() !== ''
+      );
+
+    const produto: Produto | null = hasProdutoData
+      ? {
+          id: produtoId ?? 0,
+          codigoSistemaWester: String(codigoSistemaWester ?? ''),
+          nomeModelo: String(nomeModelo ?? ''),
+          cor: String(cor ?? ''),
+          descricao: String(descricao ?? ''),
+        }
+      : null;
+
+    return {
+      areaId,
+      fileiraId: Number(rawRow?.fileiraId ?? 0),
+      fileiraIdentificador: String(rawRow?.fileiraIdentificador ?? ''),
+      gradeId: Number(rawRow?.gradeId ?? 0),
+      gradeIdentificador: String(rawRow?.gradeIdentificador ?? ''),
+      gradeOrdem:
+        typeof rawRow?.gradeOrdem === 'number'
+          ? rawRow.gradeOrdem
+          : Number.isFinite(Number(rawRow?.gradeOrdem))
+            ? Number(rawRow.gradeOrdem)
+            : undefined,
+      nivelId: Number(rawRow?.nivelId ?? 0),
+      nivelIdentificador: String(rawRow?.nivelIdentificador ?? ''),
+      nivelOrdem:
+        typeof rawRow?.nivelOrdem === 'number'
+          ? rawRow.nivelOrdem
+          : Number.isFinite(Number(rawRow?.nivelOrdem))
+            ? Number(rawRow.nivelOrdem)
+            : undefined,
+      itemEstoqueId:
+        typeof rawRow?.itemEstoqueId === 'number'
+          ? rawRow.itemEstoqueId
+          : Number.isFinite(Number(rawRow?.itemEstoqueId))
+            ? Number(rawRow.itemEstoqueId)
+            : (rawRow?.itemEstoqueId ?? null),
+      quantidade:
+        typeof rawRow?.quantidade === 'number'
+          ? rawRow.quantidade
+          : Number.isFinite(Number(rawRow?.quantidade))
+            ? Number(rawRow.quantidade)
+            : 0,
+      produtoId,
+      codigoSistemaWester,
+      nomeModelo,
+      cor,
+      descricao,
+      produto,
+    };
+  };
+
+  const normalizeWarehouseRows = (raw: any, areaId: number): EstoquePosicao[] => {
+    if (Array.isArray(raw)) {
+      return raw.map((row) => normalizeWarehouseRow(row, areaId));
+    }
+
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.fileiras)) {
+      return [];
+    }
+
+    const rows: EstoquePosicao[] = [];
+
+    raw.fileiras.forEach((fileira: any) => {
+      const fileiraId = Number(fileira?.id ?? 0);
+      const fileiraIdentificador = String(fileira?.identificador ?? '');
+
+      const grades = Array.isArray(fileira?.grades) ? fileira.grades : [];
+      grades.forEach((grade: any) => {
+        const gradeId = Number(grade?.id ?? 0);
+        const gradeIdentificador = String(grade?.identificador ?? '');
+        const gradeOrdem = typeof grade?.ordem === 'number' ? grade.ordem : undefined;
+        const niveis = Array.isArray(grade?.niveis) ? grade.niveis : [];
+
+        niveis.forEach((nivel: any) => {
+          rows.push(
+            normalizeWarehouseRow(
+              {
+                fileiraId,
+                fileiraIdentificador,
+                gradeId,
+                gradeIdentificador,
+                gradeOrdem,
+                nivelId: nivel?.id,
+                nivelIdentificador: nivel?.identificador,
+                nivelOrdem: nivel?.ordem,
+                itemEstoqueId: nivel?.itemEstoqueId,
+                quantidade: nivel?.quantidade,
+                produtoId: nivel?.produto?.id,
+                codigoSistemaWester: nivel?.produto?.codigoSistemaWester,
+                nomeModelo: nivel?.produto?.nomeModelo ?? nivel?.produtoNomeModelo,
+                cor: nivel?.produto?.cor,
+                descricao: nivel?.produto?.descricao,
+                produto: nivel?.produto ?? null,
+              },
+              areaId
+            )
+          );
+        });
+      });
+    });
+
+    return rows;
+  };
+
+  const buildWarehouseStructure = (rows: EstoquePosicao[]): Fileira[] => {
+    const fileiraMap = new Map<number, Fileira & { gradesMap: Map<number, Grade> }>();
+
+    rows.forEach((row) => {
+      if (!fileiraMap.has(row.fileiraId)) {
+        fileiraMap.set(row.fileiraId, {
+          id: row.fileiraId,
+          identificador: row.fileiraIdentificador,
+          grades: [],
+          gradesMap: new Map<number, Grade>(),
+        });
+      }
+
+      const fileira = fileiraMap.get(row.fileiraId)!;
+
+      if (row.gradeId == null) {
+        return;
+      }
+
+      if (!fileira.gradesMap.has(row.gradeId)) {
+        const grade: Grade = {
+          id: row.gradeId,
+          identificador: row.gradeIdentificador ?? '',
+          ordem: row.gradeOrdem,
+          niveis: [],
+        };
+        fileira.gradesMap.set(row.gradeId, grade);
+        fileira.grades.push(grade);
+      }
+
+      if (row.nivelId == null) {
+        return;
+      }
+
+      const grade = fileira.gradesMap.get(row.gradeId)!;
+      const produtoNormalizado = row.produto;
+      const produtoNomeModeloNormalizado =
+        String(row.nomeModelo ?? produtoNormalizado?.nomeModelo ?? '').trim() !== ''
+          ? String(row.nomeModelo ?? produtoNormalizado?.nomeModelo ?? '')
+          : undefined;
+
+      grade.niveis.push({
+        id: row.nivelId,
+        identificador: row.nivelIdentificador,
+        ordem: row.nivelOrdem,
+        itemEstoqueId: row.itemEstoqueId ?? null,
+        quantidade: typeof row.quantidade === 'number' ? row.quantidade : 0,
+        produto: produtoNormalizado,
+        produtoNomeModelo: produtoNomeModeloNormalizado,
+      });
+    });
+
+    return Array.from(fileiraMap.values()).map(({ gradesMap: _gradesMap, ...fileira }) => ({
+      ...fileira,
+      grades: fileira.grades
+        .sort((a, b) => parseGradeOrder(a) - parseGradeOrder(b))
+        .map((grade) => ({
+          ...grade,
+          niveis: [...grade.niveis].sort((a, b) => parseNivelOrder(a) - parseNivelOrder(b)),
+        })),
+    }));
+  };
+
+  const getVisibleNiveisForGrade = (
+    grade: Grade,
+    expanded: boolean,
+    searchEnabledForGrade: boolean,
+    matchedIds: Set<number>
+  ) => {
+    const orderedNiveis = [...grade.niveis].sort((a, b) => parseNivelOrder(a) - parseNivelOrder(b));
+
+    if (expanded) {
+      return orderedNiveis;
+    }
+
+    const previewNivel = orderedNiveis[0] ? [orderedNiveis[0]] : [];
+    if (!searchEnabledForGrade) {
+      return previewNivel;
+    }
+
+    const matchedNiveis = orderedNiveis.filter((nivel) => matchedIds.has(nivel.id));
+    const deduped = new Map<number, Nivel>();
+
+    [...previewNivel, ...matchedNiveis].forEach((nivel) => {
+      deduped.set(nivel.id, nivel);
+    });
+
+    return Array.from(deduped.values()).sort((a, b) => parseNivelOrder(a) - parseNivelOrder(b));
+  };
+
+  const loadWarehouseRows = async (areaId: number): Promise<EstoquePosicao[]> => {
+    try {
+      const response = await API.get<EstoquePosicao[]>(`/api/estoque/posicoes/area/${areaId}`);
+      return normalizeWarehouseRows(response.data, areaId);
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        return [];
+      }
+
+      throw error;
+    }
+  };
+
+  const fetchAllData = async (
+    showInitialLoader = false,
+    targetAreaId: number | null = currentAreaId
+  ): Promise<EstoquePosicao[] | null> => {
     if (showInitialLoader) {
       setInitialLoading(true);
     }
 
     try {
-      const res = await API.get<EstoquePosicao[]>(`/api/estoque/posicoes/area/${AREA_ID}`);
-      const rows = res.data ?? [];
-
-      const fileiraMap = new Map<number, Fileira>();
-
-      for (const r of rows) {
-        if (!fileiraMap.has(r.fileiraId)) {
-          fileiraMap.set(r.fileiraId, {
-            id: r.fileiraId,
-            identificador: r.fileiraIdentificador,
-            grades: [],
-          });
-        }
-
-        const fileira = fileiraMap.get(r.fileiraId)!;
-
-        if (r.gradeId == null) {
-          continue;
-        }
-
-        let grade = fileira.grades.find((g) => g.id === r.gradeId);
-        if (!grade) {
-          grade = {
-            id: r.gradeId,
-            identificador: r.gradeIdentificador ?? '',
-            ordem: (r as any).gradeOrdem,
-            niveis: [],
-          };
-          fileira.grades.push(grade);
-        }
-
-        if (r.nivelId == null) {
-          continue;
-        }
-
-        const produtoNormalizado: Produto | null =
-          r.produto ??
-          (r.produtoId
-            ? {
-                id: r.produtoId,
-                codigoSistemaWester: (r.codigoSistemaWester ?? '').toString(),
-                nomeModelo: (r.nomeModelo ?? '').toString(),
-                cor: (r.cor ?? '').toString(),
-                descricao: (r.descricao ?? '').toString(),
-              }
-            : null);
-
-        const produtoNomeModeloNormalizado =
-          (produtoNormalizado?.nomeModelo ?? '').trim() !== ''
-            ? produtoNormalizado?.nomeModelo
-            : undefined;
-
-        grade.niveis.push({
-          id: r.nivelId,
-          identificador: r.nivelIdentificador,
-          ordem: r.nivelOrdem,
-          itemEstoqueId: r.itemEstoqueId ?? null,
-          quantidade: typeof r.quantidade === 'number' ? r.quantidade : 0,
-          produto: produtoNormalizado,
-          produtoNomeModelo: produtoNomeModeloNormalizado,
-        });
+      if (!targetAreaId) {
+        setFileiras([]);
+        return [];
       }
 
-      const fileirasOrdenadas = Array.from(fileiraMap.values()).map((f) => ({
-        ...f,
-        grades: f.grades
-          .sort((a, b) => parseGradeOrder(a) - parseGradeOrder(b))
-          .map((g) => ({
-            ...g,
-            niveis: [...g.niveis].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)),
-          })),
-      }));
+      const rows = await loadWarehouseRows(targetAreaId);
 
-      setFileiras(fileirasOrdenadas);
+      setFileiras(buildWarehouseStructure(rows));
       return rows;
     } catch (error: any) {
-      Alert.alert('Erro', error?.response?.data ?? 'Não foi possível carregar o mapa do estoque.');
+      Alert.alert('Erro', extractErrorMessage(error, 'Não foi possível carregar o mapa do estoque.'));
       return null;
     } finally {
       if (showInitialLoader) {
@@ -443,8 +600,17 @@ export default function Warehouse2DView() {
   };
 
   useEffect(() => {
-    void fetchAllData(true);
-  }, []);
+    if (areaLoading && !currentAreaId) {
+      return;
+    }
+
+    setExpandedGrades([]);
+    setExpandedFileiras([]);
+    setActiveGradeId(null);
+    setFocusedNivelId(null);
+    setSearchResultsVisible(false);
+    void fetchAllData(true, currentAreaId);
+  }, [areaLoading, currentAreaId]);
 
   const toggleGradeExpand = (grade: Grade) => {
     safeLayoutAnimation();
@@ -480,26 +646,6 @@ export default function Warehouse2DView() {
     });
 
     setActiveGradeId(null);
-  };
-
-  const criarNivel = async (_fileiraId: number, grade: Grade) => {
-    const { identificador, ordem } = computeNextNivelForGrade(grade);
-    setCreatingGradeId(grade.id);
-
-    try {
-      await API.post(`/api/niveis/grade/${grade.id}`, {
-        identificador,
-        ordem,
-        grade: { id: grade.id },
-      });
-
-      await fetchAllData();
-      setExpandedGrades((prev) => (prev.includes(grade.id) ? prev : [...prev, grade.id]));
-    } catch (error: any) {
-      Alert.alert('Erro', error?.response?.data ?? 'Não foi possível criar o nível.');
-    } finally {
-      setCreatingGradeId(null);
-    }
   };
 
   const removerUltimoNivel = async (fileiraId: number, grade: Grade) => {
@@ -590,7 +736,7 @@ export default function Warehouse2DView() {
   };
 
   const openConfirmRemoveNivel = (nivel: Nivel, fileira: Fileira, grade: Grade) => {
-    const label = `Fileira ${fileira.identificador} - Grade ${grade.identificador} - Nível ${nivel.identificador}`;
+    const label = `Fileira ${fileira.identificador} - ${formatGradeLabel(grade.identificador)} - Nível ${nivel.identificador}`;
     setPendingRemoveNivel({ id: nivel.id, label });
 
     setSelectedNivelCtx({
@@ -623,7 +769,7 @@ export default function Warehouse2DView() {
     );
 
     closeConfirmRemoveNivel();
-    if (removed && productModalVisible) {
+    if (removed && (productModalVisible || productEditModalVisible || editProductPickerVisible)) {
       closeProductModal();
     }
   };
@@ -637,14 +783,20 @@ export default function Warehouse2DView() {
   const resetProductForm = () => {
     setItemEstoque(null);
     setEditQuantidade(1);
+    setEditProductId(null);
+    setPendingEditProductId(null);
     setEditCodigo('');
     setEditCor('');
     setEditNomeModelo('');
     setEditDescricao('');
+    setEditProductFilter('');
   };
 
   const closeProductModal = () => {
     setProductModalVisible(false);
+    setProductEditModalVisible(false);
+    setEditProductPickerVisible(false);
+    setConfirmSaveVisible(false);
     setSelectedNivelCtx(null);
     resetProductForm();
   };
@@ -677,6 +829,7 @@ export default function Warehouse2DView() {
       setItemEstoque(dto);
 
       setEditQuantidade(typeof dto.quantidade === 'number' ? dto.quantidade : 1);
+      setEditProductId(dto.produtoId ?? null);
       setEditCodigo(dto.produtoCodigoWester ?? '');
       setEditCor(dto.produtoCor ?? '');
       setEditNomeModelo(dto.produtoNomeModelo ?? '');
@@ -698,7 +851,7 @@ export default function Warehouse2DView() {
   }, []);
 
   const handleNivelClick = (fileira: Fileira, grade: Grade, nivel: Nivel) => {
-    const label = `Fileira ${fileira.identificador} - Grade ${grade.identificador} - Nível ${nivel.identificador}`;
+    const label = `Fileira ${fileira.identificador} - ${formatGradeLabel(grade.identificador)} - Nível ${nivel.identificador}`;
 
     setSelectedNivelCtx({
       fileiraId: fileira.id,
@@ -713,39 +866,113 @@ export default function Warehouse2DView() {
   };
 
   useEffect(() => {
-    if (!productModalVisible || !selectedNivelCtx) {
+    if ((!productModalVisible && !productEditModalVisible) || !selectedNivelCtx) {
       return;
     }
     void loadItemEstoque(selectedNivelCtx.nivelId);
-  }, [productModalVisible, selectedNivelCtx, loadItemEstoque]);
+  }, [productEditModalVisible, productModalVisible, selectedNivelCtx, loadItemEstoque]);
 
-  const isDirty = useMemo(() => {
-    if (!itemEstoque) {
-      return (
-        editQuantidade !== 1 ||
-        editCodigo.trim() !== '' ||
-        editCor.trim() !== '' ||
-        editNomeModelo.trim() !== '' ||
-        editDescricao.trim() !== ''
-      );
+  const currentNivelItemDetails = useMemo(() => {
+    const fallbackProduto = selectedNivelCtx?.nivel.produto ?? null;
+    const nomeModelo = String(
+      itemEstoque?.produtoNomeModelo ?? fallbackProduto?.nomeModelo ?? ''
+    ).trim();
+    const codigo = String(
+      itemEstoque?.produtoCodigoWester ?? fallbackProduto?.codigoSistemaWester ?? ''
+    ).trim();
+    const cor = String(itemEstoque?.produtoCor ?? fallbackProduto?.cor ?? '').trim();
+    const descricao = String(itemEstoque?.produtoDescricao ?? fallbackProduto?.descricao ?? '').trim();
+    const quantidadeBase =
+      typeof itemEstoque?.quantidade === 'number'
+        ? itemEstoque.quantidade
+        : typeof selectedNivelCtx?.nivel.quantidade === 'number'
+          ? selectedNivelCtx.nivel.quantidade
+          : 0;
+
+    return {
+      produtoId: itemEstoque?.produtoId ?? fallbackProduto?.id ?? null,
+      nomeModelo,
+      codigo,
+      cor,
+      descricao,
+      quantidade: quantidadeBase,
+    };
+  }, [itemEstoque, selectedNivelCtx]);
+
+  const nivelHasLinkedProduct = useMemo(
+    () =>
+      currentNivelItemDetails.produtoId != null || currentNivelItemDetails.nomeModelo !== '',
+    [currentNivelItemDetails]
+  );
+
+  const syncEditFormWithCurrentItem = useCallback(() => {
+    setEditProductId(currentNivelItemDetails.produtoId ?? null);
+    setEditQuantidade(currentNivelItemDetails.quantidade > 0 ? currentNivelItemDetails.quantidade : 1);
+    setEditCodigo(currentNivelItemDetails.codigo);
+    setEditCor(currentNivelItemDetails.cor);
+    setEditNomeModelo(currentNivelItemDetails.nomeModelo);
+    setEditDescricao(currentNivelItemDetails.descricao);
+  }, [currentNivelItemDetails]);
+
+  const openProductEditModal = useCallback(() => {
+    if (!selectedNivelCtx) {
+      return;
     }
 
-    const baseQtd = typeof itemEstoque.quantidade === 'number' ? itemEstoque.quantidade : 0;
-    const baseNomeModelo = itemEstoque.produtoNomeModelo ?? '';
-    const baseCodigo = itemEstoque.produtoCodigoWester ?? '';
-    const baseCor = itemEstoque.produtoCor ?? '';
-    const baseDescricao = itemEstoque.produtoDescricao ?? '';
+    syncEditFormWithCurrentItem();
+    setProductModalVisible(false);
+    setEditProductPickerVisible(false);
+    setPendingEditProductId(null);
+    setProductEditModalVisible(true);
+    setConfirmSaveVisible(false);
+  }, [selectedNivelCtx, syncEditFormWithCurrentItem]);
+
+  const closeProductEditModal = () => {
+    if (saving) {
+      return;
+    }
+
+    setEditProductPickerVisible(false);
+    setPendingEditProductId(null);
+    setProductEditModalVisible(false);
+
+    if (selectedNivelCtx) {
+      setProductModalVisible(true);
+    }
+  };
+
+  const isDirty = useMemo(() => {
+    const baseQtd = currentNivelItemDetails.quantidade > 0 ? currentNivelItemDetails.quantidade : 1;
+    const baseProductId = currentNivelItemDetails.produtoId ?? null;
+    const baseNomeModelo = currentNivelItemDetails.nomeModelo;
+    const baseCodigo = currentNivelItemDetails.codigo;
+    const baseCor = currentNivelItemDetails.cor;
+    const baseDescricao = currentNivelItemDetails.descricao;
 
     return (
       baseQtd !== editQuantidade ||
+      baseProductId !== (editProductId ?? null) ||
       baseNomeModelo !== editNomeModelo ||
       baseCodigo !== editCodigo ||
       baseCor !== editCor ||
       baseDescricao !== editDescricao
     );
-  }, [itemEstoque, editQuantidade, editCodigo, editCor, editNomeModelo, editDescricao]);
+  }, [
+    currentNivelItemDetails,
+    editCodigo,
+    editCor,
+    editDescricao,
+    editNomeModelo,
+    editProductId,
+    editQuantidade,
+  ]);
 
   const openConfirmSave = () => {
+    if (editProductId == null) {
+      showError('Selecione um produto existente antes de salvar.');
+      return;
+    }
+
     if (!isDirty) {
       Alert.alert('Aviso', 'Nenhuma alteração para salvar.');
       return;
@@ -810,270 +1037,319 @@ export default function Warehouse2DView() {
     });
   };
 
-  const addNivelWithItemLocal = (
-    fileiraId: number,
-    gradeId: number,
-    createdNivel: CreatedNivel,
-    dto: ItemEstoque
-  ) => {
-    setFileiras((prev) => {
-      return prev.map((fileira) => {
-        if (fileira.id !== fileiraId) {
-          return fileira;
-        }
+  const loadActiveProducts = useCallback(async () => {
+    setActiveProductsLoading(true);
 
-        return {
-          ...fileira,
-          grades: fileira.grades.map((grade) => {
-            if (grade.id !== gradeId) {
-              return grade;
-            }
-
-            const nomeModelo = (dto.produtoNomeModelo ?? '').toString();
-            const cor = (dto.produtoCor ?? '').toString();
-            const codigoSistemaWester = (dto.produtoCodigoWester ?? '').toString();
-
-            const newNivel: Nivel = {
-              id: createdNivel.id,
-              identificador: createdNivel.identificador,
-              ordem: createdNivel.ordem,
-              quantidade: typeof dto.quantidade === 'number' ? dto.quantidade : 0,
-              itemEstoqueId: dto.id ?? null,
-              produtoNomeModelo: nomeModelo.trim() !== '' ? nomeModelo : undefined,
-              produto: dto.produtoId
-                ? {
-                    id: dto.produtoId,
-                    nomeModelo: nomeModelo,
-                    cor: cor,
-                    codigoSistemaWester: codigoSistemaWester,
-                    descricao: dto.produtoDescricao ?? '',
-                  }
-                : null,
-            };
-
-            const merged = [...grade.niveis, newNivel].sort(
-              (a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)
-            );
-            return { ...grade, niveis: merged };
-          }),
-        };
+    try {
+      const response = await listProducts({
+        page: 0,
+        size: 500,
+        status: 'ATIVO',
+        search: '',
       });
+
+      setActiveProducts(
+        Array.isArray(response.items) ? response.items.filter((item) => item.ativo) : []
+      );
+    } catch (error: any) {
+      const message = extractErrorMessage(error, 'Não foi possível carregar os produtos ativos.');
+      showError(message);
+    } finally {
+      setActiveProductsLoading(false);
+    }
+  }, []);
+
+  const filteredActiveProducts = useMemo(() => {
+    const normalizedQuery = productFilter.trim().toLowerCase();
+
+    if (normalizedQuery === '') {
+      return activeProducts;
+    }
+
+    return activeProducts.filter((product) => {
+      const haystack = [product.nome, product.codigo].join(' ').toLowerCase();
+      return haystack.includes(normalizedQuery);
     });
+  }, [activeProducts, productFilter]);
+
+  const filteredEditProducts = useMemo(() => {
+    const normalizedQuery = editProductFilter.trim().toLowerCase();
+
+    if (normalizedQuery === '') {
+      return activeProducts;
+    }
+
+    return activeProducts.filter((product) => {
+      const haystack = [product.nome, product.codigo].join(' ').toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [activeProducts, editProductFilter]);
+
+  const selectedCatalogProduct = useMemo(
+    () => activeProducts.find((product) => product.id === selectedProductId) ?? null,
+    [activeProducts, selectedProductId]
+  );
+
+  const selectedEditCatalogProduct = useMemo(
+    () => activeProducts.find((product) => product.id === pendingEditProductId) ?? null,
+    [activeProducts, pendingEditProductId]
+  );
+
+  const parsedProductQuantity = useMemo(() => {
+    const normalized = productQuantityInput.trim();
+
+    if (normalized === '' || !/^\d+$/.test(normalized)) {
+      return null;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }, [productQuantityInput]);
+
+  const addLevelProductValidationMessage = useMemo(() => {
+    const normalizedQuantity = productQuantityInput.trim();
+    const normalizedProductName = String(
+      selectedCatalogProduct?.nomeModelo ?? selectedCatalogProduct?.nome ?? ''
+    ).trim();
+
+    if (
+      selectedCatalogProduct == null ||
+      normalizedQuantity === '' ||
+      !/^\d+$/.test(normalizedQuantity) ||
+      parsedProductQuantity == null
+    ) {
+      return 'Selecione um produto e informe a quantidade.';
+    }
+
+    if (normalizedProductName === '') {
+      return 'O produto selecionado não possui Nome/Modelo válido.';
+    }
+
+    return null;
+  }, [parsedProductQuantity, productQuantityInput, selectedCatalogProduct]);
+
+  const isAddLevelProductSubmitDisabled =
+    structureCreationLoading || selectedCatalogProduct == null || parsedProductQuantity == null;
+
+  const editProductSelectionValidationMessage =
+    pendingEditProductId == null ? 'Selecione um produto para continuar.' : null;
+
+  const applyCatalogProductToEditForm = useCallback((product: CatalogProduct) => {
+    setEditProductId(product.id);
+    setEditCodigo(product.codigoSistemaWester ?? product.codigo ?? '');
+    setEditCor(product.cor ?? '');
+    setEditNomeModelo(product.nomeModelo ?? product.nome ?? '');
+    setEditDescricao(product.descricao ?? '');
+  }, []);
+
+  const openCreateStructureModal = (ctx: PendingStructureCreationCtx) => {
+    setPendingStructureCtx(ctx);
+    setSelectedProductId(null);
+    setProductQuantityInput('');
+    setProductFilter('');
+    setAddLevelDecisionVisible(true);
   };
 
-  const addGradeWithNivelAndItemLocal = (
-    fileiraId: number,
-    createdGrade: CreatedGrade,
-    createdNivel: CreatedNivel,
-    dto: ItemEstoque
-  ) => {
-    setFileiras((prev) => {
-      return prev.map((fileira) => {
-        if (fileira.id !== fileiraId) {
-          return fileira;
-        }
-
-        const nomeModelo = (dto.produtoNomeModelo ?? '').toString();
-        const cor = (dto.produtoCor ?? '').toString();
-        const codigoSistemaWester = (dto.produtoCodigoWester ?? '').toString();
-
-        const nivel: Nivel = {
-          id: createdNivel.id,
-          identificador: createdNivel.identificador,
-          ordem: createdNivel.ordem,
-          quantidade: typeof dto.quantidade === 'number' ? dto.quantidade : 0,
-          itemEstoqueId: dto.id ?? null,
-          produtoNomeModelo: nomeModelo.trim() !== '' ? nomeModelo : undefined,
-          produto: dto.produtoId
-            ? {
-                id: dto.produtoId,
-                nomeModelo: nomeModelo,
-                cor: cor,
-                codigoSistemaWester: codigoSistemaWester,
-                descricao: dto.produtoDescricao ?? '',
-              }
-            : null,
-        };
-
-        const newGrade: Grade = {
-          id: createdGrade.id,
-          identificador: createdGrade.identificador,
-          ordem: createdGrade.ordem,
-          niveis: [nivel],
-        };
-
-        const mergedGrades = [...fileira.grades, newGrade].sort(
-          (a, b) => parseGradeOrder(a) - parseGradeOrder(b)
-        );
-        return { ...fileira, grades: mergedGrades };
-      });
-    });
+  const resetAddLevelFlow = () => {
+    setAddLevelDecisionVisible(false);
+    setSelectGradeProductVisible(false);
+    setPendingStructureCtx(null);
+    setSelectedProductId(null);
+    setProductQuantityInput('');
+    setProductFilter('');
   };
 
-  const openAddItemModalForGrade = (fileira: Fileira, grade: Grade) => {
+  const openAddLevelDecisionForGrade = (fileira: Fileira, grade: Grade) => {
     const next = computeNextNivelForGrade(grade);
-    const label = `Inserir item - Fileira ${fileira.identificador} - Grade ${grade.identificador} - Nível ${next.identificador}`;
+    const label = `Fileira ${fileira.identificador} - ${formatGradeLabel(grade.identificador)} - Nível ${next.identificador}`;
 
-    setSelectedGradeCtx({
+    openCreateStructureModal({
+      kind: 'level',
       fileiraId: fileira.id,
+      fileiraIdentificador: fileira.identificador,
       gradeId: grade.id,
+      gradeIdentificador: grade.identificador,
       label,
       nextNivelIdentificador: next.identificador,
       nextNivelOrdem: next.ordem,
     });
-
-    setAddQuantidade(1);
-    setAddCodigo('');
-    setAddCor('');
-    setAddNomeModelo('');
-    setAddDescricao('');
-    setAddItemModalVisible(true);
   };
 
-  const closeAddItemModal = () => {
-    setAddItemModalVisible(false);
-    setSelectedGradeCtx(null);
-    setAddLoading(false);
+  const closeAddLevelDecision = () => {
+    if (structureCreationLoading) {
+      return;
+    }
+
+    resetAddLevelFlow();
   };
 
-  const saveAddItem = async () => {
-    if (!selectedGradeCtx) {
-      closeAddItemModal();
+  const openSelectGradeProductModal = async () => {
+    setAddLevelDecisionVisible(false);
+    setSelectedProductId(null);
+    setProductQuantityInput('');
+    setProductFilter('');
+    setSelectGradeProductVisible(true);
+    await loadActiveProducts();
+  };
+
+  const closeSelectGradeProductModal = () => {
+    if (structureCreationLoading) {
       return;
     }
 
-    if (addNomeModelo.trim() === '') {
-      showError('Informe o nome/modelo.');
+    resetAddLevelFlow();
+  };
+
+  const openEditProductPickerModal = async () => {
+    setProductEditModalVisible(false);
+    setEditProductFilter('');
+    setPendingEditProductId(editProductId);
+    await loadActiveProducts();
+    setEditProductPickerVisible(true);
+  };
+
+  const closeEditProductPickerModal = () => {
+    if (saving) {
       return;
     }
 
-    if (addQuantidade <= 0) {
-      showError('Quantidade 0 é tratada pela API como remoção de nível. Use valor maior que zero.');
+    setEditProductPickerVisible(false);
+    setPendingEditProductId(null);
+    setProductEditModalVisible(true);
+  };
+
+  const confirmEditProductSelection = () => {
+    if (selectedEditCatalogProduct == null) {
       return;
     }
 
-    setAddLoading(true);
+    applyCatalogProductToEditForm(selectedEditCatalogProduct);
+    setEditProductPickerVisible(false);
+    setPendingEditProductId(null);
+    setProductEditModalVisible(true);
+  };
+
+  const resolveTargetGradeForCreation = async (
+    ctx: PendingStructureCreationCtx
+  ): Promise<CreatedGrade | { id: number; identificador: string; ordem?: number }> => {
+    if (ctx.kind === 'level') {
+      if (typeof ctx.gradeId !== 'number') {
+        throw new Error('Nao foi possivel identificar a grade selecionada.');
+      }
+
+      return {
+        id: ctx.gradeId,
+        identificador: ctx.gradeIdentificador,
+        ordem: ctx.gradeOrdem,
+      };
+    }
+
+    return createGradeWithRetry(
+      ctx.fileiraId,
+      ctx.fileiraIdentificador,
+      ctx.gradeOrdem ?? 1,
+      ctx.gradeIdentificador
+    );
+  };
+
+  const submitStructureCreation = async (
+    payload: { modo: 'vazio' } | { modo: 'produto'; produto: CatalogProduct; quantidade: number }
+  ) => {
+    if (!pendingStructureCtx) {
+      resetAddLevelFlow();
+      return;
+    }
+
+    setStructureCreationLoading(true);
 
     try {
-      let targetGradeId: number | null = selectedGradeCtx.gradeId ?? null;
-
-      if (!targetGradeId) {
-        const gradePayload = {
-          identificador: selectedGradeCtx.nextGradeIdentificador,
-          ordem: selectedGradeCtx.nextGradeOrdem,
-        };
-
-        const createdGradeRes = await API.post<any>(
-          `/api/grades/fileira/${selectedGradeCtx.fileiraId}`,
-          gradePayload
-        );
-
-        const createdGradeId = createdGradeRes?.data?.id;
-        if (typeof createdGradeId !== 'number') {
-          throw new Error('Não foi possível identificar a nova grade criada.');
-        }
-
-        targetGradeId = createdGradeId;
-      }
-
-      const nivelPayload = {
-        identificador: selectedGradeCtx.nextNivelIdentificador,
-        ordem: selectedGradeCtx.nextNivelOrdem,
-        grade: { id: targetGradeId },
+      const levelDraft = {
+        identificador: pendingStructureCtx.nextNivelIdentificador,
+        ordem: pendingStructureCtx.nextNivelOrdem,
       };
 
-      const createdNivelRes = await API.post<any>(
-        `/api/niveis/grade/${targetGradeId}`,
-        nivelPayload
-      );
+      const targetGrade = await resolveTargetGradeForCreation(pendingStructureCtx);
 
-      const createdNivelId = createdNivelRes?.data?.id;
-      if (typeof createdNivelId !== 'number') {
-        throw new Error('Não foi possível identificar o novo nível criado.');
-      }
-
-      const createdNivel: CreatedNivel = {
-        id: createdNivelId,
-        identificador:
-          createdNivelRes?.data?.identificador ?? selectedGradeCtx.nextNivelIdentificador,
-        ordem:
-          typeof createdNivelRes?.data?.ordem === 'number'
-            ? createdNivelRes.data.ordem
-            : selectedGradeCtx.nextNivelOrdem,
-      };
-
-      const itemPayload = {
-        quantidade: addQuantidade,
-        produto: {
-          codigoSistemaWester: addCodigo,
-          cor: addCor,
-          nomeModelo: addNomeModelo,
-          descricao: addDescricao,
-        },
-      };
-
-      const itemRes = await API.put<any>(
-        `/api/itens-estoque/nivel/${createdNivel.id}`,
-        itemPayload
-      );
-      const updated = normalizeItemEstoqueResponse(itemRes.data);
-
-      if (!updated) {
-        throw new Error('Resposta inválida ao salvar o item.');
-      }
-
-      setExpandedFileiras((prev) =>
-        prev.includes(selectedGradeCtx.fileiraId) ? prev : [...prev, selectedGradeCtx.fileiraId]
-      );
-      setExpandedGrades((prev) =>
-        prev.includes(targetGradeId!) ? prev : [...prev, targetGradeId!]
-      );
-      setActiveGradeId(targetGradeId!);
-
-      if (!selectedGradeCtx.gradeId) {
-        setFileiras((prev) => {
-          return prev.map((f) => {
-            if (f.id !== selectedGradeCtx.fileiraId) {
-              return f;
-            }
-
-            const newGradeIdentificador = selectedGradeCtx.nextGradeIdentificador ?? 'NEW';
-            const newGradeOrdem = selectedGradeCtx.nextGradeOrdem ?? 0;
-
-            const alreadyExists = f.grades.some((g) => g.id === targetGradeId);
-            if (alreadyExists) {
-              return f;
-            }
-
-            const newGrade: Grade = {
-              id: targetGradeId!,
-              identificador: newGradeIdentificador,
-              ordem: newGradeOrdem,
-              niveis: [],
-            };
-
-            const mergedGrades = [...f.grades, newGrade].sort(
-              (a, b) => parseGradeOrder(a) - parseGradeOrder(b)
-            );
-            return { ...f, grades: mergedGrades };
-          });
+      if (payload.modo === 'vazio') {
+        await createEmptyLevelInGrade(targetGrade.id, levelDraft);
+      } else {
+        await createLevelWithProductInGrade(targetGrade.id, levelDraft, {
+          produto: payload.produto,
+          quantidade: payload.quantidade,
         });
       }
 
-      addNivelWithItemLocal(selectedGradeCtx.fileiraId, targetGradeId!, createdNivel, updated);
+      await fetchAllData();
 
-      closeAddItemModal();
-      showSuccess(compactInsertSuccessMessage(selectedGradeCtx.label));
+      setExpandedFileiras((prev) =>
+        prev.includes(pendingStructureCtx.fileiraId)
+          ? prev
+          : [...prev, pendingStructureCtx.fileiraId]
+      );
+      setExpandedGrades((prev) =>
+        prev.includes(targetGrade.id) ? prev : [...prev, targetGrade.id]
+      );
+      setActiveGradeId(targetGrade.id);
+
+      const successMessage =
+        pendingStructureCtx.kind === 'grade'
+          ? payload.modo === 'produto'
+            ? `${formatGradeLabel(targetGrade.identificador)} criada com ${pendingStructureCtx.nextNivelIdentificador} e produto vinculado.`
+            : `${formatGradeLabel(targetGrade.identificador)} criada com ${pendingStructureCtx.nextNivelIdentificador} vazio.`
+          : payload.modo === 'produto'
+            ? `Nível ${pendingStructureCtx.nextNivelIdentificador} criado com produto vinculado.`
+            : `Nível ${pendingStructureCtx.nextNivelIdentificador} criado sem produto.`;
+
+      resetAddLevelFlow();
+      showSuccess(successMessage);
     } catch (error: any) {
-      const msg = extractErrorMessage(error, 'Não foi possível inserir o item na grade.');
-      showError(msg);
+      const fallbackMessage =
+        pendingStructureCtx.kind === 'grade'
+          ? 'Não foi possível criar a grade.'
+          : 'Não foi possível adicionar o nível à grade.';
+      const message = extractErrorMessage(error, fallbackMessage);
+      showError(message);
     } finally {
-      setAddLoading(false);
+      setStructureCreationLoading(false);
     }
+  };
+
+  const confirmAddLevelWithoutProduct = () => {
+    if (structureCreationLoading) {
+      return;
+    }
+
+    void submitStructureCreation({ modo: 'vazio' });
+  };
+
+  const confirmAddLevelWithSelectedProduct = () => {
+    if (structureCreationLoading) {
+      return;
+    }
+
+    if (
+      addLevelProductValidationMessage ||
+      selectedCatalogProduct == null ||
+      parsedProductQuantity == null
+    ) {
+      return;
+    }
+
+    void submitStructureCreation({
+      modo: 'produto',
+      produto: selectedCatalogProduct,
+      quantidade: parsedProductQuantity,
+    });
   };
 
   const saveEdits = async () => {
     if (!selectedNivelCtx) {
+      closeConfirmSave();
+      return;
+    }
+
+    if (editProductId == null) {
+      showError('Selecione um produto existente antes de salvar.');
       closeConfirmSave();
       return;
     }
@@ -1087,15 +1363,16 @@ export default function Warehouse2DView() {
     setSaving(true);
 
     try {
-      const payload = {
+      const payload = buildStockItemUpsertPayload({
         quantidade: editQuantidade,
         produto: {
+          id: editProductId,
           codigoSistemaWester: editCodigo,
           cor: editCor,
           nomeModelo: editNomeModelo,
           descricao: editDescricao,
         },
-      };
+      });
 
       const res = await API.put<any>(
         `/api/itens-estoque/nivel/${selectedNivelCtx.nivelId}`,
@@ -1142,34 +1419,25 @@ export default function Warehouse2DView() {
     };
   };
 
-  const openAddGradeModalForFileira = (fileira: Fileira) => {
+  const openAddGradeDecisionForFileira = (fileira: Fileira) => {
     const next = computeNextGradeForFileira(fileira);
-    const label = `Inserir item - Fileira ${fileira.identificador} - Grade ${next.identificador} - Nível N1`;
+    const label = `Fileira ${fileira.identificador} - ${formatGradeLabel(next.identificador)} - Nível N1`;
 
-    setSelectedFileiraCtx({
+    openCreateStructureModal({
+      kind: 'grade',
       fileiraId: fileira.id,
       fileiraIdentificador: fileira.identificador,
+      gradeIdentificador: next.identificador,
+      gradeOrdem: next.ordem,
       label,
-      suggestedGradeIdentificador: next.identificador,
-      suggestedGradeOrdem: next.ordem,
+      nextNivelIdentificador: 'N1',
+      nextNivelOrdem: 1,
     });
-
-    setAddGradeQuantidade(1);
-    setAddGradeCodigo('');
-    setAddGradeCor('');
-    setAddGradeNomeModelo('');
-    setAddGradeDescricao('');
-    setAddGradeModalVisible(true);
-  };
-
-  const closeAddGradeModal = () => {
-    setAddGradeModalVisible(false);
-    setSelectedFileiraCtx(null);
-    setAddGradeLoading(false);
   };
 
   const createGradeWithRetry = async (
     fileiraId: number,
+    fileiraIdentificador: string,
     startOrdem: number,
     startIdentificador: string
   ) => {
@@ -1197,7 +1465,7 @@ export default function Warehouse2DView() {
         const msg = String(error?.response?.data ?? error?.message ?? '');
         if (msg.toLowerCase().includes('identificador') && msg.toLowerCase().includes('existe')) {
           ordem = ordem + 1;
-          identificador = `${selectedFileiraCtx?.fileiraIdentificador ?? ''}${ordem}`;
+          identificador = `${fileiraIdentificador}${ordem}`;
           continue;
         }
         throw error;
@@ -1205,98 +1473,6 @@ export default function Warehouse2DView() {
     }
 
     throw new Error('Não foi possível criar a grade (muitas tentativas).');
-  };
-
-  const saveAddGrade = async () => {
-    if (!selectedFileiraCtx) {
-      closeAddGradeModal();
-      return;
-    }
-
-    if (addGradeNomeModelo.trim() === '') {
-      showError('Informe o nome/modelo.');
-      return;
-    }
-
-    if (addGradeQuantidade <= 0) {
-      showError('Quantidade 0 é tratada pela API como remoção de nível. Use valor maior que zero.');
-      return;
-    }
-
-    setAddGradeLoading(true);
-
-    try {
-      const createdGrade = await createGradeWithRetry(
-        selectedFileiraCtx.fileiraId,
-        selectedFileiraCtx.suggestedGradeOrdem,
-        selectedFileiraCtx.suggestedGradeIdentificador
-      );
-
-      const createNivelPayload = {
-        identificador: 'N1',
-        ordem: 1,
-        grade: { id: createdGrade.id },
-      };
-
-      const nivelRes = await API.post<any>(
-        `/api/niveis/grade/${createdGrade.id}`,
-        createNivelPayload
-      );
-      const nivelData = nivelRes?.data;
-
-      if (!nivelData || typeof nivelData.id !== 'number') {
-        throw new Error('Não foi possível criar o N1 da nova grade.');
-      }
-
-      const createdNivel: CreatedNivel = {
-        id: nivelData.id,
-        identificador: nivelData.identificador ?? 'N1',
-        ordem: typeof nivelData.ordem === 'number' ? nivelData.ordem : 1,
-      };
-
-      const itemPayload = {
-        quantidade: addGradeQuantidade,
-        produto: {
-          codigoSistemaWester: addGradeCodigo,
-          cor: addGradeCor,
-          nomeModelo: addGradeNomeModelo,
-          descricao: addGradeDescricao,
-        },
-      };
-
-      const itemRes = await API.put<any>(
-        `/api/itens-estoque/nivel/${createdNivel.id}`,
-        itemPayload
-      );
-      const updated = normalizeItemEstoqueResponse(itemRes.data);
-
-      if (!updated) {
-        throw new Error('Resposta inválida ao salvar o item.');
-      }
-
-      setExpandedFileiras((prev) =>
-        prev.includes(selectedFileiraCtx.fileiraId) ? prev : [...prev, selectedFileiraCtx.fileiraId]
-      );
-      setExpandedGrades((prev) =>
-        prev.includes(createdGrade.id) ? prev : [...prev, createdGrade.id]
-      );
-      setActiveGradeId(createdGrade.id);
-
-      addGradeWithNivelAndItemLocal(
-        selectedFileiraCtx.fileiraId,
-        createdGrade,
-        createdNivel,
-        updated
-      );
-
-      closeAddGradeModal();
-      showSuccess(compactInsertSuccessMessage(selectedFileiraCtx.label));
-    } catch (error: any) {
-      const msg = extractErrorMessage(error, 'Erro ao criar Grade.');
-      showError(msg);
-    } finally {
-      setAddGradeLoading(false);
-    }
   };
 
   const parseFileiraOrder = (fileira: Fileira) => {
@@ -1347,7 +1523,7 @@ export default function Warehouse2DView() {
   };
 
   const addNewFileira = async () => {
-    if (creatingFileira) {
+    if (creatingFileira || !currentAreaId) {
       return;
     }
 
@@ -1355,8 +1531,7 @@ export default function Warehouse2DView() {
 
     try {
       const next = computeNextFileira(fileiras);
-
-      const res = await API.post(`/api/fileiras/area/${AREA_ID}`, {
+      const res = await API.post(`/api/fileiras/area/${currentAreaId}`, {
         identificador: next.identificador,
         ordem: next.ordem,
       });
@@ -1449,7 +1624,7 @@ export default function Warehouse2DView() {
     [debouncedSearchText]
   );
   const searchEnabled = normalizedQuery.length >= 3;
-  const HEADER_SEARCH_BREAKPOINT = 900;
+  const HEADER_SEARCH_BREAKPOINT = 760;
   const showInlineSearchHelper = IS_WEB && screenWidth < HEADER_SEARCH_BREAKPOINT;
   const isTightSearchViewport = IS_WEB && screenWidth < 440;
   const compactSearchPlaceholder = isTightSearchViewport
@@ -1544,7 +1719,7 @@ export default function Warehouse2DView() {
           const descricao = (n.produto?.descricao ?? '').toString().trim();
           const qtd = typeof n.quantidade === 'number' ? n.quantidade : 0;
 
-          const label = `Fileira ${f.identificador} - Grade ${g.identificador} - Nível ${n.identificador}`;
+          const label = `Fileira ${f.identificador} - ${formatGradeLabel(g.identificador)} - Nível ${n.identificador}`;
 
           results.push({
             nivelId: n.id,
@@ -1830,711 +2005,783 @@ export default function Warehouse2DView() {
               style={styles.initialLoadingState}
             />
           </View>
-        ) : IS_WEB ? (
-          <View style={[styles.webScroller, { backgroundColor: colors.background }]}>
-            <View style={styles.webContent}>
-              {fileiras.length === 0 ? (
-                <View
-                  style={[
-                    styles.emptyStateCard,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.outline,
-                    },
-                  ]}
-                >
-                  <AppEmptyState
-                    title={API_STATE_MESSAGES.warehouse.empty.default.title}
-                    description={API_STATE_MESSAGES.warehouse.empty.default.description}
-                    icon="warehouse"
-                  />
-                </View>
-              ) : null}
+        ) : (
+          <>
+            <AreaDropdownSelector
+              areas={areas}
+              selectedAreaId={currentAreaId}
+              loading={areaLoading}
+              onSelect={(nextAreaId) => {
+                void selectAreaById(nextAreaId);
+              }}
+            />
 
-              {fileiras.map((fileira) => {
-                const fileiraExpanded = expandedFileiras.includes(fileira.id);
-                const isFileiraHovered = !!hoverFileira[fileira.id];
-
-                const isAnyChildHovered = fileira.grades.some((g) => {
-                  if (hoverGrade[g.id]) {
-                    return true;
-                  }
-                  return g.niveis.some((n) => hoverNivel[n.id]);
-                });
-
-                const shouldShowFileiraHover =
-                  (fileiraExpanded || isFileiraHovered) && !isAnyChildHovered;
-
-                return (
-                  <Pressable
-                    key={fileira.id}
-                    onHoverIn={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))}
-                    onHoverOut={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }))}
-                    style={[
-                      styles.fileiraContainer,
-                      { backgroundColor: colors.surface, borderColor: colors.outline },
-                      shouldShowFileiraHover && [
-                        styles.fileiraHover,
-                        { borderColor: colors.primary, shadowColor: colors.primary },
-                      ],
-                    ]}
-                  >
-                    <Pressable
-                      onPress={() => toggleFileiraExpand(fileira)}
-                      style={({ pressed }) => [styles.fileiraHeader, pressed && { opacity: 0.7 }]}
+            {IS_WEB ? (
+              <View style={styles.webWorkspace}>
+                <View style={[styles.webScroller, { backgroundColor: colors.background }]}>
+                  <View style={styles.webContent}>
+                  {fileiras.length === 0 ? (
+                    <View
+                      style={[
+                        styles.emptyStateCard,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.outline,
+                        },
+                      ]}
                     >
-                      <Text
+                      <AppEmptyState
+                        title={API_STATE_MESSAGES.warehouse.empty.default.title}
+                        description={API_STATE_MESSAGES.warehouse.empty.default.description}
+                        icon="warehouse"
+                        tipo="vazio"
+                      />
+                    </View>
+                  ) : null}
+
+                  {fileiras.map((fileira) => {
+                    const fileiraExpanded = expandedFileiras.includes(fileira.id);
+                    const isFileiraHovered = !!hoverFileira[fileira.id];
+
+                    const isAnyChildHovered = fileira.grades.some((g) => {
+                      if (hoverGrade[g.id]) {
+                        return true;
+                      }
+                      return g.niveis.some((n) => hoverNivel[n.id]);
+                    });
+
+                    const shouldShowFileiraHover =
+                      (fileiraExpanded || isFileiraHovered) && !isAnyChildHovered;
+
+                    return (
+                      <Pressable
+                        key={fileira.id}
+                        onHoverIn={() =>
+                          setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))
+                        }
+                        onHoverOut={() =>
+                          setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }))
+                        }
                         style={[
-                          styles.fileiraTitle,
-                          { color: colors.text },
-                          (fileiraExpanded || shouldShowFileiraHover) && { color: colors.primary },
+                          styles.fileiraContainer,
+                          { backgroundColor: colors.surface, borderColor: colors.outline },
+                          shouldShowFileiraHover && [
+                            styles.fileiraHover,
+                            {
+                              backgroundColor: withAlpha(colors.primary, 0.03),
+                              shadowColor: '#000000',
+                            },
+                          ],
                         ]}
                       >
-                        Fileira {fileira.identificador}
-                      </Text>
+                        <Pressable
+                          onPress={() => toggleFileiraExpand(fileira)}
+                          style={({ pressed }) => [
+                            styles.fileiraHeader,
+                            pressed && { opacity: 0.7 },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.fileiraTitle,
+                              { color: colors.text },
+                              (fileiraExpanded || shouldShowFileiraHover) && {
+                                color: colors.primary,
+                              },
+                            ]}
+                          >
+                            Fileira {fileira.identificador}
+                          </Text>
 
-                      <AntDesign
-                        name={fileiraExpanded ? 'caret-left' : 'caret-right'}
-                        size={22}
-                        color={
-                          fileiraExpanded
-                            ? colors.primary
-                            : shouldShowFileiraHover
-                              ? colors.primary
-                              : colors.text
-                        }
-                        style={shouldShowFileiraHover ? styles.iconHover : undefined}
-                      />
-                    </Pressable>
+                          <AntDesign
+                            name={fileiraExpanded ? 'caret-left' : 'caret-right'}
+                            size={22}
+                            color={
+                              fileiraExpanded
+                                ? colors.primary
+                                : shouldShowFileiraHover
+                                  ? colors.primary
+                                  : colors.text
+                            }
+                            style={shouldShowFileiraHover ? styles.iconHover : undefined}
+                          />
+                        </Pressable>
 
-                    {fileira.grades.map((grade) => {
-                      const expanded = expandedGrades.includes(grade.id);
-                      const isGradeHovered = !!hoverGrade[grade.id];
-                      const isActiveGrade = activeGradeId === grade.id;
+                        {fileira.grades.map((grade) => {
+                          const expanded = expandedGrades.includes(grade.id);
+                          const isGradeHovered = !!hoverGrade[grade.id];
+                          const isActiveGrade = activeGradeId === grade.id;
 
-                      const niveisToShow = expanded
-                        ? grade.niveis
-                        : grade.niveis.filter(
-                            (n) =>
-                              n.identificador === 'N1' ||
-                              (searchEnabled && matchedNivelIds.has(n.id))
+                          const uniqueNiveisToShow = getVisibleNiveisForGrade(
+                            grade,
+                            expanded,
+                            searchEnabled,
+                            matchedNivelIds
                           );
+                          const hasAnyNivel = grade.niveis.length > 0;
+                          const countForWidth = expanded
+                            ? grade.niveis.length
+                            : uniqueNiveisToShow.length;
+                          const width =
+                            countForWidth <= 1
+                              ? baseGradeWidth
+                              : baseGradeWidth + Math.max(0, countForWidth - 1) * perNivelWidth;
 
-                      const uniqueNiveisToShow = (() => {
-                        const seen = new Set<number>();
-                        const list: Nivel[] = [];
-                        for (const n of niveisToShow) {
-                          if (!seen.has(n.id)) {
-                            seen.add(n.id);
-                            list.push(n);
-                          }
-                        }
-                        return list.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
-                      })();
-
-                      const hasAnyNivel = uniqueNiveisToShow.length > 0;
-                      const countForWidth = expanded
-                        ? grade.niveis.length
-                        : uniqueNiveisToShow.length;
-                      const width =
-                        countForWidth <= 1
-                          ? baseGradeWidth
-                          : baseGradeWidth + Math.max(0, countForWidth - 1) * perNivelWidth;
-
-                      return (
-                        <View key={grade.id} style={styles.gradeWrapper}>
-                          <View style={[styles.gradeInner, { width }]}>
-                            <Pressable
-                              onPress={() => handleGradePress(grade)}
-                              onHoverIn={() => {
-                                setHoverGrade((prev) => ({ ...prev, [grade.id]: true }));
-                                setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }));
-                              }}
-                              onHoverOut={() =>
-                                setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
-                              }
-                              style={({ pressed }) => [
-                                styles.gradeContainer,
-                                { backgroundColor: colors.surface, borderColor: colors.outline },
-                                (isGradeHovered || isActiveGrade) && [
-                                  styles.gradeHover,
-                                  { borderColor: colors.primary, shadowColor: colors.primary },
-                                ],
-                                pressed && { opacity: 0.8 },
-                              ]}
-                            >
-                              <View style={styles.gradeHeader}>
-                                <View style={styles.gradeHeaderTop}>
-                                  <Text
-                                    numberOfLines={1}
-                                    ellipsizeMode="tail"
-                                    style={[
-                                      styles.gradeTitle,
-                                      { color: colors.text },
-                                      (isGradeHovered || isActiveGrade) && {
-                                        color: colors.primary,
-                                      },
-                                    ]}
-                                  >
-                                    Grade {grade.identificador}
-                                  </Text>
-
-                                  <AntDesign
-                                    name={expanded ? 'caret-left' : 'caret-right'}
-                                    size={20}
-                                    color={
-                                      expanded && isActiveGrade
-                                        ? colors.primary
-                                        : isGradeHovered
-                                          ? colors.primary
-                                          : colors.text
-                                    }
-                                    style={isGradeHovered ? styles.iconHover : undefined}
-                                  />
-                                </View>
-
-                                <View style={styles.gradeControls}>
-                                  <View
-                                    onStartShouldSetResponder={() => true}
-                                    onResponderRelease={(e) => (e as any).stopPropagation?.()}
-                                  >
-                                    <ActionIconButton
-                                      iconName="plus"
-                                      size="medium"
-                                      borderColor={colors.outline}
-                                      backgroundColor={colors.surface}
-                                      iconColor={colors.primary}
-                                      primaryColor={colors.primary}
-                                      onPress={() => {
-                                        openAddItemModalForGrade(fileira, grade);
-                                      }}
-                                      style={styles.addButton}
-                                    />
-                                  </View>
-
-                                  {removingGradeId === grade.id ? (
-                                    <View
-                                      style={[
-                                        styles.addButton,
-                                        { borderColor: colors.outline, opacity: 0.5 },
-                                      ]}
-                                    >
-                                      <ActivityIndicator size="small" color={colors.primary} />
-                                    </View>
-                                  ) : (
-                                    <ActionIconButton
-                                      iconName="minus"
-                                      size="medium"
-                                      buttonSize={{ width: 28, height: 28 }}
-                                      disabled={
-                                        removingGradeId === grade.id || grade.niveis.length <= 1
-                                      }
-                                      loading={removingGradeId === grade.id}
-                                      borderColor={colors.outline}
-                                      backgroundColor={colors.surface}
-                                      iconColor={colors.primary}
-                                      primaryColor={colors.primary}
-                                      onPress={() => {
-                                        removerUltimoNivel(fileira.id, grade);
-                                      }}
-                                    />
-                                  )}
-                                </View>
-                              </View>
-
-                              <View style={styles.niveisRow}>
-                                {hasAnyNivel ? (
-                                  uniqueNiveisToShow.map((nivel) => {
-                                    const isNivelHovered = !!hoverNivel[nivel.id];
-                                    const quantidadeExibida =
-                                      typeof nivel.quantidade === 'number' ? nivel.quantidade : 0;
-                                    const produtoExibido = (nivel.produtoNomeModelo ?? '').trim();
-
-                                    const onlyOneNivelInGrade = grade.niveis.length <= 1;
-                                    const isRemovingThisNivel = resequenceNivelId === nivel.id;
-                                    const disableRemoveNivelButton =
-                                      onlyOneNivelInGrade || isRemovingThisNivel;
-
-                                    const isMatch = searchEnabled && matchedNivelIds.has(nivel.id);
-                                    const shouldDim = searchEnabled && !isMatch;
-
-                                    return (
-                                      <Pressable
-                                        key={nivel.id}
-                                        id={`nivel-${nivel.id}` as any}
-                                        onPress={() => handleNivelClick(fileira, grade, nivel)}
-                                        onHoverIn={() => {
-                                          setHoverNivel((prev) => ({ ...prev, [nivel.id]: true }));
-                                          setHoverFileira((prev) => ({
-                                            ...prev,
-                                            [fileira.id]: false,
-                                          }));
-                                        }}
-                                        onHoverOut={() =>
-                                          setHoverNivel((prev) => ({ ...prev, [nivel.id]: false }))
-                                        }
+                          return (
+                            <View key={grade.id} style={styles.gradeWrapper}>
+                              <View style={[styles.gradeInner, { width }]}>
+                                <Pressable
+                                  onPress={() => handleGradePress(grade)}
+                                  onHoverIn={() => {
+                                    setHoverGrade((prev) => ({ ...prev, [grade.id]: true }));
+                                    setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }));
+                                  }}
+                                  onHoverOut={() =>
+                                    setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
+                                  }
+                                  style={({ pressed }) => [
+                                    styles.gradeContainer,
+                                    {
+                                      backgroundColor: colors.surface,
+                                      borderColor: colors.outline,
+                                    },
+                                    (isGradeHovered || isActiveGrade) && [
+                                      styles.gradeHover,
+                                      { borderColor: colors.primary, shadowColor: colors.primary },
+                                    ],
+                                    pressed && { opacity: 0.8 },
+                                  ]}
+                                >
+                                  <View style={styles.gradeHeader}>
+                                    <View style={styles.gradeHeaderTop}>
+                                      <Text
+                                        numberOfLines={1}
+                                        ellipsizeMode="tail"
                                         style={[
-                                          styles.nivelBox,
-                                          {
-                                            backgroundColor: colors.surface,
-                                            borderColor: colors.outline,
+                                          styles.gradeTitle,
+                                          { color: colors.text },
+                                          (isGradeHovered || isActiveGrade) && {
+                                            color: colors.primary,
                                           },
-                                          isNivelHovered && [
-                                            styles.nivelHover,
-                                            {
-                                              borderColor: colors.primary,
-                                              shadowColor: colors.primary,
-                                            },
-                                          ],
-                                          isMatch && [
-                                            styles.nivelMatch,
-                                            { borderColor: colors.primary },
-                                          ],
-                                          shouldDim && styles.nivelDim,
                                         ]}
                                       >
+                                        {formatGradeLabel(grade.identificador)}
+                                      </Text>
+
+                                      <AntDesign
+                                        name={expanded ? 'caret-left' : 'caret-right'}
+                                        size={20}
+                                        color={
+                                          expanded && isActiveGrade
+                                            ? colors.primary
+                                            : isGradeHovered
+                                              ? colors.primary
+                                              : colors.text
+                                        }
+                                        style={isGradeHovered ? styles.iconHover : undefined}
+                                      />
+                                    </View>
+
+                                    <View style={styles.gradeControls}>
+                                      <View
+                                        onStartShouldSetResponder={() => true}
+                                        onResponderRelease={(e) => (e as any).stopPropagation?.()}
+                                      >
                                         <ActionIconButton
-                                          iconName="minus"
-                                          size="small"
-                                          disabled={disableRemoveNivelButton}
-                                          loading={isRemovingThisNivel}
+                                          iconName="plus"
+                                          size="medium"
                                           borderColor={colors.outline}
                                           backgroundColor={colors.surface}
                                           iconColor={colors.primary}
                                           primaryColor={colors.primary}
                                           onPress={() => {
-                                            if (disableRemoveNivelButton) {
-                                              return;
-                                            }
-                                            openConfirmRemoveNivel(nivel, fileira, grade);
+                                            openAddLevelDecisionForGrade(fileira, grade);
                                           }}
-                                          style={[
-                                            styles.nivelRemoveButton,
-                                            disableRemoveNivelButton &&
-                                              styles.nivelRemoveButtonDisabled,
-                                          ]}
+                                          style={styles.addButton}
                                         />
+                                      </View>
 
-                                        <Text
+                                      {removingGradeId === grade.id ? (
+                                        <View
                                           style={[
-                                            styles.nivelText,
-                                            { color: colors.text },
-                                            isNivelHovered && { color: colors.primary },
+                                            styles.addButton,
+                                            { borderColor: colors.outline, opacity: 0.5 },
                                           ]}
                                         >
-                                          {nivel.identificador}
-                                        </Text>
-
-                                        {produtoExibido !== '' ? (
-                                          <Text
-                                            style={[
-                                              styles.produto,
-                                              { color: colors.text },
-                                              isNivelHovered && { color: colors.primary },
-                                            ]}
-                                            numberOfLines={2}
-                                          >
-                                            {produtoExibido}
-                                          </Text>
-                                        ) : null}
-
-                                        <Text
-                                          style={[
-                                            styles.qtd,
-                                            { color: colors.text },
-                                            isNivelHovered && { color: colors.primary },
-                                          ]}
-                                        >
-                                          Qtd: {quantidadeExibida}
-                                        </Text>
-                                      </Pressable>
-                                    );
-                                  })
-                                ) : (
-                                  <View
-                                    style={[
-                                      styles.nivelBox,
-                                      { borderStyle: 'dashed', borderColor: colors.outline },
-                                    ]}
-                                  >
-                                    <Text style={[styles.nivelText, { color: colors.text }]}>
-                                      SEM NÍVEIS
-                                    </Text>
-                                    <Text style={[styles.qtd, { color: colors.text }]}>
-                                      Clique no +
-                                    </Text>
+                                          <ActivityIndicator size="small" color={colors.primary} />
+                                        </View>
+                                      ) : (
+                                        <ActionIconButton
+                                          iconName="minus"
+                                          size="medium"
+                                          buttonSize={{ width: 28, height: 28 }}
+                                          disabled={
+                                            removingGradeId === grade.id || grade.niveis.length <= 1
+                                          }
+                                          loading={removingGradeId === grade.id}
+                                          borderColor={colors.outline}
+                                          backgroundColor={colors.surface}
+                                          iconColor={colors.primary}
+                                          primaryColor={colors.primary}
+                                          onPress={() => {
+                                            removerUltimoNivel(fileira.id, grade);
+                                          }}
+                                        />
+                                      )}
+                                    </View>
                                   </View>
-                                )}
+
+                                  <View style={styles.niveisRow}>
+                                    {hasAnyNivel ? (
+                                      uniqueNiveisToShow.map((nivel) => {
+                                        const isNivelHovered = !!hoverNivel[nivel.id];
+                                        const quantidadeExibida =
+                                          typeof nivel.quantidade === 'number'
+                                            ? nivel.quantidade
+                                            : 0;
+                                        const produtoDisplay = getNivelProductDisplay(nivel);
+                                        const produtoExibido = produtoDisplay.text;
+                                        const nivelSemProduto = produtoDisplay.empty;
+
+                                        const onlyOneNivelInGrade = grade.niveis.length <= 1;
+                                        const isRemovingThisNivel = resequenceNivelId === nivel.id;
+                                        const disableRemoveNivelButton =
+                                          onlyOneNivelInGrade || isRemovingThisNivel;
+
+                                        const isMatch =
+                                          searchEnabled && matchedNivelIds.has(nivel.id);
+                                        const shouldDim = searchEnabled && !isMatch;
+
+                                        return (
+                                          <Pressable
+                                            key={nivel.id}
+                                            id={`nivel-${nivel.id}` as any}
+                                            onPress={() => handleNivelClick(fileira, grade, nivel)}
+                                            onHoverIn={() => {
+                                              setHoverNivel((prev) => ({
+                                                ...prev,
+                                                [nivel.id]: true,
+                                              }));
+                                              setHoverFileira((prev) => ({
+                                                ...prev,
+                                                [fileira.id]: false,
+                                              }));
+                                            }}
+                                            onHoverOut={() =>
+                                              setHoverNivel((prev) => ({
+                                                ...prev,
+                                                [nivel.id]: false,
+                                              }))
+                                            }
+                                            style={[
+                                              styles.nivelBox,
+                                              {
+                                                backgroundColor: colors.surface,
+                                                borderColor: colors.outline,
+                                              },
+                                              isNivelHovered && [
+                                                styles.nivelHover,
+                                                {
+                                                  borderColor: colors.primary,
+                                                  shadowColor: colors.primary,
+                                                },
+                                              ],
+                                              isMatch && [
+                                                styles.nivelMatch,
+                                                { borderColor: colors.primary },
+                                              ],
+                                              shouldDim && styles.nivelDim,
+                                            ]}
+                                          >
+                                            <ActionIconButton
+                                              iconName="minus"
+                                              size="small"
+                                              disabled={disableRemoveNivelButton}
+                                              loading={isRemovingThisNivel}
+                                              borderColor={colors.outline}
+                                              backgroundColor={colors.surface}
+                                              iconColor={colors.primary}
+                                              primaryColor={colors.primary}
+                                              onPress={() => {
+                                                if (disableRemoveNivelButton) {
+                                                  return;
+                                                }
+                                                openConfirmRemoveNivel(nivel, fileira, grade);
+                                              }}
+                                              style={[
+                                                styles.nivelRemoveButton,
+                                                disableRemoveNivelButton &&
+                                                  styles.nivelRemoveButtonDisabled,
+                                              ]}
+                                            />
+
+                                            <View style={styles.nivelContent}>
+                                              <Text
+                                                style={[
+                                                  styles.nivelText,
+                                                  { color: colors.text },
+                                                  isNivelHovered && { color: colors.primary },
+                                                ]}
+                                                numberOfLines={1}
+                                                ellipsizeMode="tail"
+                                              >
+                                                {nivel.identificador}
+                                              </Text>
+
+                                              <View style={styles.nivelProdutoSlot}>
+                                                <Text
+                                                  style={[
+                                                    styles.produto,
+                                                    nivelSemProduto
+                                                      ? styles.produtoVazio
+                                                      : { color: colors.text },
+                                                    !nivelSemProduto &&
+                                                      isNivelHovered && { color: colors.primary },
+                                                  ]}
+                                                  numberOfLines={2}
+                                                  ellipsizeMode="tail"
+                                                >
+                                                  {produtoExibido}
+                                                </Text>
+                                              </View>
+
+                                              <Text
+                                                style={[
+                                                  styles.qtd,
+                                                  { color: colors.text },
+                                                  isNivelHovered && { color: colors.primary },
+                                                ]}
+                                                numberOfLines={1}
+                                                ellipsizeMode="tail"
+                                              >
+                                                Qtd: {quantidadeExibida}
+                                              </Text>
+                                            </View>
+                                          </Pressable>
+                                        );
+                                      })
+                                    ) : (
+                                      <View
+                                        style={[
+                                          styles.nivelBox,
+                                          { borderStyle: 'dashed', borderColor: colors.outline },
+                                        ]}
+                                      >
+                                        <Text style={[styles.nivelText, { color: colors.text }]}>
+                                          SEM NÍVEIS
+                                        </Text>
+                                        <Text style={[styles.qtd, { color: colors.text }]}>
+                                          Clique no +
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                </Pressable>
                               </View>
-                            </Pressable>
-                          </View>
-                        </View>
-                      );
-                    })}
+                            </View>
+                          );
+                        })}
 
-                    <AddGradeNivelButton
-                      onPress={() => openAddGradeModalForFileira(fileira)}
-                      borderColor={colors.primary}
-                      primaryColor={colors.primary}
-                    />
-                  </Pressable>
-                );
-              })}
+                        <AddGradeNivelButton
+                          onPress={() => openAddGradeDecisionForFileira(fileira)}
+                          borderColor={colors.primary}
+                          primaryColor={colors.primary}
+                        />
+                      </Pressable>
+                    );
+                  })}
 
-              <AddFileiraButton
-                onPress={addNewFileira}
-                primaryColor={colors.primary}
-                creating={creatingFileira}
-              />
-              <View style={{ width: 24, height: 24 }} />
-            </View>
-          </View>
-        ) : (
-          <ScrollView
-            style={{ flex: 1 }}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{
-              flexGrow: 1,
-              backgroundColor: colors.background,
-              paddingBottom: 16,
-            }}
-            nestedScrollEnabled
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.fileirasRow}
-              nestedScrollEnabled
-            >
-              {fileiras.length === 0 ? (
-                <View
-                  style={[
-                    styles.emptyStateCardMobile,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.outline,
-                    },
-                  ]}
-                >
-                  <AppEmptyState
-                    title={API_STATE_MESSAGES.warehouse.empty.default.title}
-                    description={API_STATE_MESSAGES.warehouse.empty.default.description}
-                    icon="warehouse"
+                  <AddFileiraButton
+                    onPress={addNewFileira}
+                    primaryColor={colors.primary}
+                    creating={creatingFileira}
                   />
+                  <View style={{ width: 24, height: 24 }} />
+                  </View>
                 </View>
-              ) : null}
-
-              {fileiras.map((fileira) => {
-                const fileiraExpanded = expandedFileiras.includes(fileira.id);
-                const isFileiraHovered = !!hoverFileira[fileira.id];
-
-                return (
+              </View>
+            ) : (
+              <View style={styles.mobileWorkspace}>
+                <ScrollView
+                  style={{ flex: 1 }}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{
+                    flexGrow: 1,
+                    backgroundColor: colors.background,
+                    paddingBottom: 16,
+                  }}
+                  nestedScrollEnabled
+                >
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.fileirasRow}
+                    nestedScrollEnabled
+                  >
+                {fileiras.length === 0 ? (
                   <View
-                    key={fileira.id}
                     style={[
-                      styles.fileiraContainer,
-                      { backgroundColor: colors.surface, borderColor: colors.outline },
+                      styles.emptyStateCardMobile,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.outline,
+                      },
                     ]}
                   >
-                    <Pressable
-                      onPress={() => toggleFileiraExpand(fileira)}
-                      onHoverIn={() => setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))}
-                      onHoverOut={() =>
-                        setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }))
-                      }
-                      style={({ pressed }) => [
-                        styles.fileiraHeader,
-                        isFileiraHovered && styles.hoverFileira,
-                        pressed && { opacity: 0.7 },
+                    <AppEmptyState
+                      title={API_STATE_MESSAGES.warehouse.empty.default.title}
+                      description={API_STATE_MESSAGES.warehouse.empty.default.description}
+                      icon="warehouse"
+                      tipo="vazio"
+                    />
+                  </View>
+                ) : null}
+
+                {fileiras.map((fileira) => {
+                  const fileiraExpanded = expandedFileiras.includes(fileira.id);
+                  const isFileiraHovered = !!hoverFileira[fileira.id];
+
+                  return (
+                    <View
+                      key={fileira.id}
+                      style={[
+                        styles.fileiraContainer,
+                        { backgroundColor: colors.surface, borderColor: colors.outline },
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.fileiraTitle,
-                          { color: colors.text },
-                          (fileiraExpanded || isFileiraHovered) && { color: colors.primary },
+                      <Pressable
+                        onPress={() => toggleFileiraExpand(fileira)}
+                        onHoverIn={() =>
+                          setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))
+                        }
+                        onHoverOut={() =>
+                          setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }))
+                        }
+                        style={({ pressed }) => [
+                          styles.fileiraHeader,
+                          isFileiraHovered && styles.hoverFileira,
+                          pressed && { opacity: 0.7 },
                         ]}
                       >
-                        Fileira {fileira.identificador}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.fileiraTitle,
+                            { color: colors.text },
+                            (fileiraExpanded || isFileiraHovered) && { color: colors.primary },
+                          ]}
+                        >
+                          Fileira {fileira.identificador}
+                        </Text>
 
-                      <AntDesign
-                        name={fileiraExpanded ? 'caret-left' : 'caret-right'}
-                        size={22}
-                        color={
-                          fileiraExpanded
-                            ? colors.primary
-                            : isFileiraHovered
+                        <AntDesign
+                          name={fileiraExpanded ? 'caret-left' : 'caret-right'}
+                          size={22}
+                          color={
+                            fileiraExpanded
                               ? colors.primary
-                              : colors.text
-                        }
-                        style={isFileiraHovered ? styles.iconHover : undefined}
-                      />
-                    </Pressable>
-
-                    {fileira.grades.map((grade) => {
-                      const expanded = expandedGrades.includes(grade.id);
-                      const isGradeHovered = !!hoverGrade[grade.id];
-                      const isActiveGrade = activeGradeId === grade.id;
-
-                      const niveisToShow = expanded
-                        ? grade.niveis
-                        : grade.niveis.filter(
-                            (n) =>
-                              n.identificador === 'N1' ||
-                              (searchEnabled && matchedNivelIds.has(n.id))
-                          );
-
-                      const uniqueNiveisToShow = (() => {
-                        const seen = new Set<number>();
-                        const list: Nivel[] = [];
-                        for (const n of niveisToShow) {
-                          if (!seen.has(n.id)) {
-                            seen.add(n.id);
-                            list.push(n);
+                              : isFileiraHovered
+                                ? colors.primary
+                                : colors.text
                           }
-                        }
-                        return list.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
-                      })();
+                          style={isFileiraHovered ? styles.iconHover : undefined}
+                        />
+                      </Pressable>
 
-                      if (uniqueNiveisToShow.length === 0) {
-                        return null;
-                      }
+                      {fileira.grades.map((grade) => {
+                        const expanded = expandedGrades.includes(grade.id);
+                        const isGradeHovered = !!hoverGrade[grade.id];
+                        const isActiveGrade = activeGradeId === grade.id;
 
-                      const countForWidth = expanded
-                        ? grade.niveis.length
-                        : uniqueNiveisToShow.length;
-                      const width =
-                        countForWidth <= 1
-                          ? baseGradeWidth
-                          : baseGradeWidth + Math.max(0, countForWidth - 1) * perNivelWidth;
+                        const uniqueNiveisToShow = getVisibleNiveisForGrade(
+                          grade,
+                          expanded,
+                          searchEnabled,
+                          matchedNivelIds
+                        );
+                        const hasAnyNivel = grade.niveis.length > 0;
 
-                      return (
-                        <View key={grade.id} style={styles.gradeWrapper}>
-                          <View style={[styles.gradeInner, { width }]}>
-                            <Pressable
-                              onPress={() => handleGradePress(grade)}
-                              onHoverIn={() =>
-                                setHoverGrade((prev) => ({ ...prev, [grade.id]: true }))
-                              }
-                              onHoverOut={() =>
-                                setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
-                              }
-                              style={({ pressed }) => [
-                                styles.gradeContainer,
-                                { backgroundColor: colors.surface, borderColor: colors.outline },
-                                (isGradeHovered || isActiveGrade) && [
-                                  styles.gradeActive,
-                                  { borderColor: colors.primary, shadowColor: colors.primary },
-                                ],
-                                pressed && { opacity: 0.8 },
-                              ]}
-                            >
-                              <View style={styles.gradeHeader}>
-                                <View style={styles.gradeHeaderTop}>
-                                  <Text
-                                    numberOfLines={1}
-                                    ellipsizeMode="tail"
-                                    style={[
-                                      styles.gradeTitle,
-                                      { color: colors.text },
-                                      (isGradeHovered || isActiveGrade) && {
-                                        color: colors.primary,
-                                      },
-                                    ]}
-                                  >
-                                    Grade {grade.identificador}
-                                  </Text>
+                        const countForWidth = expanded
+                          ? grade.niveis.length
+                          : uniqueNiveisToShow.length;
+                        const width =
+                          countForWidth <= 1
+                            ? baseGradeWidth
+                            : baseGradeWidth + Math.max(0, countForWidth - 1) * perNivelWidth;
 
-                                  <AntDesign
-                                    name={expanded ? 'caret-left' : 'caret-right'}
-                                    size={20}
-                                    color={
-                                      expanded && isActiveGrade
-                                        ? colors.primary
-                                        : isGradeHovered
-                                          ? colors.primary
-                                          : colors.text
-                                    }
-                                    style={isGradeHovered ? styles.iconHover : undefined}
-                                  />
-                                </View>
-
-                                <View style={styles.gradeControls}>
-                                  <Pressable
-                                    onPress={(e) => {
-                                      e.stopPropagation();
-                                      openAddItemModalForGrade(fileira, grade);
-                                    }}
-                                    style={[styles.addButton, { borderColor: colors.outline }]}
-                                  >
-                                    <AntDesign name="plus" size={16} color={colors.primary} />
-                                  </Pressable>
-
-                                  <Pressable
-                                    onPress={(e) => {
-                                      e.stopPropagation();
-                                      criarNivel(fileira.id, grade);
-                                    }}
-                                    disabled={creatingGradeId === grade.id}
-                                    style={[
-                                      styles.addButton,
-                                      { borderColor: colors.outline },
-                                      creatingGradeId === grade.id && { opacity: 0.6 },
-                                    ]}
-                                  >
-                                    {creatingGradeId === grade.id ? (
-                                      <ActivityIndicator size="small" color={colors.primary} />
-                                    ) : (
-                                      <AntDesign
-                                        name="plus-circle"
-                                        size={16}
-                                        color={colors.primary}
-                                      />
-                                    )}
-                                  </Pressable>
-
-                                  <Pressable
-                                    onPress={(e) => {
-                                      e.stopPropagation();
-                                      removerUltimoNivel(fileira.id, grade);
-                                    }}
-                                    disabled={
-                                      removingGradeId === grade.id || grade.niveis.length <= 1
-                                    }
-                                    style={[
-                                      styles.addButton,
-                                      { borderColor: colors.outline },
-                                      (removingGradeId === grade.id ||
-                                        grade.niveis.length <= 1) && { opacity: 0.5 },
-                                    ]}
-                                  >
-                                    {removingGradeId === grade.id ? (
-                                      <ActivityIndicator size="small" color={colors.primary} />
-                                    ) : (
-                                      <AntDesign name="minus" size={16} color={colors.primary} />
-                                    )}
-                                  </Pressable>
-                                </View>
-                              </View>
-
-                              <View style={styles.niveisRow}>
-                                {uniqueNiveisToShow.map((nivel) => {
-                                  const isNivelHovered = !!hoverNivel[nivel.id];
-                                  const quantidadeExibida =
-                                    typeof nivel.quantidade === 'number' ? nivel.quantidade : 0;
-                                  const produtoExibido = (nivel.produtoNomeModelo ?? '').trim();
-
-                                  const isMatch = searchEnabled && matchedNivelIds.has(nivel.id);
-                                  const shouldDim = searchEnabled && !isMatch;
-
-                                  return (
-                                    <Pressable
-                                      key={nivel.id}
-                                      onPress={() => handleNivelClick(fileira, grade, nivel)}
-                                      onHoverIn={() =>
-                                        setHoverNivel((prev) => ({ ...prev, [nivel.id]: true }))
-                                      }
-                                      onHoverOut={() =>
-                                        setHoverNivel((prev) => ({ ...prev, [nivel.id]: false }))
-                                      }
+                        return (
+                          <View key={grade.id} style={styles.gradeWrapper}>
+                            <View style={[styles.gradeInner, { width }]}>
+                              <Pressable
+                                onPress={() => handleGradePress(grade)}
+                                onHoverIn={() =>
+                                  setHoverGrade((prev) => ({ ...prev, [grade.id]: true }))
+                                }
+                                onHoverOut={() =>
+                                  setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
+                                }
+                                style={({ pressed }) => [
+                                  styles.gradeContainer,
+                                  { backgroundColor: colors.surface, borderColor: colors.outline },
+                                  (isGradeHovered || isActiveGrade) && [
+                                    styles.gradeActive,
+                                    { borderColor: colors.primary, shadowColor: colors.primary },
+                                  ],
+                                  pressed && { opacity: 0.8 },
+                                ]}
+                              >
+                                <View style={styles.gradeHeader}>
+                                  <View style={styles.gradeHeaderTop}>
+                                    <Text
+                                      numberOfLines={1}
+                                      ellipsizeMode="tail"
                                       style={[
-                                        styles.nivelBox,
-                                        {
-                                          backgroundColor: colors.surface,
-                                          borderColor: colors.outline,
+                                        styles.gradeTitle,
+                                        { color: colors.text },
+                                        (isGradeHovered || isActiveGrade) && {
+                                          color: colors.primary,
                                         },
-                                        isNivelHovered && [
-                                          styles.nivelHover,
-                                          {
-                                            borderColor: colors.primary,
-                                            shadowColor: colors.primary,
-                                          },
-                                        ],
-                                        isMatch && [
-                                          styles.nivelMatch,
-                                          { borderColor: colors.primary },
-                                        ],
-                                        shouldDim && styles.nivelDim,
                                       ]}
                                     >
-                                      <Pressable
-                                        onPress={(e) => {
-                                          e.stopPropagation();
-                                          openConfirmRemoveNivel(nivel, fileira, grade);
-                                        }}
-                                        style={[
-                                          styles.nivelRemoveButton,
-                                          {
-                                            borderColor: colors.outline,
-                                            backgroundColor: colors.surface,
-                                          },
-                                        ]}
-                                      >
-                                        {resequenceNivelId === nivel.id ? (
-                                          <ActivityIndicator size="small" color={colors.primary} />
-                                        ) : (
-                                          <AntDesign
-                                            name="minus"
-                                            size={14}
-                                            color={colors.primary}
-                                          />
-                                        )}
-                                      </Pressable>
+                                      {formatGradeLabel(grade.identificador)}
+                                    </Text>
 
-                                      <Text
-                                        style={[
-                                          styles.nivelText,
-                                          { color: colors.text },
-                                          isNivelHovered && { color: colors.primary },
-                                        ]}
-                                      >
-                                        {nivel.identificador}
-                                      </Text>
+                                    <AntDesign
+                                      name={expanded ? 'caret-left' : 'caret-right'}
+                                      size={20}
+                                      color={
+                                        expanded && isActiveGrade
+                                          ? colors.primary
+                                          : isGradeHovered
+                                            ? colors.primary
+                                            : colors.text
+                                      }
+                                      style={isGradeHovered ? styles.iconHover : undefined}
+                                    />
+                                  </View>
 
-                                      {produtoExibido !== '' ? (
-                                        <Text style={styles.produto}>{produtoExibido}</Text>
-                                      ) : null}
-                                      <Text style={styles.qtd}>Qtd: {quantidadeExibida}</Text>
+                                  <View style={styles.gradeControls}>
+                                    <Pressable
+                                      onPress={(e) => {
+                                        e.stopPropagation();
+                                        openAddLevelDecisionForGrade(fileira, grade);
+                                      }}
+                                      style={[styles.addButton, { borderColor: colors.outline }]}
+                                    >
+                                      <AntDesign name="plus" size={16} color={colors.primary} />
                                     </Pressable>
-                                  );
-                                })}
-                              </View>
-                            </Pressable>
+
+                                    <Pressable
+                                      onPress={(e) => {
+                                        e.stopPropagation();
+                                        removerUltimoNivel(fileira.id, grade);
+                                      }}
+                                      disabled={
+                                        removingGradeId === grade.id || grade.niveis.length <= 1
+                                      }
+                                      style={[
+                                        styles.addButton,
+                                        { borderColor: colors.outline },
+                                        (removingGradeId === grade.id ||
+                                          grade.niveis.length <= 1) && { opacity: 0.5 },
+                                      ]}
+                                    >
+                                      {removingGradeId === grade.id ? (
+                                        <ActivityIndicator size="small" color={colors.primary} />
+                                      ) : (
+                                        <AntDesign name="minus" size={16} color={colors.primary} />
+                                      )}
+                                    </Pressable>
+                                  </View>
+                                </View>
+
+                                <View style={styles.niveisRow}>
+                                  {hasAnyNivel ? (
+                                    uniqueNiveisToShow.map((nivel) => {
+                                      const isNivelHovered = !!hoverNivel[nivel.id];
+                                      const quantidadeExibida =
+                                        typeof nivel.quantidade === 'number' ? nivel.quantidade : 0;
+                                      const produtoDisplay = getNivelProductDisplay(nivel);
+                                      const produtoExibido = produtoDisplay.text;
+                                      const nivelSemProduto = produtoDisplay.empty;
+
+                                      const isMatch =
+                                        searchEnabled && matchedNivelIds.has(nivel.id);
+                                      const shouldDim = searchEnabled && !isMatch;
+
+                                      return (
+                                        <Pressable
+                                          key={nivel.id}
+                                          onPress={() => handleNivelClick(fileira, grade, nivel)}
+                                          onHoverIn={() =>
+                                            setHoverNivel((prev) => ({ ...prev, [nivel.id]: true }))
+                                          }
+                                          onHoverOut={() =>
+                                            setHoverNivel((prev) => ({
+                                              ...prev,
+                                              [nivel.id]: false,
+                                            }))
+                                          }
+                                          style={[
+                                            styles.nivelBox,
+                                            {
+                                              backgroundColor: colors.surface,
+                                              borderColor: colors.outline,
+                                            },
+                                            isNivelHovered && [
+                                              styles.nivelHover,
+                                              {
+                                                borderColor: colors.primary,
+                                                shadowColor: colors.primary,
+                                              },
+                                            ],
+                                            isMatch && [
+                                              styles.nivelMatch,
+                                              { borderColor: colors.primary },
+                                            ],
+                                            shouldDim && styles.nivelDim,
+                                          ]}
+                                        >
+                                          <Pressable
+                                            onPress={(e) => {
+                                              e.stopPropagation();
+                                              openConfirmRemoveNivel(nivel, fileira, grade);
+                                            }}
+                                            style={[
+                                              styles.nivelRemoveButton,
+                                              {
+                                                borderColor: colors.outline,
+                                                backgroundColor: colors.surface,
+                                              },
+                                            ]}
+                                          >
+                                            {resequenceNivelId === nivel.id ? (
+                                              <ActivityIndicator
+                                                size="small"
+                                                color={colors.primary}
+                                              />
+                                            ) : (
+                                              <AntDesign
+                                                name="minus"
+                                                size={14}
+                                                color={colors.primary}
+                                              />
+                                            )}
+                                          </Pressable>
+
+                                          <View style={styles.nivelContent}>
+                                            <Text
+                                              style={[
+                                                styles.nivelText,
+                                                { color: colors.text },
+                                                isNivelHovered && { color: colors.primary },
+                                              ]}
+                                              numberOfLines={1}
+                                              ellipsizeMode="tail"
+                                            >
+                                              {nivel.identificador}
+                                            </Text>
+
+                                            <View style={styles.nivelProdutoSlot}>
+                                              <Text
+                                                style={[
+                                                  styles.produto,
+                                                  nivelSemProduto
+                                                    ? styles.produtoVazio
+                                                    : { color: colors.text },
+                                                  !nivelSemProduto &&
+                                                    isNivelHovered && { color: colors.primary },
+                                                ]}
+                                                numberOfLines={2}
+                                                ellipsizeMode="tail"
+                                              >
+                                                {produtoExibido}
+                                              </Text>
+                                            </View>
+
+                                            <Text
+                                              style={[
+                                                styles.qtd,
+                                                { color: colors.text },
+                                                isNivelHovered && { color: colors.primary },
+                                              ]}
+                                              numberOfLines={1}
+                                              ellipsizeMode="tail"
+                                            >
+                                              Qtd: {quantidadeExibida}
+                                            </Text>
+                                          </View>
+                                        </Pressable>
+                                      );
+                                    })
+                                  ) : (
+                                    <View
+                                      style={[
+                                        styles.nivelBox,
+                                        { borderStyle: 'dashed', borderColor: colors.outline },
+                                      ]}
+                                    >
+                                      <View
+                                        style={[
+                                          styles.nivelContent,
+                                          styles.nivelPlaceholderContent,
+                                        ]}
+                                      >
+                                        <Text
+                                          style={[styles.nivelText, { color: colors.text }]}
+                                          numberOfLines={1}
+                                          ellipsizeMode="tail"
+                                        >
+                                          SEM NÍVEIS
+                                        </Text>
+                                        <Text
+                                          style={[styles.qtd, { color: colors.text }]}
+                                          numberOfLines={1}
+                                          ellipsizeMode="tail"
+                                        >
+                                          Clique no +
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  )}
+                                </View>
+                              </Pressable>
+                            </View>
                           </View>
-                        </View>
-                      );
-                    })}
+                        );
+                      })}
 
-                    <Pressable
-                      onPress={() => openAddItemModalForNewGrade(fileira)}
-                      style={[styles.addGradeButton, { borderColor: colors.primary }]}
-                    >
-                      <AntDesign name="plus" size={22} color={colors.primary} />
-                    </Pressable>
-                  </View>
-                );
-              })}
+                      <Pressable
+                        onPress={() => openAddGradeDecisionForFileira(fileira)}
+                        style={[styles.addGradeButton, { borderColor: colors.primary }]}
+                      >
+                        <AntDesign name="plus" size={22} color={colors.primary} />
+                      </Pressable>
+                    </View>
+                  );
+                })}
 
-              <Pressable
-                onPress={addNewFileira}
-                disabled={creatingFileira}
-                style={[
-                  styles.addFileiraButton,
-                  { borderColor: colors.primary, opacity: creatingFileira ? 0.6 : 1 },
-                ]}
-              >
-                {creatingFileira ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <AntDesign name="plus" size={26} color={colors.primary} />
-                )}
+                <Pressable
+                  onPress={addNewFileira}
+                  disabled={creatingFileira}
+                  style={[
+                    styles.addFileiraButton,
+                    { borderColor: colors.primary, opacity: creatingFileira ? 0.6 : 1 },
+                  ]}
+                >
+                  {creatingFileira ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <AntDesign name="plus" size={26} color={colors.primary} />
+                  )}
                 <Text style={[styles.addFileiraButtonText, { color: colors.primary }]}>
                   Adicionar Fileira
                 </Text>
               </Pressable>
-            </ScrollView>
-          </ScrollView>
+                  </ScrollView>
+                </ScrollView>
+              </View>
+            )}
+          </>
         )}
 
         <SearchResultsModal
@@ -2567,9 +2814,32 @@ export default function Warehouse2DView() {
           onConfirm={confirmRemoveNivel}
         />
 
-        <WarehouseItemFormModal
+        <WarehouseItemDetailsModal
           visible={productModalVisible}
           title={selectedNivelCtx?.label ?? 'Produto'}
+          details={{
+            nomeModelo: currentNivelItemDetails.nomeModelo,
+            quantidade: currentNivelItemDetails.quantidade,
+            codigo: currentNivelItemDetails.codigo,
+            cor: currentNivelItemDetails.cor,
+            descricao: currentNivelItemDetails.descricao,
+          }}
+          empty={!nivelHasLinkedProduct}
+          loading={itemLoading}
+          onClose={closeProductModal}
+          onEdit={nivelHasLinkedProduct ? openProductEditModal : undefined}
+          onMoveStock={nivelHasLinkedProduct ? openProductEditModal : undefined}
+          onAddProduct={!nivelHasLinkedProduct ? openProductEditModal : undefined}
+          primaryColor={colors.primary}
+          surfaceColor={colors.surface}
+          outlineColor={colors.outline}
+          textColor={colors.text}
+          secondaryTextColor={colors.onSurfaceVariant}
+        />
+
+        <WarehouseItemFormModal
+          visible={productEditModalVisible}
+          title={selectedNivelCtx?.label ?? 'Editar produto'}
           values={{
             nomeModelo: editNomeModelo,
             quantidade: editQuantidade,
@@ -2577,24 +2847,23 @@ export default function Warehouse2DView() {
             cor: editCor,
             descricao: editDescricao,
           }}
-          onChangeNomeModelo={setEditNomeModelo}
           onChangeQuantidade={setEditQuantidade}
-          onChangeCodigo={setEditCodigo}
-          onChangeCor={setEditCor}
-          onChangeDescricao={setEditDescricao}
-          onClose={closeProductModal}
+          onSelectProduct={() => {
+            void openEditProductPickerModal();
+          }}
+          onClose={closeProductEditModal}
           onSubmit={openConfirmSave}
           loading={itemLoading}
           submitLoading={saving}
-          submitDisabled={!isDirty || saving}
-          closeLabel="Fechar"
+          submitDisabled={!isDirty || saving || editProductId == null}
+          closeLabel="Voltar"
           submitLabel="Salvar"
-          nomeLabel="Nome"
           titleNumberOfLines={1}
           primaryColor={colors.primary}
           surfaceColor={colors.surface}
           outlineColor={colors.outline}
           textColor={colors.text}
+          secondaryTextColor={colors.onSurfaceVariant}
         />
 
         <ConfirmActionModal
@@ -2612,55 +2881,75 @@ export default function Warehouse2DView() {
           onConfirm={saveEdits}
         />
 
-        <WarehouseItemFormModal
-          visible={addItemModalVisible}
-          title={selectedGradeCtx?.label ?? 'Inserir item'}
-          values={{
-            nomeModelo: addNomeModelo,
-            quantidade: addQuantidade,
-            codigo: addCodigo,
-            cor: addCor,
-            descricao: addDescricao,
+        <AddGradeLevelDecisionModal
+          visible={addLevelDecisionVisible}
+          title="Deseja adicionar produto à grade?"
+          message={
+            pendingStructureCtx
+              ? `Escolha como deseja criar ${pendingStructureCtx.label}.`
+              : 'Escolha como deseja criar o novo nível.'
+          }
+          loading={structureCreationLoading}
+          onCancel={closeAddLevelDecision}
+          onConfirmWithProduct={() => {
+            void openSelectGradeProductModal();
           }}
-          onChangeNomeModelo={setAddNomeModelo}
-          onChangeQuantidade={setAddQuantidade}
-          onChangeCodigo={setAddCodigo}
-          onChangeCor={setAddCor}
-          onChangeDescricao={setAddDescricao}
-          onClose={closeAddItemModal}
-          onSubmit={saveAddItem}
-          submitLoading={addLoading}
-          submitDisabled={addLoading}
+          onConfirmWithoutProduct={confirmAddLevelWithoutProduct}
           primaryColor={colors.primary}
           surfaceColor={colors.surface}
           outlineColor={colors.outline}
           textColor={colors.text}
-          nomeLabel="Nome/Modelo"
         />
 
-        <WarehouseItemFormModal
-          visible={addGradeModalVisible}
-          title={selectedFileiraCtx?.label ?? 'Inserir item'}
-          values={{
-            nomeModelo: addGradeNomeModelo,
-            quantidade: addGradeQuantidade,
-            codigo: addGradeCodigo,
-            cor: addGradeCor,
-            descricao: addGradeDescricao,
+        <SelectGradeProductModal
+          visible={selectGradeProductVisible}
+          title={pendingStructureCtx?.label ?? 'Selecionar produto'}
+          search={productFilter}
+          quantity={productQuantityInput}
+          products={filteredActiveProducts}
+          selectedProductId={selectedProductId}
+          loading={activeProductsLoading}
+          confirming={structureCreationLoading}
+          validationMessage={addLevelProductValidationMessage}
+          confirmDisabled={isAddLevelProductSubmitDisabled}
+          onSearchChange={setProductFilter}
+          onQuantityChange={(value) => {
+            setProductQuantityInput(value.replace(/[^\d]/g, ''));
           }}
-          onChangeNomeModelo={setAddGradeNomeModelo}
-          onChangeQuantidade={setAddGradeQuantidade}
-          onChangeCodigo={setAddGradeCodigo}
-          onChangeCor={setAddGradeCor}
-          onChangeDescricao={setAddGradeDescricao}
-          onClose={closeAddGradeModal}
-          onSubmit={saveAddGrade}
-          submitLoading={addGradeLoading}
-          submitDisabled={addGradeLoading}
+          onSelectProduct={setSelectedProductId}
+          onClose={closeSelectGradeProductModal}
+          onConfirm={confirmAddLevelWithSelectedProduct}
           primaryColor={colors.primary}
           surfaceColor={colors.surface}
+          surfaceVariantColor={colors.surfaceVariant}
           outlineColor={colors.outline}
           textColor={colors.text}
+          secondaryTextColor={colors.onSurfaceVariant}
+        />
+
+        <SelectGradeProductModal
+          visible={editProductPickerVisible}
+          title={selectedNivelCtx?.label ?? 'Selecionar produto'}
+          search={editProductFilter}
+          quantity=""
+          products={filteredEditProducts}
+          selectedProductId={pendingEditProductId}
+          showQuantityField={false}
+          confirmLabel="Selecionar"
+          loading={activeProductsLoading}
+          validationMessage={editProductSelectionValidationMessage}
+          confirmDisabled={pendingEditProductId == null}
+          onSearchChange={setEditProductFilter}
+          onQuantityChange={() => {}}
+          onSelectProduct={setPendingEditProductId}
+          onClose={closeEditProductPickerModal}
+          onConfirm={confirmEditProductSelection}
+          primaryColor={colors.primary}
+          surfaceColor={colors.surface}
+          surfaceVariantColor={colors.surfaceVariant}
+          outlineColor={colors.outline}
+          textColor={colors.text}
+          secondaryTextColor={colors.onSurfaceVariant}
         />
 
         <FeedbackModal
@@ -2689,7 +2978,12 @@ export default function Warehouse2DView() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, minHeight: 0 },
+  mobileWorkspace: {
+    flex: 1,
+    minHeight: 0,
+    paddingTop: 8,
+  },
   initialLoadingWrap: {
     flex: 1,
     paddingHorizontal: 16,
@@ -2797,7 +3091,6 @@ const styles = StyleSheet.create({
 
   webSearchBar: {
     width: '100%',
-    borderBottomWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 10,
     flexDirection: 'row',
@@ -2862,17 +3155,41 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
 
+  webWorkspace: {
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    ...(IS_WEB
+      ? ({
+          backgroundImage:
+            'linear-gradient(rgba(139,105,20,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(139,105,20,0.035) 1px, transparent 1px)',
+          backgroundSize: '32px 32px',
+        } as any)
+      : null),
+  },
+
   webScroller: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 0,
     overflow: 'auto' as any,
+    ...(IS_WEB
+      ? ({
+          backgroundImage:
+            'linear-gradient(to right, rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.02) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        } as any)
+      : null),
   },
 
   webContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    gap: 16,
+    width: '100%',
+    gap: 8,
+    margin: 0,
+    padding: 0,
   },
 
   emptyStateCard: {
@@ -2883,6 +3200,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 18,
     justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
 
   webSearchIconButtonCompactTight: {
@@ -2895,14 +3217,23 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingVertical: 12,
     paddingBottom: 24,
+    ...(IS_WEB
+      ? ({
+          backgroundImage:
+            'linear-gradient(to right, rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.02) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        } as any)
+      : null),
   },
 
   fileirasRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingHorizontal: 16,
+    width: '100%',
+    gap: 8,
+    margin: 0,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    gap: 16,
   },
 
   emptyStateCardMobile: {
@@ -2917,15 +3248,19 @@ const styles = StyleSheet.create({
 
   fileiraContainer: {
     borderRadius: 12,
-    marginHorizontal: 8,
     padding: 12,
-    elevation: 3,
+    elevation: 2,
     borderWidth: 1,
     flexShrink: 0,
     flexGrow: 0,
+    minWidth: IS_WEB ? 0 : 160,
     overflow: 'hidden',
     display: 'flex',
     gap: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
 
     ...(IS_WEB
       ? ({
@@ -2945,13 +3280,12 @@ const styles = StyleSheet.create({
 
   fileiraHover: IS_WEB
     ? ({
-        transform: [{ scale: 1.01 }],
-        boxShadow: '0 10px 22px rgba(0,0,0,0.12)',
+        boxShadow: '0 8px 18px rgba(0,0,0,0.10)',
       } as any)
     : ({
-        shadowOpacity: 0.22,
-        shadowRadius: 7,
-        elevation: 6,
+        shadowOpacity: 0.16,
+        shadowRadius: 6,
+        elevation: 4,
       } as any),
 
   hoverFileira: {},
@@ -2970,10 +3304,17 @@ const styles = StyleSheet.create({
   gradeContainer: {
     width: '100%',
     minWidth: 140,
+    minHeight: 170,
     borderRadius: 10,
     padding: 9,
     borderWidth: 1,
     alignSelf: 'stretch',
+    justifyContent: 'flex-start',
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
   },
 
   gradeExpanded: {
@@ -3011,7 +3352,7 @@ const styles = StyleSheet.create({
   },
 
   gradeTitle: {
-    fontSize: 16,
+    fontSize: IS_WEB ? 16 : 13,
     fontWeight: '600',
     flexShrink: 1,
     minWidth: 0,
@@ -3047,18 +3388,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'nowrap',
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'stretch',
     gap: 6,
   },
 
   nivelBox: {
-    width: 110,
-    height: 90,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: IS_WEB ? 110 : 130,
+    height: 104,
+    minHeight: 104,
+    maxHeight: 104,
+    minWidth: IS_WEB ? 110 : 130,
+    maxWidth: IS_WEB ? 110 : 130,
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
     borderRadius: 8,
     borderWidth: 1,
     position: 'relative',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
 
   nivelMatch: {
@@ -3094,9 +3447,55 @@ const styles = StyleSheet.create({
       : null),
   },
 
-  nivelText: { fontWeight: 'bold' },
-  produto: { fontSize: 14, textAlign: 'center', fontWeight: 600 },
-  qtd: { fontSize: 12, color: '#333', fontWeight: 600 },
+  nivelContent: {
+    flex: 1,
+    width: '100%',
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 16,
+  },
+  nivelPlaceholderContent: {
+    justifyContent: 'center',
+    gap: 4,
+    paddingTop: 0,
+  },
+  nivelProdutoSlot: {
+    flex: 1,
+    width: '100%',
+    minWidth: 0,
+    minHeight: 34,
+    maxHeight: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 2,
+  },
+  nivelText: {
+    width: '100%',
+    textAlign: 'center',
+    fontWeight: 'bold',
+    paddingHorizontal: 16,
+  },
+  produto: {
+    width: '100%',
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
+    fontWeight: 600,
+    overflow: 'hidden',
+  },
+  produtoVazio: {
+    color: '#999999',
+    fontStyle: 'italic',
+    fontWeight: '500',
+  },
+  qtd: {
+    width: '100%',
+    fontSize: 12,
+    color: '#333',
+    fontWeight: 600,
+    textAlign: 'center',
+  },
 
   gradeWrapper: {
     width: '100%',
@@ -3131,7 +3530,7 @@ const styles = StyleSheet.create({
     width: 164,
     minWidth: 164,
     height: 230,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 2,
     borderStyle: 'dashed',
     justifyContent: 'center',
@@ -3145,5 +3544,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
-
 });

@@ -11,6 +11,7 @@ import { Platform } from 'react-native';
 
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AreaProvider } from './src/areas/AreaContext';
 import { ThemeProvider, useThemeContext } from './src/theme/ThemeContext';
 import { AuthProvider } from './src/auth/AuthContext';
 import { PaperIcon } from './src/PaperIcon';
@@ -70,7 +71,9 @@ export default function App() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <AppWithTheme />
+            <AreaProvider>
+              <AppWithTheme />
+            </AreaProvider>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

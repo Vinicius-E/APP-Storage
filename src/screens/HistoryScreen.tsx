@@ -23,6 +23,7 @@ import {
 } from 'react-native-paper';
 import { DatePickerModal, pt, registerTranslation } from 'react-native-paper-dates';
 import AppEmptyState from '../components/AppEmptyState';
+import FilterSelect from '../components/FilterSelect';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
@@ -34,6 +35,7 @@ import {
   listarHistorico,
 } from '../services/historicoApi';
 import { useThemeContext } from '../theme/ThemeContext';
+import { getUserFacingErrorMessage } from '../utils/userFacingError';
 
 type QuickType =
   | ''
@@ -871,11 +873,7 @@ export default function HistoryScreen() {
         setHasMore(Boolean(!response.last));
       } catch (error: any) {
         const fallback = API_STATE_MESSAGES.history.error.description;
-        const backendMessage =
-          typeof error?.response?.data === 'string'
-            ? error.response.data
-            : (error?.response?.data?.message ?? '');
-        const resolvedMessage = backendMessage || fallback;
+        const resolvedMessage = getUserFacingErrorMessage(error, fallback);
 
         if (append) {
           setSnackbarMessage(resolvedMessage);
@@ -1007,11 +1005,7 @@ export default function HistoryScreen() {
         setSelected(detail);
       } catch (error: any) {
         const fallback = 'Não foi possível carregar os detalhes.';
-        const backendMessage =
-          typeof error?.response?.data === 'string'
-            ? error.response.data
-            : (error?.response?.data?.message ?? '');
-        setSnackbarMessage(backendMessage || fallback);
+        setSnackbarMessage(getUserFacingErrorMessage(error, fallback));
       } finally {
         setDetailLoading(false);
       }
@@ -1145,137 +1139,22 @@ export default function HistoryScreen() {
 
               <View style={styles.filtersStack}>
                 <View style={[styles.filtersRow, isCompact && styles.filtersRowCompact]}>
-                  <View
-                    style={[
-                      styles.operationDropdownWrap,
-                      isCompact && styles.operationDropdownWrapCompact,
-                      isOperationDropdownOpen && styles.operationDropdownWrapOpen,
-                    ]}
-                  >
-                    <Text style={[styles.filterLabel, { color: theme.colors.primary }]}>
-                      Status
-                    </Text>
-
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="action-historico-tipo-toggle"
-                      accessibilityState={{ expanded: isOperationDropdownOpen }}
-                      onPress={() => setIsOperationDropdownOpen((prev) => !prev)}
-                      style={(state) => {
-                        const pressed = Boolean(state.pressed);
-                        const isHovered = Boolean((state as any).hovered);
-                        const active = isOperationDropdownOpen || isHovered || pressed;
-
-                        return [
-                          styles.operationDropdownTrigger,
-                          Platform.OS === 'web' ? styles.interactiveWeb : null,
-                          {
-                            backgroundColor: theme.colors.surfaceVariant,
-                            borderColor: active ? theme.colors.primary : theme.colors.outline,
-                            shadowColor: theme.colors.primary,
-                            shadowOpacity: active ? 0.12 : 0.04,
-                            shadowRadius: active ? 14 : 8,
-                            shadowOffset: { width: 0, height: active ? 8 : 4 },
-                            elevation: active ? 3 : 1,
-                            opacity: pressed ? 0.96 : 1,
-                            transform: [{ translateY: isHovered ? -1 : 0 }],
-                          },
-                        ];
-                      }}
-                    >
-                      {(state) => {
-                        const pressed = Boolean(state.pressed);
-                        const isHovered = Boolean((state as any).hovered);
-                        const active = isOperationDropdownOpen || isHovered || pressed;
-                        const triggerTextColor = active ? theme.colors.primary : theme.colors.text;
-
-                        return (
-                          <>
-                            <Text
-                              style={[styles.operationDropdownValue, { color: triggerTextColor }]}
-                            >
-                              {selectedOperationLabel}
-                            </Text>
-                            <MaterialCommunityIcons
-                              name={isOperationDropdownOpen ? 'chevron-up' : 'chevron-down'}
-                              size={18}
-                              color={theme.colors.primary}
-                            />
-                          </>
-                        );
-                      }}
-                    </Pressable>
-
-                    {isOperationDropdownOpen ? (
-                      <View
-                        style={[
-                          styles.operationDropdownMenu,
-                          {
-                            backgroundColor: theme.colors.surface,
-                            borderColor: theme.colors.outline,
-                            shadowColor: theme.colors.primary,
-                          },
-                        ]}
-                      >
-                        {QUICK_FILTERS.map((opt) => {
-                          const selected = operationFilter === opt.value;
-
-                          return (
-                            <Pressable
-                              key={opt.value || 'todos'}
-                              accessibilityRole="button"
-                              accessibilityLabel={`action-historico-tipo-${(
-                                opt.value || 'todos'
-                              ).toLowerCase()}`}
-                              accessibilityState={{ selected }}
-                              onPress={() => {
-                                setOperationFilter(opt.value);
-                                setIsOperationDropdownOpen(false);
-                              }}
-                              style={(state) => {
-                                const pressed = Boolean(state.pressed);
-                                const isHovered = Boolean((state as any).hovered);
-                                const active = selected || isHovered || pressed;
-
-                                return [
-                                  styles.operationDropdownOption,
-                                  Platform.OS === 'web' ? styles.interactiveWeb : null,
-                                  {
-                                    backgroundColor: active
-                                      ? theme.colors.surfaceVariant
-                                      : 'transparent',
-                                    borderColor: active
-                                      ? theme.colors.primary
-                                      : theme.colors.outline,
-                                    opacity: pressed ? 0.96 : 1,
-                                    transform: [{ translateY: isHovered ? -1 : 0 }],
-                                  },
-                                ];
-                              }}
-                            >
-                              <Text
-                                style={[
-                                  styles.operationDropdownOptionText,
-                                  {
-                                    color: selected ? theme.colors.primary : theme.colors.text,
-                                  },
-                                ]}
-                              >
-                                {opt.label}
-                              </Text>
-                              {selected ? (
-                                <MaterialCommunityIcons
-                                  name="check"
-                                  size={16}
-                                  color={theme.colors.primary}
-                                />
-                              ) : null}
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    ) : null}
-                  </View>
+                  <FilterSelect
+                    label="Status"
+                    value={operationFilter}
+                    valueLabel={selectedOperationLabel}
+                    options={QUICK_FILTERS.map((opt) => ({
+                      ...opt,
+                      accessibilityLabel: `action-historico-tipo-${(
+                        opt.value || 'todos'
+                      ).toLowerCase()}`,
+                    }))}
+                    onSelect={(nextValue) => setOperationFilter(nextValue as QuickType)}
+                    compact={isCompact}
+                    open={isOperationDropdownOpen}
+                    onOpenChange={setIsOperationDropdownOpen}
+                    accessibilityLabel="action-historico-tipo-toggle"
+                  />
 
                   <View style={[styles.rangeRow, isCompact && styles.rangeRowCompact]}>
                     <Text style={[styles.filterLabel, { color: theme.colors.primary }]}>
@@ -1429,12 +1308,7 @@ export default function HistoryScreen() {
                                   color={active ? theme.colors.primary : theme.colors.primary}
                                 />
                               )}
-                              <Text
-                                style={[
-                                  styles.filterActionText,
-                                  { color: contentColor },
-                                ]}
-                              >
+                              <Text style={[styles.filterActionText, { color: contentColor }]}>
                                 Filtrar
                               </Text>
                             </>
@@ -1478,9 +1352,10 @@ export default function HistoryScreen() {
               >
                 <AppEmptyState
                   title={API_STATE_MESSAGES.history.error.title}
-                  description={errorMessage}
+                  description={API_STATE_MESSAGES.history.error.description}
                   icon="alert-circle-outline"
                   tone="error"
+                  onRetry={() => void loadFirstPage()}
                 />
               </Surface>
             </View>
@@ -1500,6 +1375,7 @@ export default function HistoryScreen() {
                   title={historyEmptyCopy.title}
                   description={historyEmptyCopy.description}
                   icon="history"
+                  tipo={hasFilters ? 'semResultado' : 'vazio'}
                 />
               </Surface>
             </View>
@@ -1519,7 +1395,7 @@ export default function HistoryScreen() {
             ) : null}
           </View>
         }
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+        ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1570,12 +1446,24 @@ export default function HistoryScreen() {
       )}
 
       <Portal>
+        {selected !== null || detailLoading ? (
+          <View pointerEvents="none" style={styles.modalBackdropLayer} />
+        ) : null}
+
         <Modal
           visible={selected !== null || detailLoading}
           onDismiss={() => {
             setSelected(null);
             setDetailLoading(false);
           }}
+          theme={{
+            ...theme,
+            colors: {
+              ...theme.colors,
+              backdrop: 'transparent',
+            },
+          }}
+          style={styles.modalOverlay}
           contentContainerStyle={styles.modalFrame}
         >
           <View
@@ -1907,7 +1795,18 @@ const styles = StyleSheet.create({
         } as any)
       : ({} as any),
   actions: { marginTop: 8, flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  card: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 10 },
+  card: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    gap: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
   top: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
   topCompact: { flexDirection: 'column', alignItems: 'stretch' },
   leftArea: { flexDirection: 'row', gap: 10, flex: 1, display: 'flex', alignItems: 'center' },
@@ -1950,9 +1849,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     textAlignVertical: 'center',
   },
-  date: { fontSize: 12, fontWeight: '700' },
+  date: { fontSize: 12, fontWeight: '600' },
   name: { fontSize: 16, fontWeight: '800' },
-  info: { fontSize: 13, fontWeight: '600' },
+  info: { fontSize: 13, fontWeight: '500' },
   metricsRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   metricsRowCompact: { flexDirection: 'column', alignItems: 'stretch' },
   metricBox: {
@@ -1970,13 +1869,34 @@ const styles = StyleSheet.create({
   detailsButton: { borderRadius: 999 },
   detailsButtonCompact: { width: '100%' },
   detailsButtonContent: { height: 38 },
-  empty: { borderRadius: 14, borderWidth: 1, padding: 16, alignItems: 'center', gap: 6 },
+  empty: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
   loadingCard: { minHeight: 132 },
   footer: { paddingVertical: 8, alignItems: 'center', gap: 6 },
   inlineLoading: { minHeight: 32 },
+  modalBackdropLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    zIndex: 998,
+  },
+  modalOverlay: {
+    margin: 0,
+    justifyContent: 'center',
+  },
   modalFrame: {
     paddingHorizontal: 14,
     paddingVertical: 16,
+    zIndex: 999,
   },
   modal: {
     borderRadius: 18,
@@ -2029,8 +1949,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
     borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     gap: 4,
   },
   detailLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },

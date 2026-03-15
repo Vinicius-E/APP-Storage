@@ -18,6 +18,7 @@ import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
+import { getUserFacingErrorMessage } from '../utils/userFacingError';
 import {
   UsuarioResponseDTO,
   alterarSenhaUsuario,
@@ -26,21 +27,32 @@ import {
   criarUsuario,
   listarUsuarios,
 } from '../services/usuarioApi';
+import { listProfiles } from '../services/profileApi';
+import { usePermissions } from '../security/permissions';
 import { useThemeContext } from '../theme/ThemeContext';
+import { ProfileDTO, ProfileType } from '../types/ProfileDTO';
 
-type UserRole = 'Administrador' | 'Leitura';
+type UserRole = string;
 type UserStatus = 'active' | 'inactive';
 type StatusFilter = 'all' | 'active' | 'inactive';
-type RoleFilter = 'Todos' | UserRole;
+type RoleFilter = string;
 type FilterDropdownKey = 'status' | 'role';
 type PermissionKey = 'dashboard:view' | 'warehouse:read' | 'warehouse:update' | 'users:update';
 type PermissionState = Record<PermissionKey, boolean>;
+
+type ProfileOption = {
+  value: string;
+  label: string;
+  accessibilityLabel: string;
+  type: ProfileType;
+};
 
 type ManagedUser = {
   id: number;
   name: string;
   login: string;
   role: UserRole;
+  profileValue: string;
   team: string;
   status: UserStatus;
   lastAccess: string;
@@ -89,7 +101,8 @@ type InteractivePalette = {
 
 type HoverablePressableState = PressableStateCallbackType & { hovered?: boolean };
 
-const ROLE_OPTIONS: UserRole[] = ['Administrador', 'Leitura'];
+const ALL_ROLE_FILTER = 'Todos';
+const DEFAULT_ROLE_VALUE = 'LEITURA';
 
 const STATUS_FILTER_OPTIONS: Array<{
   value: StatusFilter;
@@ -99,20 +112,6 @@ const STATUS_FILTER_OPTIONS: Array<{
   { value: 'all', label: 'Todos', accessibilityLabel: 'action-users-filter-status-all' },
   { value: 'active', label: 'Ativos', accessibilityLabel: 'action-users-filter-status-active' },
   { value: 'inactive', label: 'Inativos', accessibilityLabel: 'action-users-filter-status-inactive' },
-];
-
-const ROLE_FILTER_OPTIONS: Array<{
-  value: RoleFilter;
-  label: string;
-  accessibilityLabel: string;
-}> = [
-  { value: 'Todos', label: 'Todos', accessibilityLabel: 'action-users-filter-role-todos' },
-  {
-    value: 'Administrador',
-    label: 'Administrador',
-    accessibilityLabel: 'action-users-filter-role-administrador',
-  },
-  { value: 'Leitura', label: 'Leitura', accessibilityLabel: 'action-users-filter-role-leitura' },
 ];
 
 const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: string }> = [
@@ -141,7 +140,7 @@ const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: strin
 const emptyEditForm: EditForm = {
   name: '',
   login: '',
-  role: 'Leitura',
+  role: DEFAULT_ROLE_VALUE,
   password: '',
   confirmPassword: '',
 };
@@ -157,21 +156,128 @@ const statusLabel: Record<UserStatus, string> = {
   inactive: 'Inativo',
 };
 
-function mapPerfilToRole(perfil: string): UserRole {
-  return perfil === 'ADMINISTRADOR' ? 'Administrador' : 'Leitura';
+function normalizeProfileToken(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
+    .trim();
 }
 
-function mapRoleToPerfil(role: UserRole): 'ADMINISTRADOR' | 'LEITURA' {
-  return role === 'Administrador' ? 'ADMINISTRADOR' : 'LEITURA';
+function formatProfileLabel(value: string): string {
+  const normalized = normalizeProfileToken(value);
+
+  if (!normalized) {
+    return 'Leitura';
+  }
+
+  if (normalized.includes('ADMIN')) {
+    return 'Administrador';
+  }
+
+  if (
+    normalized.includes('LEITURA') ||
+    normalized.includes('READ_ONLY') ||
+    normalized.includes('READONLY')
+  ) {
+    return 'Leitura';
+  }
+
+  if (normalized.includes('OPERADOR')) {
+    return 'Operador';
+  }
+
+  return normalized
+    .toLowerCase()
+    .split('_')
+    .filter(Boolean)
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+    .join(' ');
+}
+
+function buildProfileAccessibilityLabel(value: string): string {
+  const normalized = normalizeProfileToken(value).toLowerCase();
+  return `action-users-filter-role-${normalized || 'perfil'}`;
+}
+
+function buildProfileOption(profile: ProfileDTO): ProfileOption {
+  const label = profile.description.trim() || formatProfileLabel(profile.type);
+  const value = normalizeProfileToken(label);
+
+  return {
+    value: value || DEFAULT_ROLE_VALUE,
+    label,
+    accessibilityLabel: buildProfileAccessibilityLabel(value || label),
+    type: profile.type,
+  };
+}
+
+function buildFallbackProfileOption(value: string): ProfileOption {
+  const normalized = normalizeProfileToken(value) || DEFAULT_ROLE_VALUE;
+
+  return {
+    value: normalized,
+    label: formatProfileLabel(normalized),
+    accessibilityLabel: buildProfileAccessibilityLabel(normalized),
+    type:
+      normalized.includes('LEITURA') ||
+      normalized.includes('READ_ONLY') ||
+      normalized.includes('READONLY')
+        ? 'READ_ONLY'
+        : 'FULL_ACCESS',
+  };
+}
+
+function findProfileOption(profileOptions: ProfileOption[], value: string): ProfileOption | undefined {
+  const normalized = normalizeProfileToken(value);
+  return profileOptions.find((option) => option.value === normalized);
+}
+
+function mapPerfilToRole(perfil: string, profileOptions: ProfileOption[] = []): UserRole {
+  return findProfileOption(profileOptions, perfil)?.label ?? formatProfileLabel(perfil);
+}
+
+function mapRoleToPerfil(role: UserRole, profileOptions: ProfileOption[] = []): string {
+  const normalized = normalizeProfileToken(role) || DEFAULT_ROLE_VALUE;
+  const byValue = findProfileOption(profileOptions, normalized);
+
+  if (byValue) {
+    return byValue.value;
+  }
+
+  const byLabel = profileOptions.find((option) => normalizeProfileToken(option.label) === normalized);
+  if (byLabel) {
+    return byLabel.value;
+  }
+
+  const fallbackLabel = formatProfileLabel(normalized);
+  const byFallbackLabel = profileOptions.find(
+    (option) => normalizeProfileToken(option.label) === normalizeProfileToken(fallbackLabel)
+  );
+
+  return byFallbackLabel?.value ?? normalized;
 }
 
 function permissionsByRole(role: UserRole): PermissionState {
-  if (role === 'Administrador') {
+  const normalized = normalizeProfileToken(role);
+
+  if (normalized.includes('ADMIN')) {
     return {
       'dashboard:view': true,
       'warehouse:read': true,
       'warehouse:update': true,
       'users:update': true,
+    };
+  }
+
+  if (normalized.includes('OPERADOR') || normalized.includes('FULL_ACCESS')) {
+    return {
+      'dashboard:view': true,
+      'warehouse:read': true,
+      'warehouse:update': true,
+      'users:update': false,
     };
   }
 
@@ -183,14 +289,19 @@ function permissionsByRole(role: UserRole): PermissionState {
   };
 }
 
-function toManagedUser(user: UsuarioResponseDTO): ManagedUser {
-  const role = mapPerfilToRole(user.perfil);
+function toManagedUser(
+  user: UsuarioResponseDTO,
+  profileOptions: ProfileOption[] = []
+): ManagedUser {
+  const profileValue = mapRoleToPerfil(user.perfil, profileOptions);
+  const role = mapPerfilToRole(profileValue, profileOptions);
 
   return {
     id: user.id,
     name: user.nome,
     login: user.login,
     role,
+    profileValue,
     team: '—',
     status: user.ativo ? 'active' : 'inactive',
     lastAccess: '—',
@@ -217,23 +328,7 @@ function getUserInitials(name: string): string {
 }
 
 function resolveRequestErrorMessage(error: unknown, fallback: string): string {
-  if (!error || typeof error !== 'object') {
-    return fallback;
-  }
-
-  const responseData = (error as { response?: { data?: unknown } }).response?.data;
-  if (typeof responseData === 'string' && responseData.trim()) {
-    return responseData;
-  }
-
-  if (responseData && typeof responseData === 'object') {
-    const message = (responseData as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) {
-      return message;
-    }
-  }
-
-  return fallback;
+  return getUserFacingErrorMessage(error, fallback);
 }
 
 function withAlpha(color: string, alpha: number): string {
@@ -273,6 +368,7 @@ function withAlpha(color: string, alpha: number): string {
 
 export default function UserScreen() {
   const { theme } = useThemeContext();
+  const { hasPermission } = usePermissions();
   const { width } = useWindowDimensions();
   const isCompact = width < 780;
   const colors = theme.colors as typeof theme.colors & { text?: string; textSecondary?: string };
@@ -280,9 +376,10 @@ export default function UserScreen() {
   const textSecondary = colors.textSecondary ?? theme.colors.onSurfaceVariant;
 
   const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [roleFilter, setRoleFilter] = useState<RoleFilter>('Todos');
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>(ALL_ROLE_FILTER);
   const [openDropdown, setOpenDropdown] = useState<FilterDropdownKey | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -301,12 +398,14 @@ export default function UserScreen() {
   const [showSenhaAtual, setShowSenhaAtual] = useState(false);
   const [showNovaSenha, setShowNovaSenha] = useState(false);
   const [showConfirmarNovaSenha, setShowConfirmarNovaSenha] = useState(false);
+  const [isChangePasswordExpanded, setIsChangePasswordExpanded] = useState(false);
   const [statusConfirmTarget, setStatusConfirmTarget] = useState<StatusConfirmTarget | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<StatusFeedback | null>(null);
 
   const actionTransitionStyle = Platform.OS === 'web' ? styles.interactiveWeb : undefined;
   const actionBusy = submitting || savingPassword;
   const reloadBusy = loading || refreshing;
+  const canEditUserProfiles = hasPermission('PROFILES', 'EDIT');
 
   const getInteractivePalette = useCallback(
     (variant: InteractiveVariant): InteractivePalette => {
@@ -454,6 +553,74 @@ export default function UserScreen() {
     [resolveInteractiveState, resolveInteractiveTextColor, theme.colors.primary]
   );
 
+  const roleFilterOptions = useMemo<Array<{
+    value: RoleFilter;
+    label: string;
+    accessibilityLabel: string;
+  }>>(
+    () => [
+      {
+        value: ALL_ROLE_FILTER,
+        label: 'Todos',
+        accessibilityLabel: 'action-users-filter-role-todos',
+      },
+      ...profileOptions.map((option) => ({
+        value: option.value,
+        label: option.label,
+        accessibilityLabel: option.accessibilityLabel,
+      })),
+    ],
+    [profileOptions]
+  );
+
+  const defaultRoleValue = useMemo(() => {
+    return (
+      profileOptions.find((option) => option.value === DEFAULT_ROLE_VALUE)?.value ??
+      profileOptions[0]?.value ??
+      DEFAULT_ROLE_VALUE
+    );
+  }, [profileOptions]);
+
+  const editableProfileOptions = useMemo(() => {
+    if (!editForm.role) {
+      return profileOptions;
+    }
+
+    if (findProfileOption(profileOptions, editForm.role)) {
+      return profileOptions;
+    }
+
+    return [...profileOptions, buildFallbackProfileOption(editForm.role)];
+  }, [editForm.role, profileOptions]);
+
+  const selectedEditRoleLabel = useMemo(() => {
+    return mapPerfilToRole(editForm.role, editableProfileOptions);
+  }, [editForm.role, editableProfileOptions]);
+
+  const fetchProfileOptions = useCallback(async () => {
+    try {
+      const response = await listProfiles({
+        page: 0,
+        size: 100,
+      });
+
+      const uniqueOptions = new Map<string, ProfileOption>();
+      (Array.isArray(response.items) ? response.items : [])
+        .filter((profile) => profile.active !== false)
+        .forEach((profile) => {
+          const option = buildProfileOption(profile);
+          if (!uniqueOptions.has(option.value)) {
+            uniqueOptions.set(option.value, option);
+          }
+        });
+
+      setProfileOptions(Array.from(uniqueOptions.values()));
+    } catch (error) {
+      console.error('Falha ao carregar perfis para filtros de usuário:', error);
+      setProfileOptions([]);
+    }
+  }, []);
+
   const fetchUsers = useCallback(async (isRefresh = false) => {
     setErrorMessage('');
 
@@ -465,7 +632,7 @@ export default function UserScreen() {
 
     try {
       const data = await listarUsuarios();
-      setUsers(data.map(toManagedUser));
+      setUsers(data.map((user) => toManagedUser(user, profileOptions)));
     } catch (error) {
       console.error('Falha ao listar usuários:', error);
       const backendMessage = resolveRequestErrorMessage(error, '');
@@ -477,11 +644,24 @@ export default function UserScreen() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [profileOptions]);
+
+  useEffect(() => {
+    void fetchProfileOptions();
+  }, [fetchProfileOptions]);
 
   useEffect(() => {
     void fetchUsers(false);
   }, [fetchUsers]);
+
+  useEffect(() => {
+    if (
+      roleFilter !== ALL_ROLE_FILTER &&
+      !roleFilterOptions.some((option) => option.value === roleFilter)
+    ) {
+      setRoleFilter(ALL_ROLE_FILTER);
+    }
+  }, [roleFilter, roleFilterOptions]);
 
   const filteredUsers = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -493,7 +673,7 @@ export default function UserScreen() {
           : statusFilter === 'active'
             ? user.status === 'active'
             : user.status === 'inactive';
-      const byRole = roleFilter === 'Todos' ? true : user.role === roleFilter;
+      const byRole = roleFilter === ALL_ROLE_FILTER ? true : user.profileValue === roleFilter;
       const bySearch =
         needle === ''
           ? true
@@ -504,7 +684,7 @@ export default function UserScreen() {
   }, [roleFilter, search, statusFilter, users]);
 
   const hasUserFilters = useMemo(() => {
-    return search.trim() !== '' || statusFilter !== 'all' || roleFilter !== 'Todos';
+    return search.trim() !== '' || statusFilter !== 'all' || roleFilter !== ALL_ROLE_FILTER;
   }, [roleFilter, search, statusFilter]);
 
   const usersEmptyCopy = useMemo(() => {
@@ -521,6 +701,20 @@ export default function UserScreen() {
     setShowSenhaAtual(false);
     setShowNovaSenha(false);
     setShowConfirmarNovaSenha(false);
+    setIsChangePasswordExpanded(false);
+  };
+
+  const toggleChangePasswordSection = () => {
+    setIsChangePasswordExpanded((current) => {
+      if (current) {
+        setChangePasswordForm(emptyChangePasswordForm);
+        setShowSenhaAtual(false);
+        setShowNovaSenha(false);
+        setShowConfirmarNovaSenha(false);
+      }
+
+      return !current;
+    });
   };
 
   const closeEdit = () => {
@@ -532,7 +726,10 @@ export default function UserScreen() {
 
   const openCreate = () => {
     setEditingUserId('new');
-    setEditForm(emptyEditForm);
+    setEditForm({
+      ...emptyEditForm,
+      role: defaultRoleValue,
+    });
     resetCreatePasswordState();
     resetChangePasswordState();
   };
@@ -542,7 +739,7 @@ export default function UserScreen() {
     setEditForm({
       name: user.name,
       login: user.login,
-      role: user.role,
+      role: user.profileValue,
       password: '',
       confirmPassword: '',
     });
@@ -589,7 +786,7 @@ export default function UserScreen() {
         await criarUsuario({
           login,
           nome: name,
-          perfil: mapRoleToPerfil(editForm.role),
+          perfil: mapRoleToPerfil(editForm.role, editableProfileOptions),
           senha: password,
         });
       } else {
@@ -597,7 +794,7 @@ export default function UserScreen() {
         await atualizarUsuario(userId, {
           login,
           nome: name,
-          perfil: mapRoleToPerfil(editForm.role),
+          perfil: mapRoleToPerfil(editForm.role, editableProfileOptions),
         });
       }
 
@@ -850,7 +1047,7 @@ export default function UserScreen() {
   return (
     <>
       <ScrollView
-        style={{ backgroundColor: theme.colors.background }}
+        style={{ backgroundColor: 'transparent' }}
         contentContainerStyle={styles.container}
         onScrollBeginDrag={() => setOpenDropdown(null)}
         refreshControl={
@@ -902,7 +1099,7 @@ export default function UserScreen() {
                 dropdownKey: 'role',
                 label: 'Perfil',
                 value: roleFilter,
-                options: ROLE_FILTER_OPTIONS,
+                options: roleFilterOptions,
                 onSelect: (value) => setRoleFilter(value),
               })}
             </View>
@@ -1012,9 +1209,10 @@ export default function UserScreen() {
           >
             <AppEmptyState
               title={API_STATE_MESSAGES.users.error.title}
-              description={errorMessage}
+              description={API_STATE_MESSAGES.users.error.description}
               icon="alert-circle-outline"
               tone="error"
+              onRetry={() => void fetchUsers(false)}
             />
           </Surface>
         ) : null}
@@ -1257,6 +1455,7 @@ export default function UserScreen() {
                 title={usersEmptyCopy.title}
                 description={usersEmptyCopy.description}
                 icon="account-search-outline"
+                tipo={search.trim().length > 0 || statusFilter !== 'all' || roleFilter !== ALL_ROLE_FILTER ? 'semResultado' : 'vazio'}
               />
             </Surface>
           ) : null}
@@ -1264,9 +1463,21 @@ export default function UserScreen() {
       </ScrollView>
 
       <Portal>
+        {editingUserId !== null || statusConfirmTarget !== null ? (
+          <View pointerEvents="none" style={styles.modalBackdropLayer} />
+        ) : null}
+
         <Modal
           visible={editingUserId !== null}
           onDismiss={closeEdit}
+          theme={{
+            ...theme,
+            colors: {
+              ...theme.colors,
+              backdrop: 'transparent',
+            },
+          }}
+          style={styles.modalOverlay}
           contentContainerStyle={styles.modalFrame}
         >
           <View
@@ -1288,6 +1499,8 @@ export default function UserScreen() {
               <AppTextInput
                 label="Nome"
                 value={editForm.name}
+                autoComplete="off"
+                textContentType="none"
                 onChangeText={(value) => setEditForm((prev) => ({ ...prev, name: value }))}
                 style={styles.input}
               />
@@ -1347,17 +1560,21 @@ export default function UserScreen() {
               ) : null}
 
               <Text style={[styles.helperText, { color: textSecondary }]}>Perfil</Text>
-              <View style={styles.filterRow}>
-                {ROLE_OPTIONS.map((role) => (
-                  <Chip
-                    key={role}
-                    selected={editForm.role === role}
-                    onPress={() => setEditForm((prev) => ({ ...prev, role }))}
-                  >
-                    {role}
-                  </Chip>
-                ))}
-              </View>
+              {canEditUserProfiles ? (
+                <View style={styles.filterRow}>
+                  {editableProfileOptions.map((role) => (
+                    <Chip
+                      key={role.value}
+                      selected={editForm.role === role.value}
+                      onPress={() => setEditForm((prev) => ({ ...prev, role: role.value }))}
+                    >
+                      {role.label}
+                    </Chip>
+                  ))}
+                </View>
+              ) : (
+                <Text style={[styles.userInfo, { color: textColor }]}>{selectedEditRoleLabel}</Text>
+              )}
 
               <View style={styles.modalActions}>
                 <Button mode="text" onPress={closeEdit} disabled={submitting || savingPassword}>
@@ -1376,86 +1593,95 @@ export default function UserScreen() {
               {typeof editingUserId === 'number' ? (
                 <View style={styles.passwordSection}>
                   <Divider style={styles.passwordDivider} />
-                  <Text style={[styles.modalTitle, styles.passwordTitle, { color: textColor }]}>
-                    Alterar senha
-                  </Text>
+                  <Button
+                    mode="text"
+                    icon={isChangePasswordExpanded ? 'chevron-up' : 'lock-outline'}
+                    onPress={toggleChangePasswordSection}
+                    disabled={submitting || savingPassword}
+                  >
+                    {isChangePasswordExpanded ? 'Ocultar alteração de senha' : 'Alterar senha'}
+                  </Button>
 
-                  <AppTextInput
-                    label="Senha atual"
-                    value={changePasswordForm.senhaAtual}
-                    onChangeText={(value) =>
-                      setChangePasswordForm((prev) => ({
-                        ...prev,
-                        senhaAtual: value,
-                      }))
-                    }
-                    secureTextEntry={!showSenhaAtual}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={styles.input}
-                    right={
-                      <TextInput.Icon
-                        icon={showSenhaAtual ? 'eye-off-outline' : 'eye-outline'}
-                        onPress={() => setShowSenhaAtual((state) => !state)}
-                        forceTextInputFocus={false}
+                  {isChangePasswordExpanded ? (
+                    <>
+                      <AppTextInput
+                        label="Senha atual"
+                        value={changePasswordForm.senhaAtual}
+                        onChangeText={(value) =>
+                          setChangePasswordForm((prev) => ({
+                            ...prev,
+                            senhaAtual: value,
+                          }))
+                        }
+                        secureTextEntry={!showSenhaAtual}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={styles.input}
+                        right={
+                          <TextInput.Icon
+                            icon={showSenhaAtual ? 'eye-off-outline' : 'eye-outline'}
+                            onPress={() => setShowSenhaAtual((state) => !state)}
+                            forceTextInputFocus={false}
+                          />
+                        }
                       />
-                    }
-                  />
 
-                  <AppTextInput
-                    label="Nova senha"
-                    value={changePasswordForm.novaSenha}
-                    onChangeText={(value) =>
-                      setChangePasswordForm((prev) => ({
-                        ...prev,
-                        novaSenha: value,
-                      }))
-                    }
-                    secureTextEntry={!showNovaSenha}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={styles.input}
-                    right={
-                      <TextInput.Icon
-                        icon={showNovaSenha ? 'eye-off-outline' : 'eye-outline'}
-                        onPress={() => setShowNovaSenha((state) => !state)}
-                        forceTextInputFocus={false}
+                      <AppTextInput
+                        label="Nova senha"
+                        value={changePasswordForm.novaSenha}
+                        onChangeText={(value) =>
+                          setChangePasswordForm((prev) => ({
+                            ...prev,
+                            novaSenha: value,
+                          }))
+                        }
+                        secureTextEntry={!showNovaSenha}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={styles.input}
+                        right={
+                          <TextInput.Icon
+                            icon={showNovaSenha ? 'eye-off-outline' : 'eye-outline'}
+                            onPress={() => setShowNovaSenha((state) => !state)}
+                            forceTextInputFocus={false}
+                          />
+                        }
                       />
-                    }
-                  />
 
-                  <AppTextInput
-                    label="Confirmar nova senha"
-                    value={changePasswordForm.confirmarNovaSenha}
-                    onChangeText={(value) =>
-                      setChangePasswordForm((prev) => ({
-                        ...prev,
-                        confirmarNovaSenha: value,
-                      }))
-                    }
-                    secureTextEntry={!showConfirmarNovaSenha}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={styles.input}
-                    right={
-                      <TextInput.Icon
-                        icon={showConfirmarNovaSenha ? 'eye-off-outline' : 'eye-outline'}
-                        onPress={() => setShowConfirmarNovaSenha((state) => !state)}
-                        forceTextInputFocus={false}
+                      <AppTextInput
+                        label="Confirmar nova senha"
+                        value={changePasswordForm.confirmarNovaSenha}
+                        onChangeText={(value) =>
+                          setChangePasswordForm((prev) => ({
+                            ...prev,
+                            confirmarNovaSenha: value,
+                          }))
+                        }
+                        secureTextEntry={!showConfirmarNovaSenha}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={styles.input}
+                        right={
+                          <TextInput.Icon
+                            icon={showConfirmarNovaSenha ? 'eye-off-outline' : 'eye-outline'}
+                            onPress={() => setShowConfirmarNovaSenha((state) => !state)}
+                            forceTextInputFocus={false}
+                          />
+                        }
                       />
-                    }
-                  />
 
-                  <View style={styles.passwordActions}>
-                    <Button
-                      mode="contained-tonal"
-                      onPress={() => void savePassword()}
-                      loading={savingPassword}
-                      disabled={submitting || savingPassword}
-                    >
-                      Salvar senha
-                    </Button>
-                  </View>
+                      <View style={styles.passwordActions}>
+                        <Button
+                          mode="contained-tonal"
+                          onPress={() => void savePassword()}
+                          loading={savingPassword}
+                          disabled={submitting || savingPassword}
+                        >
+                          Salvar senha
+                        </Button>
+                      </View>
+                    </>
+                  ) : null}
                 </View>
               ) : null}
             </ScrollView>
@@ -1465,6 +1691,14 @@ export default function UserScreen() {
         <Modal
           visible={statusConfirmTarget !== null}
           onDismiss={closeStatusConfirm}
+          theme={{
+            ...theme,
+            colors: {
+              ...theme.colors,
+              backdrop: 'transparent',
+            },
+          }}
+          style={styles.modalOverlay}
           contentContainerStyle={styles.confirmModalFrame}
         >
           <View
@@ -1650,8 +1884,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterDropdownOptionText: { fontSize: 14, fontWeight: '700' },
-  listBlock: { gap: 10 },
-  userCard: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 10 },
+  listBlock: {
+    gap: 10,
+    overflow: 'visible',
+  },
+  userCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    gap: 10,
+    overflow: 'visible',
+  },
   userTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1683,6 +1926,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
+    overflow: 'visible',
   },
   userMiddleCompact: { flexDirection: 'column', alignItems: 'stretch' },
   permissionPanel: {
@@ -1697,7 +1941,13 @@ const styles = StyleSheet.create({
   permissionValue: { fontSize: 13, fontWeight: '800', marginTop: 2 },
   permissionTrack: { marginTop: 8, height: 8, borderRadius: 999, overflow: 'hidden' },
   permissionFill: { height: '100%', borderRadius: 999 },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    flexWrap: 'wrap',
+    overflow: 'visible',
+  },
   actionsCompact: { justifyContent: 'flex-start', width: '100%' },
   rowActionBtn: { minWidth: 120 },
   interactiveWeb:
@@ -1712,9 +1962,19 @@ const styles = StyleSheet.create({
       : ({} as any),
   empty: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 6, alignItems: 'center' },
   loadingBox: { minHeight: 136 },
+  modalBackdropLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    zIndex: 998,
+  },
+  modalOverlay: {
+    margin: 0,
+    justifyContent: 'center',
+  },
   modalFrame: {
     paddingHorizontal: 14,
     paddingVertical: 16,
+    zIndex: 999,
   },
   modal: {
     alignSelf: 'center',
@@ -1730,6 +1990,7 @@ const styles = StyleSheet.create({
   confirmModalFrame: {
     paddingHorizontal: 14,
     paddingVertical: 16,
+    zIndex: 999,
   },
   modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 8 },
   confirmModal: {

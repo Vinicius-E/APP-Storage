@@ -10,6 +10,8 @@ const warehouseThemes = {
       ...MD3LightTheme.colors,
 
       background: '#EFE7DF',
+      appShellBackground: '#F7F1E8',
+      pageBackground: '#F2E7DA',
       surface: '#FFF7EE',
       surfaceVariant: '#EFE1D3',
 
@@ -45,6 +47,8 @@ const warehouseThemes = {
       ...MD3LightTheme.colors,
 
       background: '#F0E3D2',
+      appShellBackground: '#F7F1E8',
+      pageBackground: '#F2E7DA',
       surface: '#FFF4E6',
       surfaceVariant: '#F3E5D2',
 
@@ -80,6 +84,8 @@ const warehouseThemes = {
       ...MD3LightTheme.colors,
 
       background: '#07120B',
+      appShellBackground: '#07120B',
+      pageBackground: '#07120B',
       surface: '#0B1A10',
       surfaceVariant: '#162018',
 
