@@ -3109,6 +3109,8 @@ const styles = StyleSheet.create({
   },
 
   addGradeButton: {
+    width: '100%',
+    minWidth: 140,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -3118,6 +3120,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: 'dashed',
     borderRadius: 10,
+    alignSelf: 'stretch',
   },
 
   nivelRemoveButtonDisabled: {
@@ -3125,7 +3128,8 @@ const styles = StyleSheet.create({
   },
 
   addFileiraButton: {
-    width: 136,
+    width: 164,
+    minWidth: 164,
     height: 230,
     borderRadius: 12,
     borderWidth: 2,

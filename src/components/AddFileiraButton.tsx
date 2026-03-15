@@ -50,7 +50,8 @@ export function AddFileiraButton({ onPress, primaryColor, creating }: Props) {
 
 const styles = StyleSheet.create({
   addFileiraButton: {
-    width: 120,
+    width: 164,
+    minWidth: 164,
     height: 230,
 
     borderWidth: 2,

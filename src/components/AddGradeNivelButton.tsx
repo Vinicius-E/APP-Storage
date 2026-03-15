@@ -50,7 +50,8 @@ export function AddGradeNivelButton({ onPress, borderColor, primaryColor, mode =
 
 const styles = StyleSheet.create({
   addGradeButton: {
-    maxWidth: 110,
+    width: '100%',
+    minWidth: 140,
     height: 150,
     minHeight: 150,
 
@@ -61,6 +62,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 10,
 
+    alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,

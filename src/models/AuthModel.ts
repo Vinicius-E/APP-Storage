@@ -6,12 +6,11 @@ export interface UsuarioResponse {
   perfil: string;
 }
 
-
 export interface LoginRequest {
   login: string;
   nome: string;
 }
-  
+
 export interface LoginResponse {
   token: string;
   usuario: {
@@ -27,4 +26,3 @@ export interface RegisterPayload {
   nome: string;
   senha: string;
 }
-
