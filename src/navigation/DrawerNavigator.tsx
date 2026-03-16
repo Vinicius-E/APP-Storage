@@ -740,32 +740,36 @@ export default function DrawerNavigator() {
 
         <Drawer.Screen
           name="Perfil"
-          component={(props: any) => (
+          options={{ title: 'Perfil', drawerItemStyle: { display: 'none' } }}
+        >
+          {(props: any) => (
             <RequireAuth>
               <ScreenFrame title="Perfil" navigation={props.navigation}>
                 <ProfileScreen />
               </ScreenFrame>
             </RequireAuth>
           )}
-          options={{ title: 'Perfil', drawerItemStyle: { display: 'none' } }}
-        />
+        </Drawer.Screen>
 
         {isAuthenticated ? (
           <Drawer.Screen
             name="Dashboard"
-            component={(props: any) => (
+            options={{ title: 'Dashboard' }}
+          >
+            {(props: any) => (
               <RequireScreenAccess screenKey="DASHBOARD">
                 <ScreenFrame title="Dashboard" navigation={props.navigation} fullWidth>
                   <DashboardScreen {...props} />
                 </ScreenFrame>
               </RequireScreenAccess>
             )}
-            options={{ title: 'Dashboard' }}
-          />
+          </Drawer.Screen>
         ) : (
           <Drawer.Screen
             name="Dashboard"
-            component={(props: any) => (
+            options={{ title: 'Dashboard', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="DASHBOARD">
                   <ScreenFrame title="Dashboard" navigation={props.navigation} fullWidth>
@@ -774,14 +778,15 @@ export default function DrawerNavigator() {
                 </RequireScreenAccess>
               </RequireAuth>
             )}
-            options={{ title: 'Dashboard', drawerItemStyle: { display: 'none' } }}
-          />
+          </Drawer.Screen>
         )}
 
         {isAuthenticated ? (
           <Drawer.Screen
             name="Armazém"
-            component={(props: any) => (
+            options={{ title: 'Armazém' }}
+          >
+            {(props: any) => (
               <RequireScreenAccess screenKey="WAREHOUSE">
                 <ScreenFrame
                   title="Armazém"
@@ -796,12 +801,13 @@ export default function DrawerNavigator() {
                 </ScreenFrame>
               </RequireScreenAccess>
             )}
-            options={{ title: 'Armazém' }}
-          />
+          </Drawer.Screen>
         ) : (
           <Drawer.Screen
             name="Armazém"
-            component={(props: any) => (
+            options={{ title: 'Armazém', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="WAREHOUSE">
                   <ScreenFrame
@@ -818,26 +824,28 @@ export default function DrawerNavigator() {
                 </RequireScreenAccess>
               </RequireAuth>
             )}
-            options={{ title: 'Armazém', drawerItemStyle: { display: 'none' } }}
-          />
+          </Drawer.Screen>
         )}
 
         {isAuthenticated ? (
           <Drawer.Screen
             name="Áreas"
-            component={(props: any) => (
+            options={{ title: 'Setores' }}
+          >
+            {(props: any) => (
               <RequireScreenAccess screenKey="WAREHOUSE">
                 <ScreenFrame title="Setores" navigation={props.navigation} fullWidth={IS_WEB}>
                   <AreaManagement {...props} />
                 </ScreenFrame>
               </RequireScreenAccess>
             )}
-            options={{ title: 'Setores' }}
-          />
+          </Drawer.Screen>
         ) : (
           <Drawer.Screen
             name="Áreas"
-            component={(props: any) => (
+            options={{ title: 'Setores', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="WAREHOUSE">
                   <ScreenFrame title="Setores" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -846,26 +854,28 @@ export default function DrawerNavigator() {
                 </RequireScreenAccess>
               </RequireAuth>
             )}
-            options={{ title: 'Setores', drawerItemStyle: { display: 'none' } }}
-          />
+          </Drawer.Screen>
         )}
 
         {isAuthenticated ? (
           <Drawer.Screen
             name="Produtos"
-            component={(props: any) => (
+            options={{ title: 'Produtos' }}
+          >
+            {(props: any) => (
               <RequireScreenAccess screenKey="PRODUCTS">
                 <ScreenFrame title="Produtos" navigation={props.navigation} fullWidth={IS_WEB}>
                   <ProductManagement {...props} />
                 </ScreenFrame>
               </RequireScreenAccess>
             )}
-            options={{ title: 'Produtos' }}
-          />
+          </Drawer.Screen>
         ) : (
           <Drawer.Screen
             name="Produtos"
-            component={(props: any) => (
+            options={{ title: 'Produtos', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="PRODUCTS">
                   <ScreenFrame title="Produtos" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -874,26 +884,28 @@ export default function DrawerNavigator() {
                 </RequireScreenAccess>
               </RequireAuth>
             )}
-            options={{ title: 'Produtos', drawerItemStyle: { display: 'none' } }}
-          />
+          </Drawer.Screen>
         )}
 
         {isAuthenticated ? (
           <Drawer.Screen
             name="Perfis"
-            component={(props: any) => (
+            options={{ title: 'Perfis' }}
+          >
+            {(props: any) => (
               <RequireScreenAccess screenKey="PROFILES">
                 <ScreenFrame title="Perfis" navigation={props.navigation}>
                   <ProfileManagement {...props} />
                 </ScreenFrame>
               </RequireScreenAccess>
             )}
-            options={{ title: 'Perfis' }}
-          />
+          </Drawer.Screen>
         ) : (
           <Drawer.Screen
             name="Perfis"
-            component={(props: any) => (
+            options={{ title: 'Perfis', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="PROFILES">
                   <ScreenFrame title="Perfis" navigation={props.navigation}>
@@ -902,26 +914,28 @@ export default function DrawerNavigator() {
                 </RequireScreenAccess>
               </RequireAuth>
             )}
-            options={{ title: 'Perfis', drawerItemStyle: { display: 'none' } }}
-          />
+          </Drawer.Screen>
         )}
 
         {isAuthenticated ? (
           <Drawer.Screen
             name="Histórico"
-            component={(props: any) => (
+            options={{ title: 'Histórico' }}
+          >
+            {(props: any) => (
               <RequireScreenAccess screenKey="HISTORY">
                 <ScreenFrame title="Histórico" navigation={props.navigation}>
                   <HistoryScreen {...props} />
                 </ScreenFrame>
               </RequireScreenAccess>
             )}
-            options={{ title: 'Histórico' }}
-          />
+          </Drawer.Screen>
         ) : (
           <Drawer.Screen
             name="Histórico"
-            component={(props: any) => (
+            options={{ title: 'Histórico', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="HISTORY">
                   <ScreenFrame title="Histórico" navigation={props.navigation}>
@@ -930,26 +944,28 @@ export default function DrawerNavigator() {
                 </RequireScreenAccess>
               </RequireAuth>
             )}
-            options={{ title: 'Histórico', drawerItemStyle: { display: 'none' } }}
-          />
+          </Drawer.Screen>
         )}
 
         {isAuthenticated ? (
           <Drawer.Screen
             name="Usuários"
-            component={(props: any) => (
+            options={{ title: 'Usuários' }}
+          >
+            {(props: any) => (
               <RequireScreenAccess screenKey="USERS">
                 <ScreenFrame title="Usuários" navigation={props.navigation}>
                   <UserScreen {...props} />
                 </ScreenFrame>
               </RequireScreenAccess>
             )}
-            options={{ title: 'Usuários' }}
-          />
+          </Drawer.Screen>
         ) : (
           <Drawer.Screen
             name="Usuários"
-            component={(props: any) => (
+            options={{ title: 'Usuários', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="USERS">
                   <ScreenFrame title="Usuários" navigation={props.navigation}>
@@ -958,8 +974,7 @@ export default function DrawerNavigator() {
                 </RequireScreenAccess>
               </RequireAuth>
             )}
-            options={{ title: 'Usuários', drawerItemStyle: { display: 'none' } }}
-          />
+          </Drawer.Screen>
         )}
       </Drawer.Navigator>
     </WarehouseSearchProvider>
