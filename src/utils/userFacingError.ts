@@ -1,3 +1,5 @@
+import { getApiErrorMessage, getApiErrorStatus, isConflictError } from '../services/http/apiError';
+
 const TECHNICAL_ERROR_PATTERNS = [
   /network error/i,
   /request failed/i,
@@ -34,21 +36,21 @@ function sanitizeMessageCandidate(value: unknown): string | null {
 }
 
 export function getUserFacingErrorMessage(error: unknown, fallback: string): string {
-  if (!error || typeof error !== 'object') {
-    return fallback;
+  if (isConflictError(error)) {
+    const conflictMessage = sanitizeMessageCandidate(getApiErrorMessage(error));
+    return (
+      conflictMessage ??
+      'Os dados foram alterados por outro usuario. Atualize a tela e tente novamente.'
+    );
   }
 
-  const responseData = (error as { response?: { data?: unknown } }).response?.data;
-  const responseMessage =
-    responseData && typeof responseData === 'object'
-      ? (responseData as { message?: unknown }).message
-      : undefined;
-  const directMessage = (error as { message?: unknown }).message;
+  const status = getApiErrorStatus(error);
+  const message = getApiErrorMessage(error);
+  const candidate = sanitizeMessageCandidate(message);
 
-  const candidate =
-    sanitizeMessageCandidate(responseData) ??
-    sanitizeMessageCandidate(responseMessage) ??
-    sanitizeMessageCandidate(directMessage);
+  if (status === 401 || status === 403) {
+    return candidate ?? 'Voce nao tem permissao para concluir esta operacao.';
+  }
 
   return candidate ?? fallback;
 }
