@@ -1,4 +1,4 @@
-import axios, { AxiosHeaders, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosHeaders, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
 type RequestMetadata = {
   requestId: string;
@@ -7,6 +7,11 @@ type RequestMetadata = {
 
 type ApiRequestConfig = InternalAxiosRequestConfig & {
   metadata?: RequestMetadata;
+  skipAuth?: boolean;
+};
+
+export type ApiRequestOptions = AxiosRequestConfig & {
+  skipAuth?: boolean;
 };
 
 const DEFAULT_API_BASE_URL = 'https://api-storage-wivi.onrender.com';
@@ -88,7 +93,7 @@ API.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     startedAt: Date.now(),
   };
 
-  if (!authToken) {
+  if (requestConfig.skipAuth || !authToken) {
     return requestConfig;
   }
 

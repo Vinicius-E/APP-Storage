@@ -20,6 +20,7 @@ import AuthInputField from '../../components/AuthInputField';
 import AuthPrimaryButton from '../../components/AuthPrimaryButton';
 import AuthSecondaryLink from '../../components/AuthSecondaryLink';
 import { useThemeContext } from '../../theme/ThemeContext';
+import { getUserFacingErrorMessage } from '../../utils/userFacingError';
 
 type DialogType = 'success' | 'error' | 'warning';
 
@@ -80,11 +81,18 @@ export default function LoginScreen() {
 
   const resolveLoginError = (error: unknown): string => {
     if (error instanceof AxiosError) {
-      if (error.response?.status === 400 || error.response?.status === 401) {
-        return 'Email ou senha invalidos.';
+      if (error.response?.status === 401) {
+        return getUserFacingErrorMessage(error, 'Email ou senha invalidos.');
       }
 
-      return 'Nao foi possivel conectar ao servidor. Tente novamente.';
+      if (error.response?.status === 403) {
+        return getUserFacingErrorMessage(error, 'Seu usuario nao pode acessar o sistema.');
+      }
+
+      return getUserFacingErrorMessage(
+        error,
+        'Nao foi possivel conectar ao servidor. Tente novamente.'
+      );
     }
 
     return 'Falha ao autenticar. Confira suas credenciais.';

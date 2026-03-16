@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { setApiAuthToken } from '../axios';
-import { loginUsuario } from '../services/usuarioApi';
+import { authenticateUser, getAuthenticatedUser } from '../services/authApi';
 
 const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_USER_KEY = 'authUser';
@@ -56,11 +56,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
 
-  const signOut = useCallback(async () => {
+  const clearStoredSession = useCallback(async () => {
     setApiAuthToken(null);
     setUser(null);
     await AsyncStorage.multiRemove([AUTH_TOKEN_KEY, AUTH_USER_KEY]);
   }, []);
+
+  const signOut = useCallback(async () => {
+    await clearStoredSession();
+  }, [clearStoredSession]);
 
   const restore = useCallback(async () => {
     setIsRestoring(true);
@@ -76,32 +80,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setApiAuthToken(token);
 
-      const parsedUser = safeParseAuthUser(rawUser);
-      if (parsedUser) {
+      try {
+        const authenticatedUser = await getAuthenticatedUser();
+
         setUser({
-          ...parsedUser,
+          id: typeof authenticatedUser.id === 'number' ? authenticatedUser.id : 0,
+          login: authenticatedUser.login,
+          nome: authenticatedUser.nome,
+          perfil: authenticatedUser.perfil,
           token,
         });
-      } else {
-        setUser({
-          id: 0,
-          login: '',
-          nome: '',
-          perfil: '',
-          token,
-        });
+
+        await AsyncStorage.setItem(
+          AUTH_USER_KEY,
+          JSON.stringify({
+            id: authenticatedUser.id ?? 0,
+            login: authenticatedUser.login,
+            nome: authenticatedUser.nome,
+            perfil: authenticatedUser.perfil,
+          })
+        );
+      } catch (error: any) {
+        const status = error?.response?.status;
+
+        if (status === 401 || status === 403) {
+          await clearStoredSession();
+          return;
+        }
+
+        const parsedUser = safeParseAuthUser(rawUser);
+        if (parsedUser) {
+          setUser({
+            ...parsedUser,
+            token,
+          });
+        } else {
+          setUser({
+            id: 0,
+            login: '',
+            nome: '',
+            perfil: '',
+            token,
+          });
+        }
       }
     } catch (error) {
       console.error('Falha ao restaurar sessao:', error);
-      setApiAuthToken(null);
-      setUser(null);
+      await clearStoredSession();
     } finally {
       setIsRestoring(false);
     }
-  }, []);
+  }, [clearStoredSession]);
 
   const signIn = useCallback(async (login: string, senha: string) => {
-    const response = await loginUsuario({
+    const response = await authenticateUser({
       login: login.trim(),
       senha,
     });

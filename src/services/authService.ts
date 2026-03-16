@@ -1,16 +1,13 @@
 import { RegisterPayload } from '../models/AuthModel';
-import {
-  loginUsuario as loginUsuarioRequest,
-  criarUsuario,
-  UsuarioResponseDTO,
-} from './usuarioApi';
+import { authenticateUser } from './authApi';
+import { criarUsuario, UsuarioResponseDTO } from './usuarioApi';
 
-export async function loginUsuario(
+export async function authenticate(
   login: string,
   senha: string
 ): Promise<UsuarioResponseDTO | null> {
   try {
-    return await loginUsuarioRequest({ login, senha });
+    return await authenticateUser({ login, senha });
   } catch (error) {
     console.error('Erro ao autenticar:', error);
     return null;

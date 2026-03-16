@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
 import { listAreas } from '../services/areaApi';
 import { AreaDTO } from '../types/Area';
 
@@ -39,6 +40,7 @@ function resolveDefaultArea(areas: AreaDTO[], preferredAreaId?: number | null): 
 }
 
 export function AreaProvider({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isRestoring } = useAuth();
   const [areas, setAreas] = useState<AreaDTO[]>([]);
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
   const [selectedAreaName, setSelectedAreaName] = useState('');
@@ -64,6 +66,11 @@ export function AreaProvider({ children }: { children: React.ReactNode }) {
     [persistSelection]
   );
 
+  const clearAreaState = useCallback(async () => {
+    setAreas([]);
+    await persistSelection(null);
+  }, [persistSelection]);
+
   const selectAreaById = useCallback(
     async (areaId: number) => {
       const area = areas.find((item) => item.id === areaId) ?? null;
@@ -75,6 +82,12 @@ export function AreaProvider({ children }: { children: React.ReactNode }) {
 
   const refreshAreas = useCallback(
     async (preferredAreaId?: number | null) => {
+      if (!isAuthenticated) {
+        await clearAreaState();
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
 
       try {
@@ -84,17 +97,32 @@ export function AreaProvider({ children }: { children: React.ReactNode }) {
 
         const nextSelected = resolveDefaultArea(nextAreas, preferredAreaId ?? selectedAreaId);
         await persistSelection(nextSelected);
+      } catch (error) {
+        await clearAreaState();
+        throw error;
       } finally {
         setIsLoading(false);
       }
     },
-    [persistSelection, selectedAreaId]
+    [clearAreaState, isAuthenticated, persistSelection, selectedAreaId]
   );
 
   useEffect(() => {
     let cancelled = false;
 
     const bootstrap = async () => {
+      if (isRestoring) {
+        return;
+      }
+
+      if (!isAuthenticated) {
+        await clearAreaState();
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+        return;
+      }
+
       setIsLoading(true);
 
       try {
@@ -112,6 +140,10 @@ export function AreaProvider({ children }: { children: React.ReactNode }) {
 
         const nextSelected = resolveDefaultArea(nextAreas, preferredAreaId);
         await persistSelection(nextSelected);
+      } catch (error) {
+        if (!cancelled) {
+          await clearAreaState();
+        }
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -124,7 +156,7 @@ export function AreaProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [persistSelection]);
+  }, [clearAreaState, isAuthenticated, isRestoring, persistSelection]);
 
   const value = useMemo<AreaContextValue>(
     () => ({
