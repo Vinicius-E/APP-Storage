@@ -999,7 +999,9 @@ export default function ProductManagement() {
                     compact
                   />
 
-                  <Text style={[listScreenStyles.paginationPageLabel, { color: theme.colors.text }]}>
+                  <Text
+                    style={[listScreenStyles.paginationPageLabel, { color: theme.colors.text }]}
+                  >
                     Página {Math.min(page + 1, Math.max(totalPages, 1))} de{' '}
                     {Math.max(totalPages, 1)}
                   </Text>
@@ -1034,11 +1036,11 @@ export default function ProductManagement() {
         title={statusConfirmation?.nextActive ? 'Ativar produto' : 'Inativar produto'}
         description={
           statusConfirmation
-            ? `Confirma ${statusConfirmation.nextActive ? 'a ativaÃ§Ã£o' : 'a inativaÃ§Ã£o'} de "${statusConfirmation.product.nome}"?`
+            ? `Confirma ${statusConfirmation.nextActive ? 'a ativação' : 'a inativação'} de "${statusConfirmation.product.nome}"?`
             : ''
         }
         confirmLabel={
-          statusConfirmation?.nextActive ? 'Confirmar ativaÃ§Ã£o' : 'Confirmar inativaÃ§Ã£o'
+          statusConfirmation?.nextActive ? 'Confirmar ativação' : 'Confirmar inativação'
         }
         confirmIcon={
           statusConfirmation?.nextActive ? 'check-circle-outline' : 'close-circle-outline'

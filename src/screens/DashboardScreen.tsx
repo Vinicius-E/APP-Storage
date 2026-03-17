@@ -746,7 +746,13 @@ export default function DashboardScreen() {
             maxWidth={isWide ? 320 : '100%'}
           />
 
-          <View style={[styles.sortRow, !isWide && styles.sortRowMobile]}>
+          <View
+            style={[
+              styles.sortRow,
+              !isWide && styles.sortRowMobile,
+              isWide && Platform.OS === 'web' && styles.sortRowDesktopWeb,
+            ]}
+          >
             <Text
               style={[
                 styles.sortLabel,
@@ -1338,6 +1344,7 @@ const styles = StyleSheet.create({
   filterInput: { flexGrow: 1, minWidth: 220, borderRadius: 10, overflow: 'hidden' },
   filterInputMobile: { minWidth: 0, width: '100%' },
   sortRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  sortRowDesktopWeb: { marginTop: 20 },
   sortRowMobile: { flexBasis: '100%', maxWidth: '100%' },
   sortLabel: { fontSize: 16, fontWeight: '700' },
   sortLabelMobile: { width: '100%' },

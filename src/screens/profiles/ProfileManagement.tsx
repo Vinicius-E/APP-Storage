@@ -12,6 +12,7 @@ import {
 import { Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
 import AlertDialog from '../../components/AlertDialog';
 import AppEmptyState from '../../components/AppEmptyState';
+import SharedConfirmStatusDialog from '../../components/ConfirmStatusDialog';
 import FilterSelect from '../../components/FilterSelect';
 import AppLoadingState from '../../components/AppLoadingState';
 import AppTextInput from '../../components/AppTextInput';
@@ -887,9 +888,21 @@ export default function ProfileManagement() {
         onSubmit={handleSubmitForm}
       />
 
-      <ConfirmStatusDialog
+      <SharedConfirmStatusDialog
         visible={Boolean(statusConfirmation)}
-        target={statusConfirmation}
+        title={statusConfirmation?.nextActive ? 'Ativar perfil' : 'Inativar perfil'}
+        description={
+          statusConfirmation
+            ? `Confirma ${statusConfirmation.nextActive ? 'a ativação' : 'a inativação'} de "${statusConfirmation.profile.description}"?`
+            : ''
+        }
+        confirmLabel={
+          statusConfirmation?.nextActive ? 'Confirmar ativação' : 'Confirmar inativação'
+        }
+        confirmIcon={
+          statusConfirmation?.nextActive ? 'check-circle-outline' : 'close-circle-outline'
+        }
+        confirmTone={statusConfirmation?.nextActive ? 'success' : 'danger'}
         processing={processingStatusId !== null}
         onCancel={() =>
           setStatusConfirmation((current) => (processingStatusId !== null ? current : null))

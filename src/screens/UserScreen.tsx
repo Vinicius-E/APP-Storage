@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,11 +13,11 @@ import {
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Button, Chip, Divider, Surface, Text, TextInput } from 'react-native-paper';
+import AppModalFrame from '../components/AppModalFrame';
 import AlertDialog from '../components/AlertDialog';
 import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
-import BodyPortal from '../components/BodyPortal';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
 import { getUserFacingErrorMessage } from '../utils/userFacingError';
 import {
@@ -127,7 +127,7 @@ const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: strin
   },
   {
     key: 'warehouse:read',
-    title: 'Consultar armazém',
+    title: 'Consultar armazÃ©m',
     description: 'Visualiza mapa, fileiras e grades.',
   },
   {
@@ -137,8 +137,8 @@ const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: strin
   },
   {
     key: 'users:update',
-    title: 'Editar usuários',
-    description: 'Pode alterar dados de usuários.',
+    title: 'Editar usuÃ¡rios',
+    description: 'Pode alterar dados de usuÃ¡rios.',
   },
 ];
 
@@ -312,9 +312,9 @@ function toManagedUser(
     login: user.login,
     role,
     profileValue,
-    team: '—',
+    team: 'â€”',
     status: user.ativo ? 'active' : 'inactive',
-    lastAccess: '—',
+    lastAccess: 'â€”',
     permissions: permissionsByRole(role),
   };
 }
@@ -377,7 +377,7 @@ function withAlpha(color: string, alpha: number): string {
 export default function UserScreen() {
   const { theme } = useThemeContext();
   const { hasPermission } = usePermissions();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const isCompact = width < 780;
   const colors = theme.colors as typeof theme.colors & { text?: string; textSecondary?: string };
   const textColor = colors.text ?? theme.colors.onSurface;
@@ -417,14 +417,6 @@ export default function UserScreen() {
   const isEditModalVisible = editingUserId !== null;
   const isStatusConfirmModalVisible = statusConfirmTarget !== null;
   const isAnyModalVisible = isEditModalVisible || isStatusConfirmModalVisible;
-  const editModalMaxHeight = useMemo(
-    () => (Platform.OS === 'web' ? ('85vh' as const) : Math.max(360, Math.floor(height * 0.85))),
-    [height]
-  );
-  const confirmModalMaxHeight = useMemo(
-    () => (Platform.OS === 'web' ? ('80vh' as const) : Math.max(240, Math.floor(height * 0.8))),
-    [height]
-  );
 
   const getInteractivePalette = useCallback(
     (variant: InteractiveVariant): InteractivePalette => {
@@ -640,7 +632,7 @@ export default function UserScreen() {
 
       setProfileOptions(Array.from(uniqueOptions.values()));
     } catch (error) {
-      console.error('Falha ao carregar perfis para filtros de usuário:', error);
+      console.error('Falha ao carregar perfis para filtros de usuÃ¡rio:', error);
       setProfileOptions([]);
     }
   }, []);
@@ -659,7 +651,7 @@ export default function UserScreen() {
         const data = await listarUsuarios();
         setUsers(data.map((user) => toManagedUser(user, profileOptions)));
       } catch (error) {
-        console.error('Falha ao listar usuários:', error);
+        console.error('Falha ao listar usuÃ¡rios:', error);
         const backendMessage = resolveRequestErrorMessage(error, '');
         setErrorMessage(backendMessage || API_STATE_MESSAGES.users.error.description);
       } finally {
@@ -786,22 +778,22 @@ export default function UserScreen() {
     const creating = editingUserId === 'new';
 
     if (name.length < 2) {
-      Alert.alert('Validação', 'Informe um nome válido.');
+      Alert.alert('ValidaÃ§Ã£o', 'Informe um nome vÃ¡lido.');
       return;
     }
 
     if (!isLoginValid(login)) {
-      Alert.alert('Validação', 'Informe um login válido.');
+      Alert.alert('ValidaÃ§Ã£o', 'Informe um login vÃ¡lido.');
       return;
     }
 
     if (creating) {
       if (password.length < 6) {
-        Alert.alert('Validação', 'A senha deve ter no mínimo 6 caracteres.');
+        Alert.alert('ValidaÃ§Ã£o', 'A senha deve ter no mÃ­nimo 6 caracteres.');
         return;
       }
       if (password !== confirmPassword) {
-        Alert.alert('Validação', 'A confirmação de senha não confere.');
+        Alert.alert('ValidaÃ§Ã£o', 'A confirmaÃ§Ã£o de senha nÃ£o confere.');
         return;
       }
     }
@@ -829,15 +821,17 @@ export default function UserScreen() {
       await fetchUsers(false);
       setStatusFeedback({
         type: 'success',
-        message: creating ? 'Usuário criado com sucesso.' : 'Usuário atualizado com sucesso.',
+        message: creating ? 'UsuÃ¡rio criado com sucesso.' : 'UsuÃ¡rio atualizado com sucesso.',
       });
     } catch (error) {
-      console.error('Falha ao salvar usuário:', error);
+      console.error('Falha ao salvar usuÃ¡rio:', error);
       setStatusFeedback({
         type: 'error',
         message: resolveRequestErrorMessage(
           error,
-          creating ? 'Não foi possível criar o usuário.' : 'Não foi possível atualizar o usuário.'
+          creating
+            ? 'NÃ£o foi possÃ­vel criar o usuÃ¡rio.'
+            : 'NÃ£o foi possÃ­vel atualizar o usuÃ¡rio.'
         ),
       });
     } finally {
@@ -855,12 +849,12 @@ export default function UserScreen() {
     const confirmarNovaSenha = changePasswordForm.confirmarNovaSenha.trim();
 
     if (novaSenha.length < 6) {
-      Alert.alert('Validação', 'A nova senha deve ter no mínimo 6 caracteres.');
+      Alert.alert('ValidaÃ§Ã£o', 'A nova senha deve ter no mÃ­nimo 6 caracteres.');
       return;
     }
 
     if (novaSenha !== confirmarNovaSenha) {
-      Alert.alert('Validação', 'A confirmação da nova senha não confere.');
+      Alert.alert('ValidaÃ§Ã£o', 'A confirmaÃ§Ã£o da nova senha nÃ£o confere.');
       return;
     }
 
@@ -875,7 +869,7 @@ export default function UserScreen() {
       Alert.alert('Sucesso', 'Senha alterada com sucesso.');
     } catch (error) {
       console.error('Falha ao alterar senha:', error);
-      Alert.alert('Erro', 'Não foi possível alterar a senha. Confira a senha atual.');
+      Alert.alert('Erro', 'NÃ£o foi possÃ­vel alterar a senha. Confira a senha atual.');
     } finally {
       setSavingPassword(false);
     }
@@ -914,72 +908,9 @@ export default function UserScreen() {
     setStatusConfirmTarget(null);
   };
 
-  const closeActiveModal = useCallback(() => {
-    if (isEditModalVisible) {
-      closeEdit();
-      return;
-    }
-
-    if (isStatusConfirmModalVisible) {
-      closeStatusConfirm();
-    }
-  }, [closeEdit, closeStatusConfirm, isEditModalVisible, isStatusConfirmModalVisible]);
-
   const closeStatusFeedback = () => {
     setStatusFeedback(null);
   };
-
-  useEffect(() => {
-    if (
-      Platform.OS !== 'web' ||
-      !isAnyModalVisible ||
-      typeof document === 'undefined' ||
-      typeof window === 'undefined'
-    ) {
-      return;
-    }
-
-    const body = document.body;
-    const html = document.documentElement;
-    const scrollY = window.scrollY;
-
-    const previousBodyStyles = {
-      overflow: body.style.overflow,
-      position: body.style.position,
-      top: body.style.top,
-      left: body.style.left,
-      right: body.style.right,
-      width: body.style.width,
-      overscrollBehavior: body.style.overscrollBehavior,
-    };
-    const previousHtmlStyles = {
-      overflow: html.style.overflow,
-      overscrollBehavior: html.style.overscrollBehavior,
-    };
-
-    body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.left = '0';
-    body.style.right = '0';
-    body.style.width = '100%';
-    body.style.overscrollBehavior = 'contain';
-    html.style.overflow = 'hidden';
-    html.style.overscrollBehavior = 'contain';
-
-    return () => {
-      body.style.overflow = previousBodyStyles.overflow;
-      body.style.position = previousBodyStyles.position;
-      body.style.top = previousBodyStyles.top;
-      body.style.left = previousBodyStyles.left;
-      body.style.right = previousBodyStyles.right;
-      body.style.width = previousBodyStyles.width;
-      body.style.overscrollBehavior = previousBodyStyles.overscrollBehavior;
-      html.style.overflow = previousHtmlStyles.overflow;
-      html.style.overscrollBehavior = previousHtmlStyles.overscrollBehavior;
-      window.scrollTo(0, scrollY);
-    };
-  }, [isAnyModalVisible]);
 
   const confirmInactivation = async () => {
     if (!statusConfirmTarget) {
@@ -1151,7 +1082,7 @@ export default function UserScreen() {
           elevation={0}
         >
           <AppTextInput
-            label="Buscar usuário"
+            label="Buscar usuÃ¡rio"
             value={search}
             onChangeText={(value) => {
               setSearch(value);
@@ -1271,7 +1202,7 @@ export default function UserScreen() {
                         color={iconColor}
                       />
                       <Text style={[styles.actionButtonText, { color: contentColor }]}>
-                        Novo usuário
+                        Novo usuÃ¡rio
                       </Text>
                     </>
                   );
@@ -1289,7 +1220,7 @@ export default function UserScreen() {
             ]}
             elevation={0}
           >
-            <AppLoadingState message="Carregando usuários..." style={styles.loadingBox} />
+            <AppLoadingState message="Carregando usuÃ¡rios..." style={styles.loadingBox} />
           </Surface>
         ) : null}
 
@@ -1395,7 +1326,7 @@ export default function UserScreen() {
                           ]}
                         >
                           <Text style={[styles.userFactText, { color: textSecondary }]}>
-                            Último acesso {user.lastAccess}
+                            Ãšltimo acesso {user.lastAccess}
                           </Text>
                         </View> */}
                         </View>
@@ -1417,7 +1348,7 @@ export default function UserScreen() {
                       </View>
                       <View pointerEvents="none">
                         <Chip compact>
-                          {enabled}/{PERMISSIONS.length} permissões
+                          {enabled}/{PERMISSIONS.length} permissÃµes
                         </Chip>
                       </View>
                     </View>
@@ -1434,7 +1365,7 @@ export default function UserScreen() {
                       ]}
                     >
                       <Text style={[styles.permissionLabel, { color: textSecondary }]}>
-                        Permissões habilitadas
+                        PermissÃµes habilitadas
                       </Text>
                       <Text style={[styles.permissionValue, { color: textColor }]}>
                         {enabled} de {PERMISSIONS.length} ({permissionPercent}%)
@@ -1577,310 +1508,230 @@ export default function UserScreen() {
         ) : null}
       </ScrollView>
 
-      <BodyPortal>
-        {isAnyModalVisible ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Fechar modal de usuários"
-            onPress={closeActiveModal}
-            style={styles.modalBackdropLayer}
-          />
+      <AppModalFrame
+        visible={isEditModalVisible}
+        title={editingUserId === 'new' ? 'Novo usuário' : 'Editar usuário'}
+        onDismiss={closeEdit}
+        dismissDisabled={submitting || savingPassword}
+        maxWidth={560}
+        maxHeightRatio={0.85}
+        actions={[
+          {
+            label: 'Cancelar',
+            onPress: closeEdit,
+            disabled: submitting || savingPassword,
+            tone: 'secondary',
+          },
+          {
+            label: 'Salvar usuário',
+            onPress: () => {
+              void saveUser();
+            },
+            disabled: !canSaveUser || submitting || savingPassword,
+            loading: submitting,
+            tone: 'primary',
+          },
+        ]}
+      >
+        <AppTextInput
+          label="Nome"
+          value={editForm.name}
+          autoComplete="off"
+          textContentType="none"
+          onChangeText={(value) => setEditForm((prev) => ({ ...prev, name: value }))}
+          style={styles.input}
+        />
+
+        <AppTextInput
+          label="Login"
+          value={editForm.login}
+          autoCapitalize="none"
+          autoComplete="off"
+          textContentType="none"
+          onChangeText={(value) => setEditForm((prev) => ({ ...prev, login: value }))}
+          style={styles.input}
+        />
+
+        {editingUserId === 'new' ? (
+          <>
+            <AppTextInput
+              label="Senha"
+              value={editForm.password}
+              onChangeText={(value) => setEditForm((prev) => ({ ...prev, password: value }))}
+              secureTextEntry={!showCreatePassword}
+              autoComplete="new-password"
+              textContentType="newPassword"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+              right={
+                <TextInput.Icon
+                  icon={showCreatePassword ? 'eye-off-outline' : 'eye-outline'}
+                  onPress={() => setShowCreatePassword((state) => !state)}
+                  forceTextInputFocus={false}
+                />
+              }
+            />
+
+            <AppTextInput
+              label="Confirmar senha"
+              value={editForm.confirmPassword}
+              onChangeText={(value) => setEditForm((prev) => ({ ...prev, confirmPassword: value }))}
+              secureTextEntry={!showCreateConfirmPassword}
+              autoComplete="new-password"
+              textContentType="newPassword"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+              right={
+                <TextInput.Icon
+                  icon={showCreateConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                  onPress={() => setShowCreateConfirmPassword((state) => !state)}
+                  forceTextInputFocus={false}
+                />
+              }
+            />
+          </>
         ) : null}
 
-        {isEditModalVisible ? (
-          <View pointerEvents="box-none" style={styles.modalViewport}>
-            <Surface
-              style={[
-                styles.modal,
-                Platform.OS === 'web'
-                  ? ({ boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)' } as any)
-                  : null,
-                {
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.outlineVariant,
-                  maxHeight: editModalMaxHeight as any,
-                },
-              ]}
-              elevation={0}
+        <Text style={[styles.helperText, { color: textSecondary }]}>Perfil</Text>
+        {canEditUserProfiles ? (
+          <View style={styles.filterRow}>
+            {editableProfileOptions.map((role) => (
+              <Chip
+                key={role.value}
+                selected={editForm.role === role.value}
+                onPress={() => setEditForm((prev) => ({ ...prev, role: role.value }))}
+              >
+                {role.label}
+              </Chip>
+            ))}
+          </View>
+        ) : (
+          <Text style={[styles.userInfo, { color: textColor }]}>{selectedEditRoleLabel}</Text>
+        )}
+
+        {typeof editingUserId === 'number' ? (
+          <View style={styles.passwordSection}>
+            <Divider style={styles.passwordDivider} />
+            <Button
+              mode="text"
+              icon={isChangePasswordExpanded ? 'chevron-up' : 'lock-outline'}
+              onPress={toggleChangePasswordSection}
+              disabled={submitting || savingPassword}
             >
-            <ScrollView
-              style={[
-                styles.modalBodyScroll,
-                Platform.OS === 'web'
-                  ? ({
-                      overflowY: 'auto',
-                      overflowX: 'hidden',
-                      overscrollBehavior: 'contain',
-                      WebkitOverflowScrolling: 'touch',
-                    } as any)
-                  : null,
-              ]}
-              contentContainerStyle={styles.modalBodyContent}
-              showsVerticalScrollIndicator
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-            >
-              <Text style={[styles.modalTitle, { color: textColor }]}>
-                {editingUserId === 'new' ? 'Novo usuário' : 'Editar usuário'}
-              </Text>
+              {isChangePasswordExpanded ? 'Ocultar alteração de senha' : 'Alterar senha'}
+            </Button>
 
-              <AppTextInput
-                label="Nome"
-                value={editForm.name}
-                autoComplete="off"
-                textContentType="none"
-                onChangeText={(value) => setEditForm((prev) => ({ ...prev, name: value }))}
-                style={styles.input}
-              />
+            {isChangePasswordExpanded ? (
+              <>
+                <AppTextInput
+                  label="Senha atual"
+                  value={changePasswordForm.senhaAtual}
+                  onChangeText={(value) =>
+                    setChangePasswordForm((prev) => ({
+                      ...prev,
+                      senhaAtual: value,
+                    }))
+                  }
+                  secureTextEntry={!showSenhaAtual}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.input}
+                  right={
+                    <TextInput.Icon
+                      icon={showSenhaAtual ? 'eye-off-outline' : 'eye-outline'}
+                      onPress={() => setShowSenhaAtual((state) => !state)}
+                      forceTextInputFocus={false}
+                    />
+                  }
+                />
 
-              <AppTextInput
-                label="Login"
-                value={editForm.login}
-                autoCapitalize="none"
-                autoComplete="off"
-                textContentType="none"
-                onChangeText={(value) => setEditForm((prev) => ({ ...prev, login: value }))}
-                style={styles.input}
-              />
+                <AppTextInput
+                  label="Nova senha"
+                  value={changePasswordForm.novaSenha}
+                  onChangeText={(value) =>
+                    setChangePasswordForm((prev) => ({
+                      ...prev,
+                      novaSenha: value,
+                    }))
+                  }
+                  secureTextEntry={!showNovaSenha}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.input}
+                  right={
+                    <TextInput.Icon
+                      icon={showNovaSenha ? 'eye-off-outline' : 'eye-outline'}
+                      onPress={() => setShowNovaSenha((state) => !state)}
+                      forceTextInputFocus={false}
+                    />
+                  }
+                />
 
-              {editingUserId === 'new' ? (
-                <>
-                  <AppTextInput
-                    label="Senha"
-                    value={editForm.password}
-                    onChangeText={(value) => setEditForm((prev) => ({ ...prev, password: value }))}
-                    secureTextEntry={!showCreatePassword}
-                    autoComplete="new-password"
-                    textContentType="newPassword"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={styles.input}
-                    right={
-                      <TextInput.Icon
-                        icon={showCreatePassword ? 'eye-off-outline' : 'eye-outline'}
-                        onPress={() => setShowCreatePassword((state) => !state)}
-                        forceTextInputFocus={false}
-                      />
-                    }
-                  />
+                <AppTextInput
+                  label="Confirmar nova senha"
+                  value={changePasswordForm.confirmarNovaSenha}
+                  onChangeText={(value) =>
+                    setChangePasswordForm((prev) => ({
+                      ...prev,
+                      confirmarNovaSenha: value,
+                    }))
+                  }
+                  secureTextEntry={!showConfirmarNovaSenha}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.input}
+                  right={
+                    <TextInput.Icon
+                      icon={showConfirmarNovaSenha ? 'eye-off-outline' : 'eye-outline'}
+                      onPress={() => setShowConfirmarNovaSenha((state) => !state)}
+                      forceTextInputFocus={false}
+                    />
+                  }
+                />
 
-                  <AppTextInput
-                    label="Confirmar senha"
-                    value={editForm.confirmPassword}
-                    onChangeText={(value) =>
-                      setEditForm((prev) => ({ ...prev, confirmPassword: value }))
-                    }
-                    secureTextEntry={!showCreateConfirmPassword}
-                    autoComplete="new-password"
-                    textContentType="newPassword"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={styles.input}
-                    right={
-                      <TextInput.Icon
-                        icon={showCreateConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                        onPress={() => setShowCreateConfirmPassword((state) => !state)}
-                        forceTextInputFocus={false}
-                      />
-                    }
-                  />
-                </>
-              ) : null}
-
-              <Text style={[styles.helperText, { color: textSecondary }]}>Perfil</Text>
-              {canEditUserProfiles ? (
-                <View style={styles.filterRow}>
-                  {editableProfileOptions.map((role) => (
-                    <Chip
-                      key={role.value}
-                      selected={editForm.role === role.value}
-                      onPress={() => setEditForm((prev) => ({ ...prev, role: role.value }))}
-                    >
-                      {role.label}
-                    </Chip>
-                  ))}
-                </View>
-              ) : (
-                <Text style={[styles.userInfo, { color: textColor }]}>{selectedEditRoleLabel}</Text>
-              )}
-
-              <View style={styles.modalActions}>
-                <Button mode="text" onPress={closeEdit} disabled={submitting || savingPassword}>
-                  Cancelar
-                </Button>
-                <Button
-                  mode="contained"
-                  onPress={() => void saveUser()}
-                  disabled={!canSaveUser || submitting || savingPassword}
-                  loading={submitting}
-                >
-                  Salvar usuário
-                </Button>
-              </View>
-
-              {typeof editingUserId === 'number' ? (
-                <View style={styles.passwordSection}>
-                  <Divider style={styles.passwordDivider} />
+                <View style={styles.passwordActions}>
                   <Button
-                    mode="text"
-                    icon={isChangePasswordExpanded ? 'chevron-up' : 'lock-outline'}
-                    onPress={toggleChangePasswordSection}
+                    mode="contained-tonal"
+                    onPress={() => void savePassword()}
+                    loading={savingPassword}
                     disabled={submitting || savingPassword}
                   >
-                    {isChangePasswordExpanded ? 'Ocultar alteração de senha' : 'Alterar senha'}
+                    Salvar senha
                   </Button>
-
-                  {isChangePasswordExpanded ? (
-                    <>
-                      <AppTextInput
-                        label="Senha atual"
-                        value={changePasswordForm.senhaAtual}
-                        onChangeText={(value) =>
-                          setChangePasswordForm((prev) => ({
-                            ...prev,
-                            senhaAtual: value,
-                          }))
-                        }
-                        secureTextEntry={!showSenhaAtual}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        style={styles.input}
-                        right={
-                          <TextInput.Icon
-                            icon={showSenhaAtual ? 'eye-off-outline' : 'eye-outline'}
-                            onPress={() => setShowSenhaAtual((state) => !state)}
-                            forceTextInputFocus={false}
-                          />
-                        }
-                      />
-
-                      <AppTextInput
-                        label="Nova senha"
-                        value={changePasswordForm.novaSenha}
-                        onChangeText={(value) =>
-                          setChangePasswordForm((prev) => ({
-                            ...prev,
-                            novaSenha: value,
-                          }))
-                        }
-                        secureTextEntry={!showNovaSenha}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        style={styles.input}
-                        right={
-                          <TextInput.Icon
-                            icon={showNovaSenha ? 'eye-off-outline' : 'eye-outline'}
-                            onPress={() => setShowNovaSenha((state) => !state)}
-                            forceTextInputFocus={false}
-                          />
-                        }
-                      />
-
-                      <AppTextInput
-                        label="Confirmar nova senha"
-                        value={changePasswordForm.confirmarNovaSenha}
-                        onChangeText={(value) =>
-                          setChangePasswordForm((prev) => ({
-                            ...prev,
-                            confirmarNovaSenha: value,
-                          }))
-                        }
-                        secureTextEntry={!showConfirmarNovaSenha}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        style={styles.input}
-                        right={
-                          <TextInput.Icon
-                            icon={showConfirmarNovaSenha ? 'eye-off-outline' : 'eye-outline'}
-                            onPress={() => setShowConfirmarNovaSenha((state) => !state)}
-                            forceTextInputFocus={false}
-                          />
-                        }
-                      />
-
-                      <View style={styles.passwordActions}>
-                        <Button
-                          mode="contained-tonal"
-                          onPress={() => void savePassword()}
-                          loading={savingPassword}
-                          disabled={submitting || savingPassword}
-                        >
-                          Salvar senha
-                        </Button>
-                      </View>
-                    </>
-                  ) : null}
                 </View>
-              ) : null}
-            </ScrollView>
-          </Surface>
-        </View>
+              </>
+            ) : null}
+          </View>
         ) : null}
+      </AppModalFrame>
 
-        {isStatusConfirmModalVisible ? (
-          <View pointerEvents="box-none" style={styles.modalViewport}>
-            <Surface
-              style={[
-                styles.confirmModal,
-                Platform.OS === 'web'
-                  ? ({ boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)' } as any)
-                  : null,
-                {
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.outlineVariant,
-                  maxHeight: confirmModalMaxHeight as any,
-                },
-              ]}
-              elevation={0}
-            >
-            <ScrollView
-              style={[
-                styles.modalBodyScroll,
-                Platform.OS === 'web'
-                  ? ({
-                      overflowY: 'auto',
-                      overflowX: 'hidden',
-                      overscrollBehavior: 'contain',
-                      WebkitOverflowScrolling: 'touch',
-                    } as any)
-                  : null,
-              ]}
-              contentContainerStyle={styles.confirmModalBodyContent}
-              showsVerticalScrollIndicator
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-            >
-              <Text style={[styles.modalTitle, styles.confirmTitle, { color: textColor }]}>
-                Inativar usuário
-              </Text>
-              <Text style={[styles.confirmMessage, { color: textSecondary }]}>
-                Deseja inativar {statusConfirmTarget?.name}?
-              </Text>
-
-              <View style={styles.modalActions}>
-                <Button
-                  mode="text"
-                  onPress={closeStatusConfirm}
-                  disabled={submitting || savingPassword}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  mode="contained"
-                  onPress={() => void confirmInactivation()}
-                  buttonColor={theme.colors.error}
-                  textColor="#fff"
-                  disabled={submitting || savingPassword}
-                >
-                  Inativar
-                </Button>
-              </View>
-            </ScrollView>
-          </Surface>
-        </View>
-        ) : null}
-      </BodyPortal>
-
+      <AppModalFrame
+        visible={isStatusConfirmModalVisible}
+        title="Inativar usuário"
+        subtitle={'Deseja inativar ' + (statusConfirmTarget?.name ?? 'este usuário') + '?'}
+        onDismiss={closeStatusConfirm}
+        dismissDisabled={submitting || savingPassword}
+        maxWidth={460}
+        maxHeightRatio={0.8}
+        actions={[
+          {
+            label: 'Cancelar',
+            onPress: closeStatusConfirm,
+            disabled: submitting || savingPassword,
+            tone: 'secondary',
+          },
+          {
+            label: 'Inativar',
+            onPress: () => {
+              void confirmInactivation();
+            },
+            disabled: submitting || savingPassword,
+            tone: 'danger',
+          },
+        ]}
+      />
       <AlertDialog
         visible={statusFeedback !== null}
         onDismiss={closeStatusFeedback}

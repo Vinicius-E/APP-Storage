@@ -1,5 +1,4 @@
 ﻿import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { useEffect } from 'react';
 import {
   FlatList,
   Platform,
@@ -14,14 +13,13 @@ import { useFocusEffect } from '@react-navigation/native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import {
   Button,
-  IconButton,
   Snackbar,
   Surface,
   Text,
   TextInput,
 } from 'react-native-paper';
 import { DatePickerModal, pt, registerTranslation } from 'react-native-paper-dates';
-import BodyPortal from '../components/BodyPortal';
+import AppModalFrame from '../components/AppModalFrame';
 import AppEmptyState from '../components/AppEmptyState';
 import FilterSelect from '../components/FilterSelect';
 import AppLoadingState from '../components/AppLoadingState';
@@ -560,7 +558,7 @@ function getQuantityInfo(item: HistoricoMovimentacaoResponseDTO): QuantityInfo {
 
 function quantityFlowLabel(item: HistoricoMovimentacaoResponseDTO): string {
   const { anterior, nova } = getQuantityInfo(item);
-  return `${anterior} → ${nova} un.`;
+  return `${anterior} ? ${nova} un.`;
 }
 
 function qtyDetail(item: HistoricoMovimentacaoResponseDTO): string {
@@ -578,7 +576,7 @@ function qtyDetail(item: HistoricoMovimentacaoResponseDTO): string {
 
   if (op === 'RESEQUENCIAMENTO') {
     if (origem && destino) {
-      return `Realocado automaticamente: ${origem} → ${destino}.`;
+      return `Realocado automaticamente: ${origem} ? ${destino}.`;
     }
     return 'Reposicionamento automático concluído.';
   }
@@ -715,7 +713,7 @@ function locationLabel(
     hasFullLocation(destination);
 
   if (canShowRoute) {
-    return `${formatKnownLocation(origin)} → ${formatKnownLocation(destination)}`;
+    return `${formatKnownLocation(origin)} ? ${formatKnownLocation(destination)}`;
   }
   if (hasLocation(current)) {
     return formatKnownLocation(current);
@@ -989,58 +987,6 @@ export default function HistoryScreen() {
     setSelected(null);
     setDetailLoading(false);
   }, []);
-
-  useEffect(() => {
-    if (
-      Platform.OS !== 'web' ||
-      !isDetailModalVisible ||
-      typeof document === 'undefined' ||
-      typeof window === 'undefined'
-    ) {
-      return;
-    }
-
-    const body = document.body;
-    const html = document.documentElement;
-    const scrollY = window.scrollY;
-
-    const previousBodyStyles = {
-      overflow: body.style.overflow,
-      position: body.style.position,
-      top: body.style.top,
-      left: body.style.left,
-      right: body.style.right,
-      width: body.style.width,
-      overscrollBehavior: body.style.overscrollBehavior,
-    };
-    const previousHtmlStyles = {
-      overflow: html.style.overflow,
-      overscrollBehavior: html.style.overscrollBehavior,
-    };
-
-    body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.left = '0';
-    body.style.right = '0';
-    body.style.width = '100%';
-    body.style.overscrollBehavior = 'contain';
-    html.style.overflow = 'hidden';
-    html.style.overscrollBehavior = 'contain';
-
-    return () => {
-      body.style.overflow = previousBodyStyles.overflow;
-      body.style.position = previousBodyStyles.position;
-      body.style.top = previousBodyStyles.top;
-      body.style.left = previousBodyStyles.left;
-      body.style.right = previousBodyStyles.right;
-      body.style.width = previousBodyStyles.width;
-      body.style.overscrollBehavior = previousBodyStyles.overscrollBehavior;
-      html.style.overflow = previousHtmlStyles.overflow;
-      html.style.overscrollBehavior = previousHtmlStyles.overscrollBehavior;
-      window.scrollTo(0, scrollY);
-    };
-  }, [isDetailModalVisible]);
 
   const clearFilters = useCallback(async () => {
     setSearch('');
@@ -1508,189 +1454,124 @@ export default function HistoryScreen() {
         />
       )}
 
-      <BodyPortal>
-        {isDetailModalVisible ? (
-          <>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Fechar modal de detalhes do histórico"
-              onPress={closeDetailsModal}
-              style={styles.modalBackdropLayer}
-            />
-
-            <View pointerEvents="box-none" style={styles.modalViewport}>
-              <Surface
+      <AppModalFrame
+        visible={isDetailModalVisible}
+        title="Detalhes da movimentação"
+        subtitle={
+          selected
+            ? 'Registrado em ' + fmtDate(selected.timestamp)
+            : detailLoading
+              ? 'Carregando detalhes da movimentação.'
+              : undefined
+        }
+        onDismiss={closeDetailsModal}
+        dismissDisabled={detailLoading}
+        maxWidth={860}
+        maxHeightRatio={0.85}
+        headerAccessory={
+          selected ? (
+            <View
+              style={[
+                styles.operationTag,
+                styles.modalOperationTag,
+                {
+                  backgroundColor: operationTone(selected.tipoOperacao).bg,
+                  borderColor: operationTone(selected.tipoOperacao).border,
+                },
+              ]}
+            >
+              <Text
                 style={[
-                  styles.modal,
-                  Platform.OS === 'web'
-                    ? ({ boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)' } as any)
-                    : null,
+                  styles.operationTagText,
+                  { color: operationTone(selected.tipoOperacao).text },
+                ]}
+              >
+                {opLabel(selected.tipoOperacao)}
+              </Text>
+            </View>
+          ) : null
+        }
+        actions={[
+          {
+            label: 'Fechar',
+            onPress: closeDetailsModal,
+            disabled: detailLoading,
+            tone: 'secondary',
+          },
+        ]}
+      >
+        {detailLoading ? (
+          <AppLoadingState message="Carregando detalhes..." style={styles.loadingCard} />
+        ) : (
+          <>
+            {selected ? (
+              <View
+                style={[
+                  styles.summaryBox,
                   {
-                    backgroundColor: theme.colors.surface,
-                    borderColor: theme.colors.outlineVariant,
-                    maxHeight: detailModalMaxHeight as any,
+                    backgroundColor: operationTone(selected.tipoOperacao).bg,
+                    borderColor: operationTone(selected.tipoOperacao).border,
                   },
                 ]}
-                elevation={0}
               >
-                <View
+                <Text
                   style={[
-                    styles.modalHeader,
-                    isCompact && styles.modalHeaderCompact,
-                    { borderBottomColor: theme.colors.outlineVariant },
+                    styles.summaryTitle,
+                    { color: operationTone(selected.tipoOperacao).text },
                   ]}
                 >
-                  <View style={styles.modalTitleRow}>
-                    <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                      Detalhes da movimentação
-                    </Text>
-                    <IconButton
-                      icon="close"
-                      size={20}
-                      onPress={closeDetailsModal}
-                      iconColor={theme.colors.primary}
-                      accessibilityLabel="action-historico-fechar-detalhes"
-                      style={[styles.modalCloseButton, { borderColor: theme.colors.outlineVariant }]}
-                    />
-                  </View>
-                  {selected ? (
-                    <View
-                      style={[
-                        styles.operationTag,
-                        styles.modalOperationTag,
-                        {
-                          backgroundColor: operationTone(selected.tipoOperacao).bg,
-                          borderColor: operationTone(selected.tipoOperacao).border,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.operationTagText,
-                          { color: operationTone(selected.tipoOperacao).text },
-                        ]}
-                      >
-                        {opLabel(selected.tipoOperacao)}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <ScrollView
+                  {qtyDetail(selected)}
+                </Text>
+                <Text
                   style={[
-                    styles.modalBodyScroll,
-                    Platform.OS === 'web'
-                      ? ({
-                          overflowY: 'auto',
-                          overflowX: 'hidden',
-                          overscrollBehavior: 'contain',
-                          WebkitOverflowScrolling: 'touch',
-                        } as any)
-                      : null,
+                    styles.summarySub,
+                    { color: operationTone(selected.tipoOperacao).softText },
                   ]}
-                  contentContainerStyle={styles.modalBodyContent}
-                  showsVerticalScrollIndicator
-                  keyboardShouldPersistTaps="handled"
-                  nestedScrollEnabled
                 >
-                  {detailLoading ? (
-                    <AppLoadingState message="Carregando detalhes..." style={styles.loadingCard} />
-                  ) : (
-                    <>
-                      <Text style={[styles.date, { color: textSecondary }]}>
-                        Registrado em {fmtDate(selected?.timestamp)}
-                      </Text>
-                      {selected ? (
-                        <View
-                          style={[
-                            styles.summaryBox,
-                            {
-                              backgroundColor: operationTone(selected.tipoOperacao).bg,
-                              borderColor: operationTone(selected.tipoOperacao).border,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.summaryTitle,
-                              { color: operationTone(selected.tipoOperacao).text },
-                            ]}
-                          >
-                            {qtyDetail(selected)}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.summarySub,
-                              { color: operationTone(selected.tipoOperacao).softText },
-                            ]}
-                          >
-                            Quantidade: {quantityFlowLabel(selected)}
-                          </Text>
-                        </View>
-                      ) : null}
-                      <View style={[styles.detailGrid, isCompact && styles.detailGridCompact]}>
-                        <View
-                          style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}
-                        >
-                          <Text style={[styles.detailLabel, { color: textSecondary }]}>Produto</Text>
-                          <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                            {selected?.produtoNomeModelo ?? 'Não informado'}
-                          </Text>
-                        </View>
-                        <View
-                          style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}
-                        >
-                          <Text style={[styles.detailLabel, { color: textSecondary }]}>Usuário</Text>
-                          <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                            {selected?.usuarioNome ?? selected?.usuarioLogin ?? 'Não identificado'}
-                          </Text>
-                        </View>
-                        <View
-                          style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}
-                        >
-                          <Text style={[styles.detailLabel, { color: textSecondary }]}>
-                            Localização
-                          </Text>
-                          <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                            {selected
-                              ? locationLabel(
-                                  selected,
-                                  locationByNivelId,
-                                  gradeById,
-                                  fileiraById,
-                                  itemLocationById,
-                                  minuteNivelLocationByKey
-                                )
-                              : 'Fileira - / Grade - / Nível -'}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.detailLabel, { color: textSecondary }]}>
-                        Detalhes técnicos
-                      </Text>
-                      <View
-                        style={[styles.detailTextBox, { borderColor: theme.colors.outlineVariant }]}
-                      >
-                        <Text style={[styles.details, { color: textSecondary }]}>
-                          {selected?.detalhesAlteracao?.trim()
-                            ? selected.detalhesAlteracao.trim()
-                            : 'Sem detalhes adicionais.'}
-                        </Text>
-                      </View>
-                      <View style={styles.actions}>
-                        <Button mode="contained" onPress={closeDetailsModal}>
-                          Fechar
-                        </Button>
-                      </View>
-                    </>
-                  )}
-                </ScrollView>
-              </Surface>
+                  Quantidade: {quantityFlowLabel(selected)}
+                </Text>
+              </View>
+            ) : null}
+            <View style={[styles.detailGrid, isCompact && styles.detailGridCompact]}>
+              <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
+                <Text style={[styles.detailLabel, { color: textSecondary }]}>Produto</Text>
+                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                  {selected?.produtoNomeModelo ?? 'Não informado'}
+                </Text>
+              </View>
+              <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
+                <Text style={[styles.detailLabel, { color: textSecondary }]}>Usuário</Text>
+                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                  {selected?.usuarioNome ?? selected?.usuarioLogin ?? 'Não identificado'}
+                </Text>
+              </View>
+              <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
+                <Text style={[styles.detailLabel, { color: textSecondary }]}>Localização</Text>
+                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                  {selected
+                    ? locationLabel(
+                        selected,
+                        locationByNivelId,
+                        gradeById,
+                        fileiraById,
+                        itemLocationById,
+                        minuteNivelLocationByKey
+                      )
+                    : 'Fileira - / Grade - / Nível -'}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.detailLabel, { color: textSecondary }]}>Detalhes técnicos</Text>
+            <View style={[styles.detailTextBox, { borderColor: theme.colors.outlineVariant }]}>
+              <Text style={[styles.details, { color: textSecondary }]}>
+                {selected?.detalhesAlteracao?.trim()
+                  ? selected.detalhesAlteracao.trim()
+                  : 'Sem detalhes adicionais.'}
+              </Text>
             </View>
           </>
-        ) : null}
-      </BodyPortal>
-
+        )}
+      </AppModalFrame>
       <Snackbar
         visible={Boolean(snackbarMessage)}
         onDismiss={() => setSnackbarMessage('')}
@@ -2090,3 +1971,4 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 22, fontWeight: '900' },
   details: { fontSize: 14, lineHeight: 22, fontWeight: '600' },
 });
+

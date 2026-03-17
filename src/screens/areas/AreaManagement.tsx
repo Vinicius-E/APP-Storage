@@ -9,12 +9,13 @@ import {
   useWindowDimensions,
   type PressableStateCallbackType,
 } from 'react-native';
-import { Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
+import { Surface, Text, TextInput } from 'react-native-paper';
 import { useAreaContext } from '../../areas/AreaContext';
 import AlertDialog from '../../components/AlertDialog';
 import AppEmptyState from '../../components/AppEmptyState';
 import AppLoadingState from '../../components/AppLoadingState';
 import ConfirmStatusDialog from '../../components/ConfirmStatusDialog';
+import FormModalFrame from '../../components/FormModalFrame';
 import ListActionButton from '../../components/ListActionButton';
 import ListPaginationControls from '../../components/ListPaginationControls';
 import StatusBadge from '../../components/StatusBadge';
@@ -318,7 +319,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
       await fetchAreas(page);
     } catch (requestError) {
       showErrorFeedback(
-        errorMessage(requestError, 'NÃ£o foi possÃ­vel atualizar o status do setor.')
+        errorMessage(requestError, 'Não foi possível atualizar o status do setor.')
       );
     } finally {
       setProcessingStatusId(null);
@@ -333,6 +334,11 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
 
   const renderActions = (area: AreaDTO, hasUpdatedAt = false) => {
     const isSelected = selectedAreaId === area.id;
+    const hasAnyAction = canViewWarehouse || canEdit || canToggle;
+
+    if (!hasAnyAction) {
+      return null;
+    }
 
     if (isMobile) {
       return (
@@ -540,6 +546,8 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
                     </View>
                   ) : null}
                 </View>
+
+                {renderActions(area)}
               </Surface>
             );
           })}
@@ -703,90 +711,49 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
           {renderContent()}
         </ScrollView>
       </View>
-      <Portal>
-        <Modal
-          visible={formVisible}
-          onDismiss={
-            saving
-              ? undefined
-              : () => {
-                  setFormVisible(false);
-                  setEditingArea(null);
-                }
-          }
-          contentContainerStyle={styles.modalOuter}
-        >
-          <Surface
-            style={[
-              styles.modalCard,
-              {
-                width: Math.min(width - 24, 560),
-                backgroundColor: theme.colors.surface,
-                borderColor: theme.colors.outline,
-              },
-            ]}
-          >
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-              {editingArea ? 'Editar setor' : 'Novo setor'}
-            </Text>
-            <AppTextInput
-              label="Nome"
-              value={draftName}
-              onChangeText={setDraftName}
-              placeholder="Ex.: Setor Principal"
-            />
-            <AppTextInput
-              label="Descrição"
-              value={draftDescription}
-              onChangeText={setDraftDescription}
-              placeholder="Descrição opcional"
-              multiline
-              numberOfLines={3}
-              contentStyle={styles.textArea}
-            />
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => {
-                  setFormVisible(false);
-                  setEditingArea(null);
-                }}
-                disabled={saving}
-                style={styles.modalButton}
-              >
-                <Text style={{ color: theme.colors.text }}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  void submitForm();
-                }}
-                disabled={saving || draftName.trim().length === 0}
-                style={[
-                  styles.modalButton,
-                  {
-                    borderColor: theme.colors.primary,
-                    opacity: saving || draftName.trim().length === 0 ? 0.45 : 1,
-                  },
-                ]}
-              >
-                <Text style={{ color: theme.colors.primary, fontWeight: '800' }}>
-                  {editingArea ? 'Salvar' : 'Criar setor'}
-                </Text>
-              </Pressable>
-            </View>
-          </Surface>
-        </Modal>
-      </Portal>
+      <FormModalFrame
+        visible={formVisible}
+        saving={saving}
+        title={editingArea ? 'Editar setor' : 'Novo setor'}
+        subtitle="Cadastre ou ajuste os dados do setor selecionado."
+        primaryActionLabel={editingArea ? 'Salvar setor' : 'Criar setor'}
+        primaryActionDisabled={saving || draftName.trim().length === 0}
+        onDismiss={() => {
+          setFormVisible(false);
+          setEditingArea(null);
+        }}
+        onPrimaryPress={() => {
+          void submitForm();
+        }}
+        maxWidth={560}
+      >
+        <AppTextInput
+          label="Nome"
+          value={draftName}
+          onChangeText={setDraftName}
+          placeholder="Ex.: Setor Principal"
+        />
+        <AppTextInput
+          label="Descrição"
+          value={draftDescription}
+          onChangeText={setDraftDescription}
+          placeholder="Descrição opcional"
+          multiline
+          numberOfLines={3}
+          contentStyle={styles.textArea}
+        />
+      </FormModalFrame>
 
       <ConfirmStatusDialog
         visible={Boolean(statusConfirmation)}
         title={statusConfirmation?.nextActive ? 'Ativar setor' : 'Inativar setor'}
         description={
           statusConfirmation
-            ? `Confirma ${statusConfirmation.nextActive ? 'a ativaÃ§Ã£o' : 'a inativaÃ§Ã£o'} de "${statusConfirmation.area.name}"?`
+            ? `Confirma ${statusConfirmation.nextActive ? 'a ativação' : 'a inativação'} de "${statusConfirmation.area.name}"?`
             : ''
         }
         confirmLabel={
-          statusConfirmation?.nextActive ? 'Confirmar ativaÃ§Ã£o' : 'Confirmar inativaÃ§Ã£o'
+          statusConfirmation?.nextActive ? 'Confirmar ativação' : 'Confirmar inativação'
         }
         confirmIcon={
           statusConfirmation?.nextActive ? 'check-circle-outline' : 'close-circle-outline'
@@ -905,9 +872,9 @@ const styles = StyleSheet.create({
   },
   selectedBadgeCompact: {
     alignSelf: 'flex-start',
-    minHeight: 30,
+    minHeight: 0,
     paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingVertical: 3,
   },
   selectedBadgeText: { fontWeight: '800', fontSize: 12 },
   modalOuter: {
