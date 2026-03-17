@@ -49,13 +49,20 @@ function errorMessage(error: unknown, fallback: string) {
   return getUserFacingErrorMessage(error, fallback);
 }
 
-function formatTimestamp(value?: string) {
-  if (!value) {
-    return '-';
+function hasUsefulTimestamp(value?: string | null) {
+  const normalized = String(value ?? '').trim();
+  return normalized !== '' && normalized !== '-';
+}
+
+function formatTimestamp(value?: string | null) {
+  if (!hasUsefulTimestamp(value)) {
+    return '';
   }
 
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('pt-BR');
+  const normalized = String(value).trim();
+  const date = new Date(normalized);
+
+  return Number.isNaN(date.getTime()) ? normalized : date.toLocaleString('pt-BR');
 }
 
 function getInitials(value?: string, fallback = 'ST') {
@@ -303,12 +310,16 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
         await inactivateArea(area.id);
       }
 
-      showSuccessFeedback(nextActive ? 'Setor ativado com sucesso.' : 'Setor inativado com sucesso.');
+      showSuccessFeedback(
+        nextActive ? 'Setor ativado com sucesso.' : 'Setor inativado com sucesso.'
+      );
       setStatusConfirmation(null);
       await refreshAreas(area.id);
       await fetchAreas(page);
     } catch (requestError) {
-      showErrorFeedback(errorMessage(requestError, 'NÃ£o foi possÃ­vel atualizar o status do setor.'));
+      showErrorFeedback(
+        errorMessage(requestError, 'NÃ£o foi possÃ­vel atualizar o status do setor.')
+      );
     } finally {
       setProcessingStatusId(null);
     }
@@ -320,26 +331,12 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
     navigation.navigate('Armazém');
   };
 
-  const renderActions = (area: AreaDTO) => {
+  const renderActions = (area: AreaDTO, hasUpdatedAt = false) => {
     const isSelected = selectedAreaId === area.id;
 
     if (isMobile) {
       return (
-        <View style={styles.mobileActions}>
-          {isSelected ? (
-            <View
-              style={[
-                styles.selectedBadge,
-                styles.selectedBadgeCompact,
-                {
-                  backgroundColor: `${theme.colors.primary}14`,
-                  borderColor: `${theme.colors.primary}44`,
-                },
-              ]}
-            >
-              <Text style={{ color: theme.colors.primary, fontWeight: '800' }}>Selecionado</Text>
-            </View>
-          ) : null}
+        <View style={[styles.mobileActions, !hasUpdatedAt && styles.mobileActionsWithoutTimestamp]}>
           {canViewWarehouse ? (
             <ListActionButton
               label="Abrir"
@@ -463,6 +460,8 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
           {items.map((area) => {
             const isSelected = selectedAreaId === area.id;
             const initials = getInitials(area.name);
+            const hasUpdatedAt = hasUsefulTimestamp(area.updatedAt);
+            const formattedUpdatedAt = hasUpdatedAt ? formatTimestamp(area.updatedAt) : '';
 
             return (
               <Surface
@@ -521,8 +520,8 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
                   </View>
                 </View>
 
-                <View style={styles.cardTagsRow}>
-                  <StatusBadge active={area.active !== false} />
+                <View style={[styles.cardTagsRow, styles.cardTagsRowCompact]}>
+                  <StatusBadge active={area.active !== false} style={styles.statusBadgeCompact} />
 
                   {isSelected ? (
                     <View
@@ -535,23 +534,12 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
                         },
                       ]}
                     >
-                      <Text style={{ color: theme.colors.primary, fontWeight: '800' }}>
+                      <Text style={[styles.selectedBadgeText, { color: theme.colors.primary }]}>
                         Selecionado
                       </Text>
                     </View>
                   ) : null}
                 </View>
-
-                <View style={styles.infoRow}>
-                  <Text style={[styles.infoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                    Atualizado em
-                  </Text>
-                  <Text style={[styles.infoValue, { color: theme.colors.text }]}>
-                    {formatTimestamp(area.updatedAt ?? area.createdAt)}
-                  </Text>
-                </View>
-
-                {renderActions(area)}
               </Surface>
             );
           })}
@@ -858,9 +846,11 @@ const styles = StyleSheet.create({
   },
   cardFactText: { fontSize: 11, fontWeight: '700' },
   cardTagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  infoRow: { gap: 4 },
-  infoLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-  infoValue: { fontSize: 13, fontWeight: '700' },
+  cardTagsRowCompact: { alignItems: 'center', gap: 6 },
+  statusBadgeCompact: { paddingHorizontal: 9, paddingVertical: 3 },
+  updatedContainer: { gap: 2 },
+  updatedLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  updatedValue: { fontSize: 12, fontWeight: '700' },
   table: {
     borderWidth: 1,
     borderRadius: 18,
@@ -898,7 +888,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   actionsDesktop: { flexWrap: 'nowrap', gap: 6 },
-  mobileActions: { marginTop: 4, gap: 10, alignItems: 'stretch' },
+  mobileActions: { marginTop: 8, gap: 8, alignItems: 'stretch' },
+  mobileActionsWithoutTimestamp: { marginTop: 6 },
   mobilePrimaryAction: { width: '100%', minHeight: 44 },
   mobileSecondaryActions: { flexDirection: 'row', gap: 8, width: '100%' },
   mobileSecondaryAction: { flex: 1, minHeight: 42 },
@@ -914,8 +905,11 @@ const styles = StyleSheet.create({
   },
   selectedBadgeCompact: {
     alignSelf: 'flex-start',
-    minHeight: 34,
+    minHeight: 30,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
   },
+  selectedBadgeText: { fontWeight: '800', fontSize: 12 },
   modalOuter: {
     flex: 1,
     alignItems: 'center',

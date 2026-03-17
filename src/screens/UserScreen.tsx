@@ -12,11 +12,12 @@ import {
   type PressableStateCallbackType,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Button, Chip, Divider, Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
+import { Button, Chip, Divider, Surface, Text, TextInput } from 'react-native-paper';
 import AlertDialog from '../components/AlertDialog';
 import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
+import BodyPortal from '../components/BodyPortal';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
 import { getUserFacingErrorMessage } from '../utils/userFacingError';
 import {
@@ -376,7 +377,7 @@ function withAlpha(color: string, alpha: number): string {
 export default function UserScreen() {
   const { theme } = useThemeContext();
   const { hasPermission } = usePermissions();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isCompact = width < 780;
   const colors = theme.colors as typeof theme.colors & { text?: string; textSecondary?: string };
   const textColor = colors.text ?? theme.colors.onSurface;
@@ -413,6 +414,17 @@ export default function UserScreen() {
   const actionBusy = submitting || savingPassword;
   const reloadBusy = loading || refreshing;
   const canEditUserProfiles = hasPermission('PROFILES', 'EDIT');
+  const isEditModalVisible = editingUserId !== null;
+  const isStatusConfirmModalVisible = statusConfirmTarget !== null;
+  const isAnyModalVisible = isEditModalVisible || isStatusConfirmModalVisible;
+  const editModalMaxHeight = useMemo(
+    () => (Platform.OS === 'web' ? ('85vh' as const) : Math.max(360, Math.floor(height * 0.85))),
+    [height]
+  );
+  const confirmModalMaxHeight = useMemo(
+    () => (Platform.OS === 'web' ? ('80vh' as const) : Math.max(240, Math.floor(height * 0.8))),
+    [height]
+  );
 
   const getInteractivePalette = useCallback(
     (variant: InteractiveVariant): InteractivePalette => {
@@ -902,9 +914,72 @@ export default function UserScreen() {
     setStatusConfirmTarget(null);
   };
 
+  const closeActiveModal = useCallback(() => {
+    if (isEditModalVisible) {
+      closeEdit();
+      return;
+    }
+
+    if (isStatusConfirmModalVisible) {
+      closeStatusConfirm();
+    }
+  }, [closeEdit, closeStatusConfirm, isEditModalVisible, isStatusConfirmModalVisible]);
+
   const closeStatusFeedback = () => {
     setStatusFeedback(null);
   };
+
+  useEffect(() => {
+    if (
+      Platform.OS !== 'web' ||
+      !isAnyModalVisible ||
+      typeof document === 'undefined' ||
+      typeof window === 'undefined'
+    ) {
+      return;
+    }
+
+    const body = document.body;
+    const html = document.documentElement;
+    const scrollY = window.scrollY;
+
+    const previousBodyStyles = {
+      overflow: body.style.overflow,
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+      overscrollBehavior: body.style.overscrollBehavior,
+    };
+    const previousHtmlStyles = {
+      overflow: html.style.overflow,
+      overscrollBehavior: html.style.overscrollBehavior,
+    };
+
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    body.style.overscrollBehavior = 'contain';
+    html.style.overflow = 'hidden';
+    html.style.overscrollBehavior = 'contain';
+
+    return () => {
+      body.style.overflow = previousBodyStyles.overflow;
+      body.style.position = previousBodyStyles.position;
+      body.style.top = previousBodyStyles.top;
+      body.style.left = previousBodyStyles.left;
+      body.style.right = previousBodyStyles.right;
+      body.style.width = previousBodyStyles.width;
+      body.style.overscrollBehavior = previousBodyStyles.overscrollBehavior;
+      html.style.overflow = previousHtmlStyles.overflow;
+      html.style.overscrollBehavior = previousHtmlStyles.overscrollBehavior;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isAnyModalVisible]);
 
   const confirmInactivation = async () => {
     if (!statusConfirmTarget) {
@@ -1060,6 +1135,7 @@ export default function UserScreen() {
     <>
       <ScrollView
         style={{ backgroundColor: 'transparent' }}
+        scrollEnabled={!isAnyModalVisible}
         contentContainerStyle={styles.container}
         onScrollBeginDrag={() => setOpenDropdown(null)}
         refreshControl={
@@ -1501,35 +1577,48 @@ export default function UserScreen() {
         ) : null}
       </ScrollView>
 
-      <Portal>
-        {editingUserId !== null || statusConfirmTarget !== null ? (
-          <View pointerEvents="none" style={styles.modalBackdropLayer} />
+      <BodyPortal>
+        {isAnyModalVisible ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Fechar modal de usuários"
+            onPress={closeActiveModal}
+            style={styles.modalBackdropLayer}
+          />
         ) : null}
 
-        <Modal
-          visible={editingUserId !== null}
-          onDismiss={closeEdit}
-          theme={{
-            ...theme,
-            colors: {
-              ...theme.colors,
-              backdrop: 'transparent',
-            },
-          }}
-          style={styles.modalOverlay}
-          contentContainerStyle={styles.modalFrame}
-        >
-          <View
-            style={[
-              styles.modal,
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-            ]}
-          >
+        {isEditModalVisible ? (
+          <View pointerEvents="box-none" style={styles.modalViewport}>
+            <Surface
+              style={[
+                styles.modal,
+                Platform.OS === 'web'
+                  ? ({ boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)' } as any)
+                  : null,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.outlineVariant,
+                  maxHeight: editModalMaxHeight as any,
+                },
+              ]}
+              elevation={0}
+            >
             <ScrollView
-              style={styles.modalScroll}
-              contentContainerStyle={styles.modalScrollContent}
+              style={[
+                styles.modalBodyScroll,
+                Platform.OS === 'web'
+                  ? ({
+                      overflowY: 'auto',
+                      overflowX: 'hidden',
+                      overscrollBehavior: 'contain',
+                      WebkitOverflowScrolling: 'touch',
+                    } as any)
+                  : null,
+              ]}
+              contentContainerStyle={styles.modalBodyContent}
               showsVerticalScrollIndicator
               keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
             >
               <Text style={[styles.modalTitle, { color: textColor }]}>
                 {editingUserId === 'new' ? 'Novo usuário' : 'Editar usuário'}
@@ -1724,33 +1813,42 @@ export default function UserScreen() {
                 </View>
               ) : null}
             </ScrollView>
-          </View>
-        </Modal>
+          </Surface>
+        </View>
+        ) : null}
 
-        <Modal
-          visible={statusConfirmTarget !== null}
-          onDismiss={closeStatusConfirm}
-          theme={{
-            ...theme,
-            colors: {
-              ...theme.colors,
-              backdrop: 'transparent',
-            },
-          }}
-          style={styles.modalOverlay}
-          contentContainerStyle={styles.confirmModalFrame}
-        >
-          <View
-            style={[
-              styles.confirmModal,
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-            ]}
-          >
+        {isStatusConfirmModalVisible ? (
+          <View pointerEvents="box-none" style={styles.modalViewport}>
+            <Surface
+              style={[
+                styles.confirmModal,
+                Platform.OS === 'web'
+                  ? ({ boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)' } as any)
+                  : null,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.outlineVariant,
+                  maxHeight: confirmModalMaxHeight as any,
+                },
+              ]}
+              elevation={0}
+            >
             <ScrollView
-              style={styles.modalScroll}
-              contentContainerStyle={styles.modalScrollContent}
+              style={[
+                styles.modalBodyScroll,
+                Platform.OS === 'web'
+                  ? ({
+                      overflowY: 'auto',
+                      overflowX: 'hidden',
+                      overscrollBehavior: 'contain',
+                      WebkitOverflowScrolling: 'touch',
+                    } as any)
+                  : null,
+              ]}
+              contentContainerStyle={styles.confirmModalBodyContent}
               showsVerticalScrollIndicator
               keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
             >
               <Text style={[styles.modalTitle, styles.confirmTitle, { color: textColor }]}>
                 Inativar usuário
@@ -1778,9 +1876,10 @@ export default function UserScreen() {
                 </Button>
               </View>
             </ScrollView>
-          </View>
-        </Modal>
-      </Portal>
+          </Surface>
+        </View>
+        ) : null}
+      </BodyPortal>
 
       <AlertDialog
         visible={statusFeedback !== null}
@@ -2001,36 +2100,65 @@ const styles = StyleSheet.create({
       : ({} as any),
   empty: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 6, alignItems: 'center' },
   loadingBox: { minHeight: 136 },
-  modalBackdropLayer: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    zIndex: 998,
-  },
-  modalOverlay: {
-    margin: 0,
-    justifyContent: 'center',
-  },
-  modalFrame: {
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    zIndex: 999,
-  },
+  modalBackdropLayer:
+    Platform.OS === 'web'
+      ? ({
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          backgroundColor: 'rgba(0,0,0,0.4)',
+          zIndex: 999,
+        } as any)
+      : {
+          ...StyleSheet.absoluteFillObject,
+          backgroundColor: 'rgba(0,0,0,0.4)',
+          zIndex: 999,
+        },
+  modalViewport:
+    Platform.OS === 'web'
+      ? ({
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          zIndex: 1000,
+          paddingHorizontal: 14,
+          paddingVertical: 16,
+          justifyContent: 'center',
+          alignItems: 'center',
+          overflow: 'visible',
+        } as any)
+      : {
+          ...StyleSheet.absoluteFillObject,
+          zIndex: 1000,
+          paddingHorizontal: 14,
+          paddingVertical: 16,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
   modal: {
     alignSelf: 'center',
     width: '100%',
     maxWidth: 560,
     borderWidth: 1,
     borderRadius: 16,
-    maxHeight: '90%',
     overflow: 'hidden',
+    zIndex: 1000,
+    shadowColor: '#000000',
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
-  modalScroll: { maxHeight: '100%' },
-  modalScrollContent: { padding: 14 },
-  confirmModalFrame: {
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    zIndex: 999,
+  modalBodyScroll: {
+    width: '100%',
+    minHeight: 0,
+    flexShrink: 1,
   },
+  modalBodyContent: { padding: 14, paddingBottom: 18 },
   modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 8 },
   confirmModal: {
     alignSelf: 'center',
@@ -2038,9 +2166,15 @@ const styles = StyleSheet.create({
     maxWidth: 460,
     borderWidth: 1,
     borderRadius: 16,
-    maxHeight: '80%',
     overflow: 'hidden',
+    zIndex: 1000,
+    shadowColor: '#000000',
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
+  confirmModalBodyContent: { padding: 14, paddingBottom: 18 },
   confirmTitle: { marginBottom: 4 },
   confirmMessage: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   helperText: { fontSize: 12, fontWeight: '700', marginBottom: 2 },

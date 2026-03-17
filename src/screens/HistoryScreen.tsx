@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import {
   FlatList,
   Platform,
@@ -14,14 +15,13 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import {
   Button,
   IconButton,
-  Modal,
-  Portal,
   Snackbar,
   Surface,
   Text,
   TextInput,
 } from 'react-native-paper';
 import { DatePickerModal, pt, registerTranslation } from 'react-native-paper-dates';
+import BodyPortal from '../components/BodyPortal';
 import AppEmptyState from '../components/AppEmptyState';
 import FilterSelect from '../components/FilterSelect';
 import AppLoadingState from '../components/AppLoadingState';
@@ -731,7 +731,7 @@ function locationLabel(
 
 export default function HistoryScreen() {
   const { theme } = useThemeContext();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isCompact = width < 820;
   const isCompactDatePicker = width < 560;
   const colors = theme.colors as typeof theme.colors & { textSecondary?: string };
@@ -778,6 +778,11 @@ export default function HistoryScreen() {
   const selectedDateRangeLabelCompact = useMemo(
     () => dateRangeLabelCompact(rangeStartDate, rangeEndDate),
     [rangeEndDate, rangeStartDate]
+  );
+  const isDetailModalVisible = selected !== null || detailLoading;
+  const detailModalMaxHeight = useMemo(
+    () => (Platform.OS === 'web' ? ('85vh' as const) : Math.max(360, Math.floor(height * 0.85))),
+    [height]
   );
   const selectedOperationLabel = useMemo(
     () =>
@@ -980,6 +985,63 @@ export default function HistoryScreen() {
     }, [loadFirstPage])
   );
 
+  const closeDetailsModal = useCallback(() => {
+    setSelected(null);
+    setDetailLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (
+      Platform.OS !== 'web' ||
+      !isDetailModalVisible ||
+      typeof document === 'undefined' ||
+      typeof window === 'undefined'
+    ) {
+      return;
+    }
+
+    const body = document.body;
+    const html = document.documentElement;
+    const scrollY = window.scrollY;
+
+    const previousBodyStyles = {
+      overflow: body.style.overflow,
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+      overscrollBehavior: body.style.overscrollBehavior,
+    };
+    const previousHtmlStyles = {
+      overflow: html.style.overflow,
+      overscrollBehavior: html.style.overscrollBehavior,
+    };
+
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    body.style.overscrollBehavior = 'contain';
+    html.style.overflow = 'hidden';
+    html.style.overscrollBehavior = 'contain';
+
+    return () => {
+      body.style.overflow = previousBodyStyles.overflow;
+      body.style.position = previousBodyStyles.position;
+      body.style.top = previousBodyStyles.top;
+      body.style.left = previousBodyStyles.left;
+      body.style.right = previousBodyStyles.right;
+      body.style.width = previousBodyStyles.width;
+      body.style.overscrollBehavior = previousBodyStyles.overscrollBehavior;
+      html.style.overflow = previousHtmlStyles.overflow;
+      html.style.overscrollBehavior = previousHtmlStyles.overscrollBehavior;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isDetailModalVisible]);
+
   const clearFilters = useCallback(async () => {
     setSearch('');
     setOperationFilter('');
@@ -1108,6 +1170,7 @@ export default function HistoryScreen() {
         data={items}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
+        scrollEnabled={!isDetailModalVisible}
         contentContainerStyle={styles.container}
         removeClippedSubviews={false}
         ListHeaderComponentStyle={
@@ -1445,89 +1508,56 @@ export default function HistoryScreen() {
         />
       )}
 
-      <Portal>
-        {selected !== null || detailLoading ? (
-          <View pointerEvents="none" style={styles.modalBackdropLayer} />
-        ) : null}
+      <BodyPortal>
+        {isDetailModalVisible ? (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Fechar modal de detalhes do histórico"
+              onPress={closeDetailsModal}
+              style={styles.modalBackdropLayer}
+            />
 
-        <Modal
-          visible={selected !== null || detailLoading}
-          onDismiss={() => {
-            setSelected(null);
-            setDetailLoading(false);
-          }}
-          theme={{
-            ...theme,
-            colors: {
-              ...theme.colors,
-              backdrop: 'transparent',
-            },
-          }}
-          style={styles.modalOverlay}
-          contentContainerStyle={styles.modalFrame}
-        >
-          <View
-            style={[
-              styles.modal,
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-            ]}
-          >
-            <ScrollView
-              style={styles.modalScroll}
-              contentContainerStyle={styles.modalScrollContent}
-              showsVerticalScrollIndicator
-              keyboardShouldPersistTaps="handled"
-            >
-              {detailLoading ? (
-                <AppLoadingState message="Carregando detalhes..." style={styles.loadingCard} />
-              ) : (
-                <>
-                  <View style={[styles.modalHeader, isCompact && styles.modalHeaderCompact]}>
-                    <View style={styles.modalTitleRow}>
-                      <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                        Detalhes da movimentação
-                      </Text>
-                      <IconButton
-                        icon="close"
-                        size={20}
-                        onPress={() => setSelected(null)}
-                        iconColor={theme.colors.primary}
-                        accessibilityLabel="action-historico-fechar-detalhes"
-                        style={[
-                          styles.modalCloseButton,
-                          { borderColor: theme.colors.outlineVariant },
-                        ]}
-                      />
-                    </View>
-                    {selected ? (
-                      <View
-                        style={[
-                          styles.operationTag,
-                          styles.modalOperationTag,
-                          {
-                            backgroundColor: operationTone(selected.tipoOperacao).bg,
-                            borderColor: operationTone(selected.tipoOperacao).border,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.operationTagText,
-                            { color: operationTone(selected.tipoOperacao).text },
-                          ]}
-                        >
-                          {opLabel(selected.tipoOperacao)}
-                        </Text>
-                      </View>
-                    ) : null}
+            <View pointerEvents="box-none" style={styles.modalViewport}>
+              <Surface
+                style={[
+                  styles.modal,
+                  Platform.OS === 'web'
+                    ? ({ boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)' } as any)
+                    : null,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.outlineVariant,
+                    maxHeight: detailModalMaxHeight as any,
+                  },
+                ]}
+                elevation={0}
+              >
+                <View
+                  style={[
+                    styles.modalHeader,
+                    isCompact && styles.modalHeaderCompact,
+                    { borderBottomColor: theme.colors.outlineVariant },
+                  ]}
+                >
+                  <View style={styles.modalTitleRow}>
+                    <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+                      Detalhes da movimentação
+                    </Text>
+                    <IconButton
+                      icon="close"
+                      size={20}
+                      onPress={closeDetailsModal}
+                      iconColor={theme.colors.primary}
+                      accessibilityLabel="action-historico-fechar-detalhes"
+                      style={[styles.modalCloseButton, { borderColor: theme.colors.outlineVariant }]}
+                    />
                   </View>
-                  <Text style={[styles.date, { color: textSecondary }]}>
-                    Registrado em {fmtDate(selected?.timestamp)}
-                  </Text>
                   {selected ? (
                     <View
                       style={[
-                        styles.summaryBox,
+                        styles.operationTag,
+                        styles.modalOperationTag,
                         {
                           backgroundColor: operationTone(selected.tipoOperacao).bg,
                           borderColor: operationTone(selected.tipoOperacao).border,
@@ -1536,76 +1566,130 @@ export default function HistoryScreen() {
                     >
                       <Text
                         style={[
-                          styles.summaryTitle,
+                          styles.operationTagText,
                           { color: operationTone(selected.tipoOperacao).text },
                         ]}
                       >
-                        {qtyDetail(selected)}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.summarySub,
-                          { color: operationTone(selected.tipoOperacao).softText },
-                        ]}
-                      >
-                        Quantidade: {quantityFlowLabel(selected)}
+                        {opLabel(selected.tipoOperacao)}
                       </Text>
                     </View>
                   ) : null}
-                  <View style={[styles.detailGrid, isCompact && styles.detailGridCompact]}>
-                    <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
-                      <Text style={[styles.detailLabel, { color: textSecondary }]}>Produto</Text>
-                      <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                        {selected?.produtoNomeModelo ?? 'Não informado'}
+                </View>
+
+                <ScrollView
+                  style={[
+                    styles.modalBodyScroll,
+                    Platform.OS === 'web'
+                      ? ({
+                          overflowY: 'auto',
+                          overflowX: 'hidden',
+                          overscrollBehavior: 'contain',
+                          WebkitOverflowScrolling: 'touch',
+                        } as any)
+                      : null,
+                  ]}
+                  contentContainerStyle={styles.modalBodyContent}
+                  showsVerticalScrollIndicator
+                  keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                >
+                  {detailLoading ? (
+                    <AppLoadingState message="Carregando detalhes..." style={styles.loadingCard} />
+                  ) : (
+                    <>
+                      <Text style={[styles.date, { color: textSecondary }]}>
+                        Registrado em {fmtDate(selected?.timestamp)}
                       </Text>
-                    </View>
-                    <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
-                      <Text style={[styles.detailLabel, { color: textSecondary }]}>Usuário</Text>
-                      <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                        {selected?.usuarioNome ?? selected?.usuarioLogin ?? 'Não identificado'}
-                      </Text>
-                    </View>
-                    <View style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}>
+                      {selected ? (
+                        <View
+                          style={[
+                            styles.summaryBox,
+                            {
+                              backgroundColor: operationTone(selected.tipoOperacao).bg,
+                              borderColor: operationTone(selected.tipoOperacao).border,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.summaryTitle,
+                              { color: operationTone(selected.tipoOperacao).text },
+                            ]}
+                          >
+                            {qtyDetail(selected)}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.summarySub,
+                              { color: operationTone(selected.tipoOperacao).softText },
+                            ]}
+                          >
+                            Quantidade: {quantityFlowLabel(selected)}
+                          </Text>
+                        </View>
+                      ) : null}
+                      <View style={[styles.detailGrid, isCompact && styles.detailGridCompact]}>
+                        <View
+                          style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}
+                        >
+                          <Text style={[styles.detailLabel, { color: textSecondary }]}>Produto</Text>
+                          <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                            {selected?.produtoNomeModelo ?? 'Não informado'}
+                          </Text>
+                        </View>
+                        <View
+                          style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}
+                        >
+                          <Text style={[styles.detailLabel, { color: textSecondary }]}>Usuário</Text>
+                          <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                            {selected?.usuarioNome ?? selected?.usuarioLogin ?? 'Não identificado'}
+                          </Text>
+                        </View>
+                        <View
+                          style={[styles.detailCard, { borderColor: theme.colors.outlineVariant }]}
+                        >
+                          <Text style={[styles.detailLabel, { color: textSecondary }]}>
+                            Localização
+                          </Text>
+                          <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                            {selected
+                              ? locationLabel(
+                                  selected,
+                                  locationByNivelId,
+                                  gradeById,
+                                  fileiraById,
+                                  itemLocationById,
+                                  minuteNivelLocationByKey
+                                )
+                              : 'Fileira - / Grade - / Nível -'}
+                          </Text>
+                        </View>
+                      </View>
                       <Text style={[styles.detailLabel, { color: textSecondary }]}>
-                        Localização
+                        Detalhes técnicos
                       </Text>
-                      <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                        {selected
-                          ? locationLabel(
-                              selected,
-                              locationByNivelId,
-                              gradeById,
-                              fileiraById,
-                              itemLocationById,
-                              minuteNivelLocationByKey
-                            )
-                          : 'Fileira - / Grade - / Nível -'}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.detailLabel, { color: textSecondary }]}>
-                    Detalhes técnicos
-                  </Text>
-                  <View
-                    style={[styles.detailTextBox, { borderColor: theme.colors.outlineVariant }]}
-                  >
-                    <Text style={[styles.details, { color: textSecondary }]}>
-                      {selected?.detalhesAlteracao?.trim()
-                        ? selected.detalhesAlteracao.trim()
-                        : 'Sem detalhes adicionais.'}
-                    </Text>
-                  </View>
-                  <View style={styles.actions}>
-                    <Button mode="contained" onPress={() => setSelected(null)}>
-                      Fechar
-                    </Button>
-                  </View>
-                </>
-              )}
-            </ScrollView>
-          </View>
-        </Modal>
-      </Portal>
+                      <View
+                        style={[styles.detailTextBox, { borderColor: theme.colors.outlineVariant }]}
+                      >
+                        <Text style={[styles.details, { color: textSecondary }]}>
+                          {selected?.detalhesAlteracao?.trim()
+                            ? selected.detalhesAlteracao.trim()
+                            : 'Sem detalhes adicionais.'}
+                        </Text>
+                      </View>
+                      <View style={styles.actions}>
+                        <Button mode="contained" onPress={closeDetailsModal}>
+                          Fechar
+                        </Button>
+                      </View>
+                    </>
+                  )}
+                </ScrollView>
+              </Surface>
+            </View>
+          </>
+        ) : null}
+      </BodyPortal>
 
       <Snackbar
         visible={Boolean(snackbarMessage)}
@@ -1884,40 +1968,80 @@ const styles = StyleSheet.create({
   loadingCard: { minHeight: 132 },
   footer: { paddingVertical: 8, alignItems: 'center', gap: 6 },
   inlineLoading: { minHeight: 32 },
-  modalBackdropLayer: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    zIndex: 998,
-  },
-  modalOverlay: {
-    margin: 0,
-    justifyContent: 'center',
-  },
-  modalFrame: {
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    zIndex: 999,
-  },
+  modalBackdropLayer:
+    Platform.OS === 'web'
+      ? ({
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          backgroundColor: 'rgba(0,0,0,0.4)',
+          zIndex: 999,
+        } as any)
+      : {
+          ...StyleSheet.absoluteFillObject,
+          backgroundColor: 'rgba(0,0,0,0.4)',
+          zIndex: 999,
+        },
+  modalViewport:
+    Platform.OS === 'web'
+      ? ({
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          zIndex: 1000,
+          paddingHorizontal: 14,
+          paddingVertical: 16,
+          justifyContent: 'center',
+          alignItems: 'center',
+          overflow: 'visible',
+        } as any)
+      : {
+          ...StyleSheet.absoluteFillObject,
+          zIndex: 1000,
+          paddingHorizontal: 14,
+          paddingVertical: 16,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
   modal: {
     borderRadius: 18,
     borderWidth: 1,
-    maxHeight: '90%',
     maxWidth: 860,
     alignSelf: 'center',
     width: '100%',
     overflow: 'hidden',
-  },
-  modalScroll: { maxHeight: '100%' },
-  modalScrollContent: {
-    padding: 16,
-    gap: 10,
+    zIndex: 1000,
+    shadowColor: '#000000',
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'column',
     alignItems: 'stretch',
     gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    flexShrink: 0,
   },
   modalHeaderCompact: { flexDirection: 'column', alignItems: 'flex-start' },
+  modalBodyScroll: {
+    width: '100%',
+    minHeight: 0,
+    flexShrink: 1,
+  },
+  modalBodyContent: {
+    padding: 16,
+    gap: 10,
+    paddingBottom: 20,
+  },
   modalTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',

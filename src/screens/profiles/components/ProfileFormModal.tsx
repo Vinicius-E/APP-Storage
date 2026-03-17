@@ -5,7 +5,12 @@ import AppTextInput from '../../../components/AppTextInput';
 import FormModalFrame from '../../../components/FormModalFrame';
 import { SCREEN_LABELS } from '../../../security/permissions';
 import { useThemeContext } from '../../../theme/ThemeContext';
-import { ProfileDTO, ProfileType, ProfileUpsertRequest, ScreenKey } from '../../../types/ProfileDTO';
+import {
+  ProfileDTO,
+  ProfileType,
+  ProfileUpsertRequest,
+  ScreenKey,
+} from '../../../types/ProfileDTO';
 
 type ProfileFormModalProps = {
   visible: boolean;
@@ -78,9 +83,7 @@ export default function ProfileFormModal({
   const descriptionError =
     touchedDescription && !descriptionValue ? 'Informe a descrição do perfil.' : '';
   const allowedScreensError =
-    touchedDescription && form.allowedScreens.length === 0
-      ? 'Selecione pelo menos uma tela.'
-      : '';
+    touchedDescription && form.allowedScreens.length === 0 ? 'Selecione pelo menos uma tela.' : '';
   const isValid = descriptionValue.length > 0 && form.allowedScreens.length > 0;
 
   const typeLabel = useMemo(
@@ -152,10 +155,9 @@ export default function ProfileFormModal({
                   },
                 ]}
               >
-                <Text style={[styles.selectValue, { color: theme.colors.text }]}>{typeLabel}</Text>
-                <Text style={[styles.selectChevron, { color: theme.colors.primary }]}>
-                  {typeMenuVisible ? 'Ë„' : 'Ë…'}
-                </Text>
+                <Text style={[styles.selectValue, { color: theme.colors.text }]}>
+                  {typeLabel}
+                </Text>{' '}
               </Pressable>
             }
             contentStyle={{
@@ -195,12 +197,16 @@ export default function ProfileFormModal({
             accessibilityLabel="Campo descrição do perfil"
           />
           {descriptionError ? (
-            <Text style={[styles.errorText, { color: theme.colors.error }]}>{descriptionError}</Text>
+            <Text style={[styles.errorText, { color: theme.colors.error }]}>
+              {descriptionError}
+            </Text>
           ) : null}
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: theme.colors.primary }]}>Telas permitidas *</Text>
+          <Text style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+            Telas permitidas *
+          </Text>
 
           <View
             style={[
