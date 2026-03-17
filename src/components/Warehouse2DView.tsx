@@ -2,7 +2,6 @@
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   LayoutAnimation,
   Platform,
@@ -11,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
+  PanResponder,
   useWindowDimensions,
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
@@ -121,6 +121,13 @@ interface ItemEstoque {
 type CreatedGrade = { id: number; identificador: string; ordem?: number };
 
 const IS_WEB = Platform.OS === 'web';
+const MIN_WAREHOUSE_SCALE = 0.65;
+const MAX_WAREHOUSE_SCALE = 2;
+const WAREHOUSE_ZOOM_STEP = 0.15;
+const MOBILE_WAREHOUSE_PADDING = 12;
+const MOBILE_WAREHOUSE_BOTTOM_PADDING = 16;
+const MOBILE_ZOOM_BUTTON_SIZE = 46;
+const MOBILE_PAN_THRESHOLD = 4;
 
 type PendingStructureCreationCtx = {
   kind: 'level' | 'grade';
@@ -151,8 +158,41 @@ type SearchResult = {
   label: string;
 };
 
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getTouchDistance(touches: readonly any[]) {
+  if (!touches || touches.length < 2) {
+    return 0;
+  }
+
+  const [firstTouch, secondTouch] = touches;
+  const deltaX = Number(secondTouch?.pageX ?? 0) - Number(firstTouch?.pageX ?? 0);
+  const deltaY = Number(secondTouch?.pageY ?? 0) - Number(firstTouch?.pageY ?? 0);
+
+  return Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+}
+
+function computeDefaultWarehouseScale(
+  viewportWidth: number,
+  viewportHeight: number,
+  contentWidth: number,
+  contentHeight: number
+) {
+  if (viewportWidth <= 0 || viewportHeight <= 0 || contentWidth <= 0 || contentHeight <= 0) {
+    return 1;
+  }
+
+  const safeViewportWidth = Math.max(viewportWidth - MOBILE_WAREHOUSE_PADDING * 2, 1);
+  const safeViewportHeight = Math.max(viewportHeight - MOBILE_WAREHOUSE_BOTTOM_PADDING * 3, 1);
+  const fitScale = Math.min(safeViewportWidth / contentWidth, safeViewportHeight / contentHeight, 1);
+
+  return clampValue(fitScale, MIN_WAREHOUSE_SCALE, 1);
+}
+
 export default function Warehouse2DView() {
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [fileiras, setFileiras] = useState<Fileira[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [creatingFileira, setCreatingFileira] = useState(false);
@@ -223,6 +263,23 @@ export default function Warehouse2DView() {
   const [focusedNivelId, setFocusedNivelId] = useState<number | null>(null);
   const [searchInputFocused, setSearchInputFocused] = useState(false);
   const searchInputRef = useRef<TextInput | null>(null);
+  const [warehouseZoomScale, setWarehouseZoomScale] = useState(1);
+  const [warehousePanX, setWarehousePanX] = useState(0);
+  const [warehousePanY, setWarehousePanY] = useState(0);
+  const [warehouseViewportSize, setWarehouseViewportSize] = useState({ width: 0, height: 0 });
+  const [warehouseContentSize, setWarehouseContentSize] = useState({ width: 0, height: 0 });
+  const [warehouseZoomInitialized, setWarehouseZoomInitialized] = useState(false);
+  const warehouseZoomScaleRef = useRef(1);
+  const warehousePanRef = useRef({ x: 0, y: 0 });
+  const warehouseGestureRef = useRef({
+    mode: 'idle' as 'idle' | 'pan' | 'pinch',
+    startScale: 1,
+    startPanX: 0,
+    startPanY: 0,
+    startDistance: 0,
+    baseDx: 0,
+    baseDy: 0,
+  });
 
   const showSuccess = (message: string) => {
     setSuccessMessage(message);
@@ -279,6 +336,288 @@ export default function Warehouse2DView() {
     () => selectedAreaId ?? areas.find((area) => area.active !== false)?.id ?? null,
     [areas, selectedAreaId]
   );
+  const defaultWarehouseScale = useMemo(
+    () =>
+      computeDefaultWarehouseScale(
+        warehouseViewportSize.width,
+        warehouseViewportSize.height,
+        warehouseContentSize.width,
+        warehouseContentSize.height
+      ),
+    [warehouseContentSize.height, warehouseContentSize.width, warehouseViewportSize.height, warehouseViewportSize.width]
+  );
+
+  const clampWarehouseTransform = useCallback(
+    (nextScale: number, nextPanX: number, nextPanY: number) => {
+      const scale = clampValue(nextScale, MIN_WAREHOUSE_SCALE, MAX_WAREHOUSE_SCALE);
+
+      if (
+        warehouseViewportSize.width <= 0 ||
+        warehouseViewportSize.height <= 0 ||
+        warehouseContentSize.width <= 0 ||
+        warehouseContentSize.height <= 0
+      ) {
+        return { scale, panX: 0, panY: 0 };
+      }
+
+      const scaledWidth = warehouseContentSize.width * scale;
+      const scaledHeight = warehouseContentSize.height * scale;
+      const maxPanX = Math.max(0, (scaledWidth - warehouseViewportSize.width) / 2);
+      const maxPanY = Math.max(0, (scaledHeight - warehouseViewportSize.height) / 2);
+
+      return {
+        scale,
+        panX: maxPanX > 0 ? clampValue(nextPanX, -maxPanX, maxPanX) : 0,
+        panY: maxPanY > 0 ? clampValue(nextPanY, -maxPanY, maxPanY) : 0,
+      };
+    },
+    [
+      warehouseContentSize.height,
+      warehouseContentSize.width,
+      warehouseViewportSize.height,
+      warehouseViewportSize.width,
+    ]
+  );
+
+  const applyWarehouseTransform = useCallback(
+    (nextScale: number, nextPanX: number, nextPanY: number) => {
+      const nextTransform = clampWarehouseTransform(nextScale, nextPanX, nextPanY);
+
+      warehouseZoomScaleRef.current = nextTransform.scale;
+      warehousePanRef.current = { x: nextTransform.panX, y: nextTransform.panY };
+
+      setWarehouseZoomScale((current) =>
+        Math.abs(current - nextTransform.scale) > 0.001 ? nextTransform.scale : current
+      );
+      setWarehousePanX((current) =>
+        Math.abs(current - nextTransform.panX) > 0.5 ? nextTransform.panX : current
+      );
+      setWarehousePanY((current) =>
+        Math.abs(current - nextTransform.panY) > 0.5 ? nextTransform.panY : current
+      );
+
+      return nextTransform;
+    },
+    [clampWarehouseTransform]
+  );
+
+  const canPanWarehouseAtScale = useCallback(
+    (scale: number) => {
+      if (
+        warehouseViewportSize.width <= 0 ||
+        warehouseViewportSize.height <= 0 ||
+        warehouseContentSize.width <= 0 ||
+        warehouseContentSize.height <= 0
+      ) {
+        return false;
+      }
+
+      return (
+        warehouseContentSize.width * scale > warehouseViewportSize.width + 1 ||
+        warehouseContentSize.height * scale > warehouseViewportSize.height + 1
+      );
+    },
+    [
+      warehouseContentSize.height,
+      warehouseContentSize.width,
+      warehouseViewportSize.height,
+      warehouseViewportSize.width,
+    ]
+  );
+
+  const resetWarehouseViewport = useCallback(() => {
+    applyWarehouseTransform(defaultWarehouseScale, 0, 0);
+  }, [applyWarehouseTransform, defaultWarehouseScale]);
+
+  const handleWarehouseZoomIn = useCallback(() => {
+    applyWarehouseTransform(
+      warehouseZoomScaleRef.current + WAREHOUSE_ZOOM_STEP,
+      warehousePanRef.current.x,
+      warehousePanRef.current.y
+    );
+  }, [applyWarehouseTransform]);
+
+  const handleWarehouseZoomOut = useCallback(() => {
+    applyWarehouseTransform(
+      warehouseZoomScaleRef.current - WAREHOUSE_ZOOM_STEP,
+      warehousePanRef.current.x,
+      warehousePanRef.current.y
+    );
+  }, [applyWarehouseTransform]);
+
+  const warehousePanResponder = useMemo(() => {
+    if (IS_WEB) {
+      return null;
+    }
+
+    return PanResponder.create({
+      onStartShouldSetPanResponder: (event) => event.nativeEvent.touches.length >= 2,
+      onStartShouldSetPanResponderCapture: (event) => event.nativeEvent.touches.length >= 2,
+      onMoveShouldSetPanResponder: (event, gestureState) => {
+        if (event.nativeEvent.touches.length >= 2) {
+          return true;
+        }
+
+        return (
+          canPanWarehouseAtScale(warehouseZoomScaleRef.current) &&
+          (Math.abs(gestureState.dx) > MOBILE_PAN_THRESHOLD ||
+            Math.abs(gestureState.dy) > MOBILE_PAN_THRESHOLD)
+        );
+      },
+      onMoveShouldSetPanResponderCapture: (event, gestureState) => {
+        if (event.nativeEvent.touches.length >= 2) {
+          return true;
+        }
+
+        return (
+          canPanWarehouseAtScale(warehouseZoomScaleRef.current) &&
+          (Math.abs(gestureState.dx) > MOBILE_PAN_THRESHOLD ||
+            Math.abs(gestureState.dy) > MOBILE_PAN_THRESHOLD)
+        );
+      },
+      onPanResponderGrant: (event) => {
+        const touches = event.nativeEvent.touches;
+
+        warehouseGestureRef.current.startScale = warehouseZoomScaleRef.current;
+        warehouseGestureRef.current.startPanX = warehousePanRef.current.x;
+        warehouseGestureRef.current.startPanY = warehousePanRef.current.y;
+        warehouseGestureRef.current.baseDx = 0;
+        warehouseGestureRef.current.baseDy = 0;
+
+        if (touches.length >= 2) {
+          warehouseGestureRef.current.mode = 'pinch';
+          warehouseGestureRef.current.startDistance = getTouchDistance(touches);
+          return;
+        }
+
+        warehouseGestureRef.current.mode = 'pan';
+        warehouseGestureRef.current.startDistance = 0;
+      },
+      onPanResponderMove: (event, gestureState) => {
+        const touches = event.nativeEvent.touches;
+
+        if (touches.length >= 2) {
+          const distance = getTouchDistance(touches);
+          if (distance <= 0) {
+            return;
+          }
+
+          if (warehouseGestureRef.current.mode !== 'pinch') {
+            warehouseGestureRef.current.mode = 'pinch';
+            warehouseGestureRef.current.startScale = warehouseZoomScaleRef.current;
+            warehouseGestureRef.current.startDistance = distance;
+          }
+
+          if (warehouseGestureRef.current.startDistance <= 0) {
+            warehouseGestureRef.current.startDistance = distance;
+          }
+
+          const nextScale =
+            warehouseGestureRef.current.startScale *
+            (distance / warehouseGestureRef.current.startDistance);
+
+          applyWarehouseTransform(
+            nextScale,
+            warehousePanRef.current.x,
+            warehousePanRef.current.y
+          );
+          return;
+        }
+
+        if (!canPanWarehouseAtScale(warehouseZoomScaleRef.current)) {
+          return;
+        }
+
+        if (warehouseGestureRef.current.mode !== 'pan') {
+          warehouseGestureRef.current.mode = 'pan';
+          warehouseGestureRef.current.startPanX = warehousePanRef.current.x;
+          warehouseGestureRef.current.startPanY = warehousePanRef.current.y;
+          warehouseGestureRef.current.baseDx = gestureState.dx;
+          warehouseGestureRef.current.baseDy = gestureState.dy;
+        }
+
+        applyWarehouseTransform(
+          warehouseZoomScaleRef.current,
+          warehouseGestureRef.current.startPanX +
+            (gestureState.dx - warehouseGestureRef.current.baseDx),
+          warehouseGestureRef.current.startPanY +
+            (gestureState.dy - warehouseGestureRef.current.baseDy)
+        );
+      },
+      onPanResponderRelease: () => {
+        warehouseGestureRef.current.mode = 'idle';
+      },
+      onPanResponderTerminate: () => {
+        warehouseGestureRef.current.mode = 'idle';
+      },
+      onPanResponderTerminationRequest: () => false,
+    });
+  }, [applyWarehouseTransform, canPanWarehouseAtScale]);
+
+  useEffect(() => {
+    warehouseZoomScaleRef.current = warehouseZoomScale;
+  }, [warehouseZoomScale]);
+
+  useEffect(() => {
+    warehousePanRef.current = { x: warehousePanX, y: warehousePanY };
+  }, [warehousePanX, warehousePanY]);
+
+  useEffect(() => {
+    if (IS_WEB) {
+      return;
+    }
+
+    setWarehouseZoomInitialized(false);
+  }, [currentAreaId, screenWidth, screenHeight]);
+
+  useEffect(() => {
+    if (
+      IS_WEB ||
+      warehouseZoomInitialized ||
+      warehouseViewportSize.width <= 0 ||
+      warehouseViewportSize.height <= 0 ||
+      warehouseContentSize.width <= 0 ||
+      warehouseContentSize.height <= 0
+    ) {
+      return;
+    }
+
+    resetWarehouseViewport();
+    setWarehouseZoomInitialized(true);
+  }, [
+    resetWarehouseViewport,
+    warehouseContentSize.height,
+    warehouseContentSize.width,
+    warehouseViewportSize.height,
+    warehouseViewportSize.width,
+    warehouseZoomInitialized,
+  ]);
+
+  useEffect(() => {
+    if (
+      IS_WEB ||
+      !warehouseZoomInitialized ||
+      warehouseViewportSize.width <= 0 ||
+      warehouseViewportSize.height <= 0 ||
+      warehouseContentSize.width <= 0 ||
+      warehouseContentSize.height <= 0
+    ) {
+      return;
+    }
+
+    applyWarehouseTransform(
+      warehouseZoomScaleRef.current,
+      warehousePanRef.current.x,
+      warehousePanRef.current.y
+    );
+  }, [
+    applyWarehouseTransform,
+    warehouseContentSize.height,
+    warehouseContentSize.width,
+    warehouseViewportSize.height,
+    warehouseViewportSize.width,
+    warehouseZoomInitialized,
+  ]);
 
   useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -2402,23 +2741,43 @@ export default function Warehouse2DView() {
                 </View>
               </View>
             ) : (
-              <View style={styles.mobileWorkspace}>
-                <ScrollView
-                  style={{ flex: 1 }}
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={{
-                    flexGrow: 1,
-                    backgroundColor: colors.background,
-                    paddingBottom: 16,
+              <View style={[styles.mobileWorkspace, { backgroundColor: colors.background }]}>
+                <View
+                  style={[styles.mobileZoomViewport, { backgroundColor: colors.background }]}
+                  onLayout={(event) => {
+                    const { width, height } = event.nativeEvent.layout;
+                    setWarehouseViewportSize((current) =>
+                      current.width === width && current.height === height
+                        ? current
+                        : { width, height }
+                    );
                   }}
-                  nestedScrollEnabled
+                  {...(warehousePanResponder?.panHandlers ?? {})}
                 >
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.fileirasRow}
-                    nestedScrollEnabled
-                  >
+                  <View style={styles.mobileZoomCanvas}>
+                    <View
+                      style={[
+                        styles.mobileZoomTransform,
+                        {
+                          transform: [
+                            { scale: warehouseZoomScale },
+                            { translateX: warehousePanX },
+                            { translateY: warehousePanY },
+                          ],
+                        },
+                      ]}
+                    >
+                      <View
+                        onLayout={(event) => {
+                          const { width, height } = event.nativeEvent.layout;
+                          setWarehouseContentSize((current) =>
+                            current.width === width && current.height === height
+                              ? current
+                              : { width, height }
+                          );
+                        }}
+                        style={styles.fileirasRowZoom}
+                      >
                 {fileiras.length === 0 ? (
                   <View
                     style={[
@@ -2774,12 +3133,86 @@ export default function Warehouse2DView() {
                   ) : (
                     <AntDesign name="plus" size={26} color={colors.primary} />
                   )}
-                <Text style={[styles.addFileiraButtonText, { color: colors.primary }]}>
-                  Adicionar Fileira
-                </Text>
-              </Pressable>
-                  </ScrollView>
-                </ScrollView>
+                  <Text style={[styles.addFileiraButtonText, { color: colors.primary }]}>
+                    Adicionar Fileira
+                  </Text>
+                </Pressable>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View pointerEvents="box-none" style={styles.mobileZoomControls}>
+                    <Pressable
+                      onPress={handleWarehouseZoomIn}
+                      disabled={warehouseZoomScale >= MAX_WAREHOUSE_SCALE - 0.01}
+                      style={({ pressed }) => [
+                        styles.mobileZoomButton,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.outline,
+                          opacity:
+                            warehouseZoomScale >= MAX_WAREHOUSE_SCALE - 0.01
+                              ? 0.5
+                              : pressed
+                                ? 0.84
+                                : 1,
+                        },
+                      ]}
+                    >
+                      <AntDesign name="plus" size={20} color={colors.primary} />
+                    </Pressable>
+
+                    <Pressable
+                      onPress={handleWarehouseZoomOut}
+                      disabled={warehouseZoomScale <= MIN_WAREHOUSE_SCALE + 0.01}
+                      style={({ pressed }) => [
+                        styles.mobileZoomButton,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.outline,
+                          opacity:
+                            warehouseZoomScale <= MIN_WAREHOUSE_SCALE + 0.01
+                              ? 0.5
+                              : pressed
+                                ? 0.84
+                                : 1,
+                        },
+                      ]}
+                    >
+                      <AntDesign name="minus" size={20} color={colors.primary} />
+                    </Pressable>
+
+                    <Pressable
+                      onPress={resetWarehouseViewport}
+                      disabled={
+                        Math.abs(warehouseZoomScale - defaultWarehouseScale) < 0.01 &&
+                        Math.abs(warehousePanX) < 1 &&
+                        Math.abs(warehousePanY) < 1
+                      }
+                      style={({ pressed }) => [
+                        styles.mobileZoomButton,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.outline,
+                          opacity:
+                            Math.abs(warehouseZoomScale - defaultWarehouseScale) < 0.01 &&
+                            Math.abs(warehousePanX) < 1 &&
+                            Math.abs(warehousePanY) < 1
+                              ? 0.5
+                              : pressed
+                                ? 0.84
+                                : 1,
+                        },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="fit-to-screen-outline"
+                        size={20}
+                        color={colors.primary}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
               </View>
             )}
           </>
@@ -2983,6 +3416,46 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     paddingTop: 8,
+  },
+  mobileZoomViewport: {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  mobileZoomCanvas: {
+    flex: 1,
+    minHeight: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: MOBILE_WAREHOUSE_PADDING,
+    paddingBottom: MOBILE_WAREHOUSE_BOTTOM_PADDING,
+  },
+  mobileZoomTransform: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  mobileZoomControls: {
+    position: 'absolute',
+    right: 14,
+    bottom: 14,
+    alignItems: 'stretch',
+    gap: 10,
+    zIndex: 5,
+  },
+  mobileZoomButton: {
+    width: MOBILE_ZOOM_BUTTON_SIZE,
+    height: MOBILE_ZOOM_BUTTON_SIZE,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   initialLoadingWrap: {
     flex: 1,
@@ -3234,6 +3707,17 @@ const styles = StyleSheet.create({
     margin: 0,
     paddingHorizontal: 12,
     paddingVertical: 12,
+  },
+
+  fileirasRowZoom: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    margin: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingBottom: 28,
+    alignSelf: 'flex-start',
   },
 
   emptyStateCardMobile: {
