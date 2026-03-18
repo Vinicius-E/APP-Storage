@@ -19,6 +19,7 @@ import AuthCard from '../../components/AuthCard';
 import AuthInputField from '../../components/AuthInputField';
 import AuthPrimaryButton from '../../components/AuthPrimaryButton';
 import AuthSecondaryLink from '../../components/AuthSecondaryLink';
+import { useAppScreenScrollableLayout } from '../../hooks/useAppScreenScrollableLayout';
 import { useThemeContext } from '../../theme/ThemeContext';
 import { getUserFacingErrorMessage } from '../../utils/userFacingError';
 
@@ -46,6 +47,7 @@ export default function LoginScreen() {
   const { signIn } = useAuth();
   const isCompact = width < 420;
   const isShortViewport = height < 760;
+  const loginScrollableLayout = useAppScreenScrollableLayout(isShortViewport ? 18 : 28);
 
   const emailValue = email.trim();
   const emailValid = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue), [emailValue]);
@@ -147,16 +149,19 @@ export default function LoginScreen() {
         </View>
 
         <ScrollView
+          style={styles.scroll}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.scrollContent,
+            loginScrollableLayout.contentContainerStyle,
             {
               justifyContent: isShortViewport ? 'flex-start' : 'center',
               paddingHorizontal: isCompact ? 14 : 20,
-              paddingVertical: isShortViewport ? 18 : 28,
+              paddingTop: isShortViewport ? 18 : 28,
             },
           ]}
+          {...loginScrollableLayout.scrollViewProps}
         >
           <AuthCard badge="Wester Estoque">
             <View
@@ -235,6 +240,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   page: {
+    flex: 1,
+  },
+  scroll: {
     flex: 1,
   },
   header: {

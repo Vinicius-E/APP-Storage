@@ -348,7 +348,7 @@ function ThemedDrawerContent(props: any) {
   return (
     <DrawerContentScrollView
       {...props}
-      style={{ backgroundColor: colors.surfaceVariant }}
+      style={[styles.drawerScroll, { backgroundColor: colors.surfaceVariant }]}
       automaticallyAdjustContentInsets
       automaticallyAdjustsScrollIndicatorInsets
       contentInsetAdjustmentBehavior="automatic"
@@ -356,12 +356,12 @@ function ThemedDrawerContent(props: any) {
         styles.drawerScrollContent,
         {
           backgroundColor: colors.surfaceVariant,
-          paddingTop: insets.top,
+          paddingTop: insets.top + 8,
           paddingBottom: insets.bottom + 12,
         },
       ]}
       scrollIndicatorInsets={{
-        top: insets.top,
+        top: insets.top + 8,
         bottom: insets.bottom + 12,
         left: 0,
         right: 0,
@@ -399,10 +399,24 @@ function ThemedDrawerContent(props: any) {
             animationType="fade"
             onRequestClose={closeProfileMenu}
           >
-            <Pressable style={styles.modalOverlay} onPress={closeProfileMenu}>
+            <Pressable
+              style={[
+                styles.modalOverlay,
+                {
+                  paddingTop: insets.top + 16,
+                  paddingBottom: insets.bottom + 16,
+                },
+              ]}
+              onPress={closeProfileMenu}
+            >
               <Pressable
                 onPress={() => {}}
-                style={[styles.profileMenu, { backgroundColor: colors.surface }]}
+                style={[
+                  styles.profileMenu,
+                  {
+                    backgroundColor: colors.surface,
+                  },
+                ]}
               >
                 <Pressable
                   onPress={goProfile}
@@ -596,7 +610,6 @@ function ScreenFrame({
   children: React.ReactNode;
 }) {
   const { theme } = useThemeContext();
-  const safeAreaInsets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const shellBackground =
     (theme.colors as typeof theme.colors & { appShellBackground?: string }).appShellBackground ??
@@ -644,9 +657,6 @@ function ScreenFrame({
       <View
         style={[
           styles.screenBody,
-          {
-            paddingBottom: safeAreaInsets.bottom,
-          },
           showLargeCanvas
             ? ({
                 backgroundColor: shellBackground,
@@ -719,7 +729,7 @@ export default function DrawerNavigator() {
     return (
       <SafeAreaView
         style={{ flex: 1, backgroundColor: shellBackground, paddingHorizontal: 20 }}
-        edges={['top', 'left', 'right']}
+        edges={['top', 'bottom', 'left', 'right']}
       >
         <AppLoadingState message="Carregando sessão..." style={{ flex: 1 }} />
       </SafeAreaView>
@@ -1002,6 +1012,9 @@ export default function DrawerNavigator() {
 }
 
 const styles = StyleSheet.create({
+  drawerScroll: {
+    flex: 1,
+  },
   drawerScrollContent: {
     flexGrow: 1,
     paddingTop: 0,
@@ -1129,7 +1142,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.12)',
     justifyContent: 'flex-start',
     alignItems: 'flex-start',
-    paddingTop: 70,
     paddingLeft: 14,
   },
   profileMenu: {

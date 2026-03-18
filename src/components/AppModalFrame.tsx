@@ -14,6 +14,7 @@ import {
   type PressableStateCallbackType,
 } from 'react-native';
 import { Surface, Text } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BodyPortal from './BodyPortal';
 import { useThemeContext } from '../theme/ThemeContext';
 
@@ -261,6 +262,7 @@ export default function AppModalFrame({
   bodyStyle,
 }: AppModalFrameProps) {
   const { theme } = useThemeContext();
+  const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isCompact = width < 720;
   const panelWidth = Math.min(width - (isCompact ? 20 : 48), maxWidth);
@@ -342,7 +344,16 @@ export default function AppModalFrame({
   return (
     <BodyPortal>
       {renderBackdrop}
-      <View pointerEvents="box-none" style={styles.viewport}>
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.viewport,
+          {
+            paddingTop: insets.top + 16,
+            paddingBottom: insets.bottom + 16,
+          },
+        ]}
+      >
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Surface
             style={[
@@ -423,10 +434,23 @@ export default function AppModalFrame({
 
             <ScrollView
               style={[styles.bodyScroll, bodyStyle]}
-              contentContainerStyle={[styles.bodyContent, scrollContentStyle]}
+              contentContainerStyle={[
+                styles.bodyContent,
+                { paddingBottom: insets.bottom + 16 },
+                scrollContentStyle,
+              ]}
               showsVerticalScrollIndicator
               keyboardShouldPersistTaps="handled"
               nestedScrollEnabled
+              automaticallyAdjustContentInsets
+              automaticallyAdjustsScrollIndicatorInsets
+              contentInsetAdjustmentBehavior="automatic"
+              scrollIndicatorInsets={{
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: insets.bottom + 16,
+              }}
             >
               {children}
             </ScrollView>

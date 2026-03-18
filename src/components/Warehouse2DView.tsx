@@ -9,12 +9,13 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  ScrollView,
   TextInput,
   PanResponder,
-  useWindowDimensions,
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAreaContext } from '../areas/AreaContext';
 import { useThemeContext } from '../theme/ThemeContext';
 import { AddGradeNivelButton } from './AddGradeNivelButton';
@@ -42,6 +43,7 @@ import SearchResultsModal from './warehouse2d/modals/SearchResultsModal';
 import SelectGradeProductModal from './warehouse2d/modals/SelectGradeProductModal';
 import WarehouseItemDetailsModal from './warehouse2d/modals/WarehouseItemDetailsModal';
 import WarehouseItemFormModal from './warehouse2d/modals/WarehouseItemFormModal';
+import { useResponsiveViewport } from '../hooks/useResponsiveViewport';
 
 interface Produto {
   id: number;
@@ -192,10 +194,16 @@ function computeDefaultWarehouseScale(
 }
 
 export default function Warehouse2DView() {
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const safeAreaInsets = useSafeAreaInsets();
+  const {
+    width: screenWidth,
+    height: screenHeight,
+    isMobileViewport,
+  } = useResponsiveViewport();
   const [fileiras, setFileiras] = useState<Fileira[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [creatingFileira, setCreatingFileira] = useState(false);
+  const [selectedMobileFileiraId, setSelectedMobileFileiraId] = useState<number | null>(null);
   const [expandedGrades, setExpandedGrades] = useState<number[]>([]);
   const [expandedFileiras, setExpandedFileiras] = useState<number[]>([]);
   const [hoverFileira, setHoverFileira] = useState<Record<number, boolean>>({});
@@ -261,6 +269,9 @@ export default function Warehouse2DView() {
   const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [searchResultsVisible, setSearchResultsVisible] = useState(false);
   const [focusedNivelId, setFocusedNivelId] = useState<number | null>(null);
+  const shouldUseMobileWarehouseLayout = isMobileViewport;
+  const shouldUseWideNativeWarehouseLayout = !IS_WEB && !shouldUseMobileWarehouseLayout;
+  const shouldUseWideWebWarehouseLayout = IS_WEB && !shouldUseMobileWarehouseLayout;
   const [searchInputFocused, setSearchInputFocused] = useState(false);
   const searchInputRef = useRef<TextInput | null>(null);
   const [warehouseZoomScale, setWarehouseZoomScale] = useState(1);
@@ -336,6 +347,13 @@ export default function Warehouse2DView() {
     () => selectedAreaId ?? areas.find((area) => area.active !== false)?.id ?? null,
     [areas, selectedAreaId]
   );
+  const selectedMobileFileira = useMemo(() => {
+    if (fileiras.length === 0) {
+      return null;
+    }
+
+    return fileiras.find((fileira) => fileira.id === selectedMobileFileiraId) ?? fileiras[0];
+  }, [fileiras, selectedMobileFileiraId]);
   const defaultWarehouseScale = useMemo(
     () =>
       computeDefaultWarehouseScale(
@@ -446,7 +464,7 @@ export default function Warehouse2DView() {
   }, [applyWarehouseTransform]);
 
   const warehousePanResponder = useMemo(() => {
-    if (IS_WEB) {
+    if (!shouldUseWideNativeWarehouseLayout) {
       return null;
     }
 
@@ -552,7 +570,7 @@ export default function Warehouse2DView() {
       },
       onPanResponderTerminationRequest: () => false,
     });
-  }, [applyWarehouseTransform, canPanWarehouseAtScale]);
+  }, [applyWarehouseTransform, canPanWarehouseAtScale, shouldUseWideNativeWarehouseLayout]);
 
   useEffect(() => {
     warehouseZoomScaleRef.current = warehouseZoomScale;
@@ -563,16 +581,12 @@ export default function Warehouse2DView() {
   }, [warehousePanX, warehousePanY]);
 
   useEffect(() => {
-    if (IS_WEB) {
-      return;
-    }
-
     setWarehouseZoomInitialized(false);
-  }, [currentAreaId, screenWidth, screenHeight]);
+  }, [currentAreaId, screenHeight, screenWidth, shouldUseWideNativeWarehouseLayout]);
 
   useEffect(() => {
     if (
-      IS_WEB ||
+      !shouldUseWideNativeWarehouseLayout ||
       warehouseZoomInitialized ||
       warehouseViewportSize.width <= 0 ||
       warehouseViewportSize.height <= 0 ||
@@ -590,12 +604,13 @@ export default function Warehouse2DView() {
     warehouseContentSize.width,
     warehouseViewportSize.height,
     warehouseViewportSize.width,
+    shouldUseWideNativeWarehouseLayout,
     warehouseZoomInitialized,
   ]);
 
   useEffect(() => {
     if (
-      IS_WEB ||
+      !shouldUseWideNativeWarehouseLayout ||
       !warehouseZoomInitialized ||
       warehouseViewportSize.width <= 0 ||
       warehouseViewportSize.height <= 0 ||
@@ -616,6 +631,7 @@ export default function Warehouse2DView() {
     warehouseContentSize.width,
     warehouseViewportSize.height,
     warehouseViewportSize.width,
+    shouldUseWideNativeWarehouseLayout,
     warehouseZoomInitialized,
   ]);
 
@@ -946,10 +962,26 @@ export default function Warehouse2DView() {
     setExpandedGrades([]);
     setExpandedFileiras([]);
     setActiveGradeId(null);
+    setSelectedMobileFileiraId(null);
     setFocusedNivelId(null);
     setSearchResultsVisible(false);
     void fetchAllData(true, currentAreaId);
   }, [areaLoading, currentAreaId]);
+
+  useEffect(() => {
+    if (fileiras.length === 0) {
+      if (selectedMobileFileiraId !== null) {
+        setSelectedMobileFileiraId(null);
+      }
+      return;
+    }
+
+    const hasSelectedFileira = fileiras.some((fileira) => fileira.id === selectedMobileFileiraId);
+
+    if (!hasSelectedFileira) {
+      setSelectedMobileFileiraId(fileiras[0].id);
+    }
+  }, [fileiras, selectedMobileFileiraId]);
 
   const toggleGradeExpand = (grade: Grade) => {
     safeLayoutAnimation();
@@ -986,6 +1018,43 @@ export default function Warehouse2DView() {
 
     setActiveGradeId(null);
   };
+
+  const handleMobileFileiraSelection = useCallback((fileiraId: number) => {
+    setSelectedMobileFileiraId((currentFileiraId) => {
+      return currentFileiraId === fileiraId ? currentFileiraId : fileiraId;
+    });
+    setExpandedGrades([]);
+    setActiveGradeId(null);
+    setExpandedFileiras((previousFileiras) => {
+      return previousFileiras.includes(fileiraId)
+        ? previousFileiras
+        : [...previousFileiras, fileiraId];
+    });
+  }, []);
+
+  const focusStructureContextForCurrentLayout = useCallback(
+    (fileiraId: number, gradeId: number) => {
+      setExpandedFileiras((previousFileiras) => {
+        return previousFileiras.includes(fileiraId)
+          ? previousFileiras
+          : [...previousFileiras, fileiraId];
+      });
+
+      if (shouldUseMobileWarehouseLayout) {
+        setSelectedMobileFileiraId(fileiraId);
+        setExpandedGrades([gradeId]);
+      } else {
+        setExpandedGrades((previousGrades) => {
+          return previousGrades.includes(gradeId)
+            ? previousGrades
+            : [...previousGrades, gradeId];
+        });
+      }
+
+      setActiveGradeId(gradeId);
+    },
+    [shouldUseMobileWarehouseLayout]
+  );
 
   const removerUltimoNivel = async (fileiraId: number, grade: Grade) => {
     if (grade.niveis.length <= 1) {
@@ -1030,9 +1099,7 @@ export default function Warehouse2DView() {
       } catch (resequenceError: any) {
         if (resequenceError?.response?.status === 404) {
           await fetchAllData();
-          setExpandedFileiras((prev) => (prev.includes(fileiraId) ? prev : [...prev, fileiraId]));
-          setExpandedGrades((prev) => (prev.includes(gradeId) ? prev : [...prev, gradeId]));
-          setActiveGradeId(gradeId);
+          focusStructureContextForCurrentLayout(fileiraId, gradeId);
           showSuccess(`Nível ${nivel.identificador} já havia sido removido. Lista sincronizada.`);
           return true;
         }
@@ -1044,9 +1111,7 @@ export default function Warehouse2DView() {
       }
       await fetchAllData();
 
-      setExpandedFileiras((prev) => (prev.includes(fileiraId) ? prev : [...prev, fileiraId]));
-      setExpandedGrades((prev) => (prev.includes(gradeId) ? prev : [...prev, gradeId]));
-      setActiveGradeId(gradeId);
+      focusStructureContextForCurrentLayout(fileiraId, gradeId);
       showSuccess(`Nível ${nivel.identificador} removido com sucesso. Grade atualizada.`);
       return true;
     } catch (error: any) {
@@ -1115,6 +1180,14 @@ export default function Warehouse2DView() {
 
   const handleGradePress = (grade: Grade) => {
     const isCurrentlyExpanded = expandedGrades.includes(grade.id);
+
+    if (shouldUseMobileWarehouseLayout) {
+      safeLayoutAnimation();
+      setExpandedGrades(isCurrentlyExpanded ? [] : [grade.id]);
+      setActiveGradeId(isCurrentlyExpanded ? null : grade.id);
+      return;
+    }
+
     setActiveGradeId(isCurrentlyExpanded ? null : grade.id);
     toggleGradeExpand(grade);
   };
@@ -1621,15 +1694,7 @@ export default function Warehouse2DView() {
 
       await fetchAllData();
 
-      setExpandedFileiras((prev) =>
-        prev.includes(pendingStructureCtx.fileiraId)
-          ? prev
-          : [...prev, pendingStructureCtx.fileiraId]
-      );
-      setExpandedGrades((prev) =>
-        prev.includes(targetGrade.id) ? prev : [...prev, targetGrade.id]
-      );
-      setActiveGradeId(targetGrade.id);
+      focusStructureContextForCurrentLayout(pendingStructureCtx.fileiraId, targetGrade.id);
 
       const successMessage =
         pendingStructureCtx.kind === 'grade'
@@ -1895,6 +1960,9 @@ export default function Warehouse2DView() {
       });
 
       setExpandedFileiras((prev) => (prev.includes(createdId) ? prev : [...prev, createdId]));
+      setSelectedMobileFileiraId(createdId);
+      setExpandedGrades([]);
+      setActiveGradeId(null);
     } catch (error: any) {
       Alert.alert(
         'Erro',
@@ -2127,9 +2195,7 @@ export default function Warehouse2DView() {
   };
 
   const focusOnResult = (r: SearchResult) => {
-    setExpandedFileiras((prev) => (prev.includes(r.fileiraId) ? prev : [...prev, r.fileiraId]));
-    setExpandedGrades((prev) => (prev.includes(r.gradeId) ? prev : [...prev, r.gradeId]));
-    setActiveGradeId(r.gradeId);
+    focusStructureContextForCurrentLayout(r.fileiraId, r.gradeId);
 
     setHoverNivel((prev) => ({ ...prev, [r.nivelId]: true }));
     setFocusedNivelId(r.nivelId);
@@ -2356,7 +2422,7 @@ export default function Warehouse2DView() {
               }}
             />
 
-            {IS_WEB ? (
+            {shouldUseWideWebWarehouseLayout ? (
               <View style={styles.webWorkspace}>
                 <View style={[styles.webScroller, { backgroundColor: colors.background }]}>
                   <View style={styles.webContent}>
@@ -2740,6 +2806,558 @@ export default function Warehouse2DView() {
                   </View>
                 </View>
               </View>
+            ) : shouldUseMobileWarehouseLayout ? (
+              <View style={[styles.mobileWorkspace, { backgroundColor: colors.background }]}>
+                <ScrollView
+                  style={styles.mobileLayoutScroll}
+                  contentContainerStyle={[
+                    styles.mobileLayoutContent,
+                    { paddingBottom: safeAreaInsets.bottom + 24 },
+                  ]}
+                  contentInsetAdjustmentBehavior="automatic"
+                  automaticallyAdjustContentInsets
+                  automaticallyAdjustsScrollIndicatorInsets
+                  showsVerticalScrollIndicator={false}
+                  scrollIndicatorInsets={{
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: safeAreaInsets.bottom + 24,
+                  }}
+                >
+                  {fileiras.length === 0 ? (
+                    <View style={styles.mobileEmptyStateWrap}>
+                      <View
+                        style={[
+                          styles.emptyStateCardMobile,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.outline,
+                          },
+                        ]}
+                      >
+                        <AppEmptyState
+                          title={API_STATE_MESSAGES.warehouse.empty.default.title}
+                          description={API_STATE_MESSAGES.warehouse.empty.default.description}
+                          icon="warehouse"
+                          tipo="vazio"
+                        />
+                      </View>
+
+                      <Pressable
+                        onPress={addNewFileira}
+                        disabled={creatingFileira}
+                        style={({ pressed }) => [
+                          styles.mobileAddStructureButton,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.primary,
+                            opacity: creatingFileira ? 0.6 : pressed ? 0.82 : 1,
+                          },
+                        ]}
+                      >
+                        {creatingFileira ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <AntDesign name="plus" size={18} color={colors.primary} />
+                        )}
+                        <Text
+                          style={[
+                            styles.mobileAddStructureButtonText,
+                            { color: colors.primary },
+                          ]}
+                        >
+                          Adicionar primeira fileira
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.mobileFileiraSelectorSection}>
+                        <Text style={[styles.mobileSectionLabel, { color: colors.text }]}>
+                          Navegue por fileira
+                        </Text>
+
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          contentInsetAdjustmentBehavior="automatic"
+                          automaticallyAdjustContentInsets
+                          contentContainerStyle={styles.mobileFileiraChipList}
+                        >
+                          {fileiras.map((fileira) => {
+                            const isSelectedFileira = selectedMobileFileira?.id === fileira.id;
+
+                            return (
+                              <Pressable
+                                key={fileira.id}
+                                onPress={() => handleMobileFileiraSelection(fileira.id)}
+                                style={({ pressed }) => [
+                                  styles.mobileFileiraChip,
+                                  {
+                                    backgroundColor: isSelectedFileira
+                                      ? colors.primary
+                                      : colors.surface,
+                                    borderColor: isSelectedFileira
+                                      ? colors.primary
+                                      : colors.outline,
+                                    opacity: pressed ? 0.84 : 1,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.mobileFileiraChipText,
+                                    {
+                                      color: isSelectedFileira
+                                        ? colors.background
+                                        : colors.text,
+                                    },
+                                  ]}
+                                >
+                                  {`Fileira ${fileira.identificador}`}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+
+                          <Pressable
+                            onPress={addNewFileira}
+                            disabled={creatingFileira}
+                            style={({ pressed }) => [
+                              styles.mobileAddFileiraChip,
+                              {
+                                backgroundColor: colors.surface,
+                                borderColor: colors.primary,
+                                opacity: creatingFileira ? 0.6 : pressed ? 0.82 : 1,
+                              },
+                            ]}
+                          >
+                            {creatingFileira ? (
+                              <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                              <>
+                                <AntDesign name="plus" size={16} color={colors.primary} />
+                                <Text
+                                  style={[
+                                    styles.mobileAddFileiraChipText,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  Nova fileira
+                                </Text>
+                              </>
+                            )}
+                          </Pressable>
+                        </ScrollView>
+                      </View>
+
+                      {selectedMobileFileira ? (
+                        <View
+                          style={[
+                            styles.mobileFileiraPanel,
+                            {
+                              backgroundColor: colors.surface,
+                              borderColor: colors.outline,
+                            },
+                          ]}
+                        >
+                          <View style={styles.mobileFileiraPanelHeader}>
+                            <View style={styles.mobileFileiraPanelHeaderText}>
+                              <Text
+                                style={[
+                                  styles.mobileFileiraPanelEyebrow,
+                                  { color: colors.primary },
+                                ]}
+                              >
+                                Fileira ativa
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.mobileFileiraPanelTitle,
+                                  { color: colors.text },
+                                ]}
+                              >
+                                {`Fileira ${selectedMobileFileira.identificador}`}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.mobileFileiraPanelMeta,
+                                  { color: colors.text },
+                                ]}
+                              >
+                                {`${selectedMobileFileira.grades.length} grade(s) cadastrada(s)`}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.mobileGradeAccordionList}>
+                            {selectedMobileFileira.grades.map((grade) => {
+                              const gradeExpanded = expandedGrades.includes(grade.id);
+                              const gradeIsActive = activeGradeId === grade.id;
+                              const orderedNiveis = [...grade.niveis].sort(
+                                (firstNivel, secondNivel) =>
+                                  parseNivelOrder(firstNivel) - parseNivelOrder(secondNivel)
+                              );
+                              const matchedNiveisCount = orderedNiveis.filter((nivel) =>
+                                matchedNivelIds.has(nivel.id)
+                              ).length;
+                              const canRemoveGradeLevel =
+                                removingGradeId !== grade.id && orderedNiveis.length > 1;
+
+                              return (
+                                <View key={grade.id} style={styles.mobileGradeAccordionItem}>
+                                  <Pressable
+                                    onPress={() => handleGradePress(grade)}
+                                    style={({ pressed }) => [
+                                      styles.mobileGradeAccordionHeader,
+                                      {
+                                        backgroundColor: colors.surface,
+                                        borderColor:
+                                          gradeExpanded || gradeIsActive
+                                            ? colors.primary
+                                            : colors.outline,
+                                        opacity: pressed ? 0.88 : 1,
+                                      },
+                                    ]}
+                                  >
+                                    <View style={styles.mobileGradeAccordionHeaderText}>
+                                      <View style={styles.mobileGradeAccordionTitleRow}>
+                                        <Text
+                                          numberOfLines={1}
+                                          ellipsizeMode="tail"
+                                          style={[
+                                            styles.mobileGradeAccordionTitle,
+                                            {
+                                              color:
+                                                gradeExpanded || gradeIsActive
+                                                  ? colors.primary
+                                                  : colors.text,
+                                            },
+                                          ]}
+                                        >
+                                          {formatGradeLabel(grade.identificador)}
+                                        </Text>
+
+                                        <View
+                                          style={[
+                                            styles.mobileGradeCountBadge,
+                                            {
+                                              backgroundColor: colors.surfaceVariant,
+                                              borderColor: colors.outline,
+                                            },
+                                          ]}
+                                        >
+                                          <Text
+                                            style={[
+                                              styles.mobileGradeCountBadgeText,
+                                              { color: colors.text },
+                                            ]}
+                                          >
+                                            {`${orderedNiveis.length} nível(is)`}
+                                          </Text>
+                                        </View>
+                                      </View>
+
+                                      <Text
+                                        numberOfLines={1}
+                                        ellipsizeMode="tail"
+                                        style={[
+                                          styles.mobileGradeAccordionSummary,
+                                          { color: colors.text },
+                                        ]}
+                                      >
+                                        {searchEnabled && matchedNiveisCount > 0
+                                          ? `${matchedNiveisCount} resultado(s) nesta grade`
+                                          : gradeExpanded
+                                            ? 'Toque em um nível para abrir os detalhes.'
+                                            : 'Toque para expandir esta grade.'}
+                                      </Text>
+                                    </View>
+
+                                    <View style={styles.mobileGradeAccordionHeaderActions}>
+                                      <ActionIconButton
+                                        iconName="plus"
+                                        size="medium"
+                                        buttonSize={{ width: 42, height: 42 }}
+                                        borderColor={colors.outline}
+                                        backgroundColor={colors.surface}
+                                        iconColor={colors.primary}
+                                        primaryColor={colors.primary}
+                                        stopPropagation
+                                        onPress={() => {
+                                          openAddLevelDecisionForGrade(
+                                            selectedMobileFileira,
+                                            grade
+                                          );
+                                        }}
+                                      />
+
+                                      <ActionIconButton
+                                        iconName="minus"
+                                        size="medium"
+                                        buttonSize={{ width: 42, height: 42 }}
+                                        borderColor={colors.outline}
+                                        backgroundColor={colors.surface}
+                                        iconColor={colors.primary}
+                                        primaryColor={colors.primary}
+                                        stopPropagation
+                                        disabled={!canRemoveGradeLevel}
+                                        loading={removingGradeId === grade.id}
+                                        onPress={() => {
+                                          removerUltimoNivel(selectedMobileFileira.id, grade);
+                                        }}
+                                      />
+
+                                      <View
+                                        style={[
+                                          styles.mobileGradeAccordionCaret,
+                                          { borderColor: colors.outline },
+                                        ]}
+                                      >
+                                        <AntDesign
+                                          name={gradeExpanded ? 'caret-up' : 'caret-down'}
+                                          size={16}
+                                          color={
+                                            gradeExpanded || gradeIsActive
+                                              ? colors.primary
+                                              : colors.text
+                                          }
+                                        />
+                                      </View>
+                                    </View>
+                                  </Pressable>
+
+                                  {gradeExpanded ? (
+                                    <View
+                                      style={[
+                                        styles.mobileGradeAccordionBody,
+                                        {
+                                          backgroundColor: colors.surface,
+                                          borderColor: colors.outline,
+                                        },
+                                      ]}
+                                    >
+                                      {orderedNiveis.length > 0 ? (
+                                        orderedNiveis.map((nivel) => {
+                                          const quantidadeExibida =
+                                            typeof nivel.quantidade === 'number'
+                                              ? nivel.quantidade
+                                              : 0;
+                                          const produtoDisplay = getNivelProductDisplay(nivel);
+                                          const productCode = String(
+                                            nivel.produto?.codigoSistemaWester ?? ''
+                                          ).trim();
+                                          const nivelSemProduto = produtoDisplay.empty;
+                                          const isNivelMatched =
+                                            searchEnabled && matchedNivelIds.has(nivel.id);
+                                          const shouldDimNivel =
+                                            searchEnabled && !isNivelMatched;
+                                          const onlyOneNivelInGrade =
+                                            orderedNiveis.length <= 1;
+                                          const isRemovingThisNivel =
+                                            resequenceNivelId === nivel.id;
+                                          const disableRemoveNivelButton =
+                                            onlyOneNivelInGrade || isRemovingThisNivel;
+
+                                          return (
+                                            <Pressable
+                                              key={nivel.id}
+                                              id={`nivel-${nivel.id}` as any}
+                                              onPress={() =>
+                                                handleNivelClick(
+                                                  selectedMobileFileira,
+                                                  grade,
+                                                  nivel
+                                                )
+                                              }
+                                              style={({ pressed }) => [
+                                                styles.mobileNivelCard,
+                                                {
+                                                  backgroundColor: colors.surface,
+                                                  borderColor: isNivelMatched
+                                                    ? colors.primary
+                                                    : colors.outline,
+                                                  opacity: shouldDimNivel
+                                                    ? 0.46
+                                                    : pressed
+                                                      ? 0.84
+                                                      : 1,
+                                                },
+                                              ]}
+                                            >
+                                              <View style={styles.mobileNivelHeaderRow}>
+                                                <View
+                                                  style={[
+                                                    styles.mobileNivelBadge,
+                                                    {
+                                                      backgroundColor:
+                                                        colors.surfaceVariant,
+                                                      borderColor: colors.outline,
+                                                    },
+                                                  ]}
+                                                >
+                                                  <Text
+                                                    style={[
+                                                      styles.mobileNivelBadgeText,
+                                                      { color: colors.text },
+                                                    ]}
+                                                  >
+                                                    {`Nível ${nivel.identificador}`}
+                                                  </Text>
+                                                </View>
+
+                                                <View
+                                                  style={
+                                                    styles.mobileNivelHeaderActions
+                                                  }
+                                                >
+                                                  <View
+                                                    style={[
+                                                      styles.mobileNivelQuantityBadge,
+                                                      {
+                                                        backgroundColor:
+                                                          colors.surfaceVariant,
+                                                        borderColor: colors.outline,
+                                                      },
+                                                    ]}
+                                                  >
+                                                    <Text
+                                                      style={[
+                                                        styles.mobileNivelQuantityLabel,
+                                                        { color: colors.text },
+                                                      ]}
+                                                    >
+                                                      Qtd
+                                                    </Text>
+                                                    <Text
+                                                      style={[
+                                                        styles.mobileNivelQuantityValue,
+                                                        { color: colors.text },
+                                                      ]}
+                                                    >
+                                                      {quantidadeExibida}
+                                                    </Text>
+                                                  </View>
+
+                                                  <ActionIconButton
+                                                    iconName="minus"
+                                                    size="medium"
+                                                    buttonSize={{ width: 40, height: 40 }}
+                                                    borderColor={colors.outline}
+                                                    backgroundColor={colors.surface}
+                                                    iconColor={colors.primary}
+                                                    primaryColor={colors.primary}
+                                                    stopPropagation
+                                                    disabled={disableRemoveNivelButton}
+                                                    loading={isRemovingThisNivel}
+                                                    onPress={() => {
+                                                      if (disableRemoveNivelButton) {
+                                                        return;
+                                                      }
+
+                                                      openConfirmRemoveNivel(
+                                                        nivel,
+                                                        selectedMobileFileira,
+                                                        grade
+                                                      );
+                                                    }}
+                                                  />
+                                                </View>
+                                              </View>
+
+                                              <Text
+                                                numberOfLines={2}
+                                                ellipsizeMode="tail"
+                                                style={[
+                                                  styles.mobileNivelProductName,
+                                                  {
+                                                    color: nivelSemProduto
+                                                      ? colors.primary
+                                                      : colors.text,
+                                                  },
+                                                ]}
+                                              >
+                                                {produtoDisplay.text}
+                                              </Text>
+
+                                              <Text
+                                                numberOfLines={1}
+                                                ellipsizeMode="tail"
+                                                style={[
+                                                  styles.mobileNivelSecondaryText,
+                                                  { color: colors.text },
+                                                ]}
+                                              >
+                                                {!nivelSemProduto && productCode !== ''
+                                                  ? `CDG_WESTER ${productCode}`
+                                                  : 'Toque para adicionar ou editar o produto.'}
+                                              </Text>
+                                            </Pressable>
+                                          );
+                                        })
+                                      ) : (
+                                        <View
+                                          style={[
+                                            styles.mobileEmptyGradeState,
+                                            {
+                                              backgroundColor: colors.surface,
+                                              borderColor: colors.outline,
+                                            },
+                                          ]}
+                                        >
+                                          <Text
+                                            style={[
+                                              styles.mobileEmptyGradeStateTitle,
+                                              { color: colors.text },
+                                            ]}
+                                          >
+                                            Sem níveis cadastrados
+                                          </Text>
+                                          <Text
+                                            style={[
+                                              styles.mobileEmptyGradeStateText,
+                                              { color: colors.text },
+                                            ]}
+                                          >
+                                            Use o botão + da grade para criar o primeiro nível.
+                                          </Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                  ) : null}
+                                </View>
+                              );
+                            })}
+                          </View>
+
+                          <Pressable
+                            onPress={() => openAddGradeDecisionForFileira(selectedMobileFileira)}
+                            style={({ pressed }) => [
+                              styles.mobileAddStructureButton,
+                              {
+                                backgroundColor: colors.surface,
+                                borderColor: colors.primary,
+                                opacity: pressed ? 0.82 : 1,
+                              },
+                            ]}
+                          >
+                            <AntDesign name="plus" size={18} color={colors.primary} />
+                            <Text
+                              style={[
+                                styles.mobileAddStructureButtonText,
+                                { color: colors.primary },
+                              ]}
+                            >
+                              Adicionar grade nesta fileira
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+                    </>
+                  )}
+                </ScrollView>
+              </View>
             ) : (
               <View style={[styles.mobileWorkspace, { backgroundColor: colors.background }]}>
                 <View
@@ -2754,7 +3372,12 @@ export default function Warehouse2DView() {
                   }}
                   {...(warehousePanResponder?.panHandlers ?? {})}
                 >
-                  <View style={styles.mobileZoomCanvas}>
+                  <View
+                    style={[
+                      styles.mobileZoomCanvas,
+                      { paddingBottom: MOBILE_WAREHOUSE_BOTTOM_PADDING + safeAreaInsets.bottom },
+                    ]}
+                  >
                     <View
                       style={[
                         styles.mobileZoomTransform,
@@ -3141,7 +3764,13 @@ export default function Warehouse2DView() {
                     </View>
                   </View>
 
-                  <View pointerEvents="box-none" style={styles.mobileZoomControls}>
+                  <View
+                    pointerEvents="box-none"
+                    style={[
+                      styles.mobileZoomControls,
+                      { bottom: 14 + safeAreaInsets.bottom },
+                    ]}
+                  >
                     <Pressable
                       onPress={handleWarehouseZoomIn}
                       disabled={warehouseZoomScale >= MAX_WAREHOUSE_SCALE - 0.01}
@@ -3416,6 +4045,264 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     paddingTop: 8,
+  },
+  mobileLayoutScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  mobileLayoutContent: {
+    flexGrow: 1,
+    paddingHorizontal: 14,
+    paddingBottom: 28,
+    gap: 14,
+  },
+  mobileEmptyStateWrap: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    gap: 14,
+    paddingTop: 18,
+  },
+  mobileFileiraSelectorSection: {
+    gap: 10,
+    paddingTop: 12,
+  },
+  mobileSectionLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  mobileFileiraChipList: {
+    gap: 8,
+    paddingRight: 6,
+  },
+  mobileFileiraChip: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileFileiraChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  mobileAddFileiraChip: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  mobileAddFileiraChipText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  mobileFileiraPanel: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 14,
+    shadowColor: '#000000',
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  mobileFileiraPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  mobileFileiraPanelHeaderText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  mobileFileiraPanelEyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  mobileFileiraPanelTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    lineHeight: 28,
+  },
+  mobileFileiraPanelMeta: {
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.82,
+  },
+  mobileGradeAccordionList: {
+    gap: 10,
+  },
+  mobileGradeAccordionItem: {
+    gap: 8,
+  },
+  mobileGradeAccordionHeader: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  mobileGradeAccordionHeaderText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+  },
+  mobileGradeAccordionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  mobileGradeAccordionTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  mobileGradeAccordionSummary: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.78,
+  },
+  mobileGradeCountBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  mobileGradeCountBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  mobileGradeAccordionHeaderActions: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  mobileGradeAccordionCaret: {
+    width: 42,
+    height: 42,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileGradeAccordionBody: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+  },
+  mobileNivelCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
+  },
+  mobileNivelHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  mobileNivelBadge: {
+    flexShrink: 1,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  mobileNivelBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  mobileNivelHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  mobileNivelQuantityBadge: {
+    minWidth: 62,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  mobileNivelQuantityLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  mobileNivelQuantityValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 20,
+  },
+  mobileNivelProductName: {
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  mobileNivelSecondaryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.76,
+  },
+  mobileEmptyGradeState: {
+    borderWidth: 1,
+    borderRadius: 14,
+    borderStyle: 'dashed',
+    paddingHorizontal: 14,
+    paddingVertical: 18,
+    gap: 6,
+  },
+  mobileEmptyGradeStateTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  mobileEmptyGradeStateText: {
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.8,
+  },
+  mobileAddStructureButton: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  mobileAddStructureButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   mobileZoomViewport: {
     flex: 1,

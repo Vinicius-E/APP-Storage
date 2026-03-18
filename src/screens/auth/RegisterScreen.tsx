@@ -17,6 +17,7 @@ import AuthCard from '../../components/AuthCard';
 import AuthInputField from '../../components/AuthInputField';
 import AuthPrimaryButton from '../../components/AuthPrimaryButton';
 import AuthSecondaryLink from '../../components/AuthSecondaryLink';
+import { useAppScreenScrollableLayout } from '../../hooks/useAppScreenScrollableLayout';
 import { registerUser } from '../../services/authService';
 import { useThemeContext } from '../../theme/ThemeContext';
 
@@ -50,6 +51,7 @@ export default function RegisterScreen() {
   const { theme } = useThemeContext();
   const isCompact = width < 420;
   const isShortViewport = height < 760;
+  const registerScrollableLayout = useAppScreenScrollableLayout(isShortViewport ? 18 : 28);
   const nomeValue = nome.trim();
   const emailValue = email.trim();
   const nomeValid = useMemo(() => nomeValue.length >= 2, [nomeValue]);
@@ -130,16 +132,19 @@ export default function RegisterScreen() {
         </View>
 
         <ScrollView
+          style={styles.scroll}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.scrollContent,
+            registerScrollableLayout.contentContainerStyle,
             {
               justifyContent: isShortViewport ? 'flex-start' : 'center',
               paddingHorizontal: isCompact ? 14 : 20,
-              paddingVertical: isShortViewport ? 18 : 28,
+              paddingTop: isShortViewport ? 18 : 28,
             },
           ]}
+          {...registerScrollableLayout.scrollViewProps}
         >
           <AuthCard badge="Wester Estoque">
             <View
@@ -251,6 +256,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   page: {
+    flex: 1,
+  },
+  scroll: {
     flex: 1,
   },
   header: {

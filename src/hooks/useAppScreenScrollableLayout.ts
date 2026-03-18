@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { type ScrollViewProps, type ViewStyle } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type AppScreenScrollableLayout = {
   bottomSpacing: number;
@@ -16,7 +17,8 @@ type AppScreenScrollableLayout = {
 export function useAppScreenScrollableLayout(
   extraBottomSpacing = 16
 ): AppScreenScrollableLayout {
-  const bottomSpacing = extraBottomSpacing;
+  const insets = useSafeAreaInsets();
+  const bottomSpacing = insets.bottom + extraBottomSpacing;
 
   const contentContainerStyle = useMemo<ViewStyle>(
     () => ({

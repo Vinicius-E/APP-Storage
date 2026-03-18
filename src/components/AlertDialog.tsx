@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, View, StyleSheet, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   visible: boolean;
@@ -10,6 +11,7 @@ interface Props {
 
 export default function AlertDialog({ visible, message, type, onDismiss }: Props) {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   if (!visible) return null;
   const isCompact = width < 420;
   const dialogWidth = Math.min(width - (isCompact ? 24 : 32), 520);
@@ -43,7 +45,8 @@ export default function AlertDialog({ visible, message, type, onDismiss }: Props
           styles.overlay,
           {
             paddingHorizontal: isCompact ? 12 : 16,
-            paddingVertical: isCompact ? 16 : 20,
+            paddingTop: insets.top + (isCompact ? 12 : 16),
+            paddingBottom: insets.bottom + (isCompact ? 12 : 20),
           },
         ]}
       >
@@ -84,6 +87,15 @@ export default function AlertDialog({ visible, message, type, onDismiss }: Props
             ]}
             contentContainerStyle={styles.messageScrollContent}
             showsVerticalScrollIndicator
+            automaticallyAdjustContentInsets
+            automaticallyAdjustsScrollIndicatorInsets
+            contentInsetAdjustmentBehavior="automatic"
+            scrollIndicatorInsets={{
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: insets.bottom + 12,
+            }}
           >
             <Text
               style={[

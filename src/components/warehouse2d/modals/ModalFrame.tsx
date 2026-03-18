@@ -7,6 +7,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ModalFrameProps = {
   visible: boolean;
@@ -21,15 +22,37 @@ export default function ModalFrame({
   containerStyle,
   children,
 }: ModalFrameProps) {
+  const insets = useSafeAreaInsets();
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onRequestClose}>
-      <View style={styles.overlay}>
+      <View
+        style={[
+          styles.overlay,
+          {
+            paddingTop: insets.top + 16,
+            paddingBottom: insets.bottom + 16,
+          },
+        ]}
+      >
         <View style={[styles.container, containerStyle]}>
           <ScrollView
             style={styles.modalScroll}
-            contentContainerStyle={styles.modalScrollContent}
+            contentContainerStyle={[
+              styles.modalScrollContent,
+              { paddingBottom: insets.bottom + 12 },
+            ]}
             showsVerticalScrollIndicator
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustContentInsets
+            automaticallyAdjustsScrollIndicatorInsets
+            contentInsetAdjustmentBehavior="automatic"
+            scrollIndicatorInsets={{
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: insets.bottom + 12,
+            }}
           >
             {children}
           </ScrollView>
