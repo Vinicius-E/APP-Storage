@@ -423,6 +423,7 @@ function sanitizeUpsertPayload(payload: ProductUpsertRequest): ProductUpsertRequ
     nomeModelo: payload.nomeModelo.trim(),
     cor: payload.cor.trim(),
     descricao: payload.descricao?.trim() || undefined,
+    ativo: typeof payload.ativo === 'boolean' ? payload.ativo : undefined,
   };
 }
 
@@ -431,6 +432,7 @@ function buildBackendUpsertPayload(payload: ProductUpsertRequest): {
   nomeModelo: string;
   cor: string;
   descricao?: string;
+  ativo?: boolean;
 } {
   const normalizedPayload = sanitizeUpsertPayload(payload);
 
@@ -439,6 +441,7 @@ function buildBackendUpsertPayload(payload: ProductUpsertRequest): {
     nomeModelo: normalizedPayload.nomeModelo,
     cor: normalizedPayload.cor,
     ...(normalizedPayload.descricao ? { descricao: normalizedPayload.descricao } : {}),
+    ...(typeof normalizedPayload.ativo === 'boolean' ? { ativo: normalizedPayload.ativo } : {}),
   };
 }
 
@@ -494,7 +497,7 @@ async function createMockProduct(payload: ProductUpsertRequest): Promise<Product
     nomeModelo: normalizedPayload.nomeModelo,
     cor: normalizedPayload.cor,
     descricao: normalizedPayload.descricao,
-    ativo: true,
+    ativo: normalizedPayload.ativo !== false,
     createdAt: now,
     updatedAt: now,
   };
@@ -521,6 +524,7 @@ async function updateMockProduct(id: number, payload: ProductUpsertRequest): Pro
     nomeModelo: normalizedPayload.nomeModelo,
     cor: normalizedPayload.cor,
     descricao: normalizedPayload.descricao,
+    ativo: typeof normalizedPayload.ativo === 'boolean' ? normalizedPayload.ativo : current.ativo,
     updatedAt: new Date().toISOString(),
   };
 

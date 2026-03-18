@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { Text } from 'react-native-paper';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Checkbox, Text } from 'react-native-paper';
 import AppTextInput from '../../../components/AppTextInput';
 import FormModalFrame from '../../../components/FormModalFrame';
 import { useThemeContext } from '../../../theme/ThemeContext';
@@ -20,6 +20,7 @@ type FormState = {
   nomeModelo: string;
   cor: string;
   descricao: string;
+  ativo: boolean;
 };
 
 type TouchedState = Record<keyof FormState, boolean>;
@@ -29,6 +30,7 @@ const EMPTY_FORM: FormState = {
   nomeModelo: '',
   cor: '',
   descricao: '',
+  ativo: true,
 };
 
 const EMPTY_TOUCHED: TouchedState = {
@@ -36,6 +38,7 @@ const EMPTY_TOUCHED: TouchedState = {
   nomeModelo: false,
   cor: false,
   descricao: false,
+  ativo: false,
 };
 
 function toFormState(product?: Product | null): FormState {
@@ -48,6 +51,7 @@ function toFormState(product?: Product | null): FormState {
     nomeModelo: product.nomeModelo ?? product.nome ?? '',
     cor: product.cor ?? '',
     descricao: product.descricao ?? '',
+    ativo: product.ativo !== false,
   };
 }
 
@@ -101,12 +105,24 @@ export default function ProductFormModal({
     }));
   };
 
+  const toggleActive = () => {
+    if (saving) {
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      ativo: !current.ativo,
+    }));
+  };
+
   const handleSubmit = async () => {
     setTouched({
       codigo: true,
       nomeModelo: true,
       cor: true,
       descricao: true,
+      ativo: true,
     });
 
     if (!isValid || saving) {
@@ -118,6 +134,7 @@ export default function ProductFormModal({
       nomeModelo: nomeModeloValue,
       cor: corValue,
       descricao: form.descricao.trim() || undefined,
+      ativo: mode === 'edit' ? form.ativo : true,
     });
   };
 
@@ -196,6 +213,45 @@ export default function ProductFormModal({
             accessibilityLabel="Campo descrição do produto"
           />
         </View>
+
+        {mode === 'edit' ? (
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.fieldLabel, { color: theme.colors.primary }]}>Status</Text>
+
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: form.ativo }}
+              disabled={saving}
+              onPress={toggleActive}
+              style={({ pressed }) => [
+                styles.statusRow,
+                {
+                  borderColor: theme.colors.outline,
+                  backgroundColor: pressed ? theme.colors.surfaceVariant : theme.colors.surface,
+                  opacity: saving ? 0.55 : 1,
+                },
+              ]}
+            >
+              <Checkbox
+                status={form.ativo ? 'checked' : 'unchecked'}
+                onPress={toggleActive}
+                disabled={saving}
+                color={theme.colors.primary}
+              />
+
+              <View style={styles.statusTextWrap}>
+                <Text style={[styles.statusTitle, { color: theme.colors.text }]}>
+                  {form.ativo ? 'Produto ativo' : 'Produto inativo'}
+                </Text>
+                <Text style={[styles.statusDescription, { color: theme.colors.onSurfaceVariant }]}>
+                  {form.ativo
+                    ? 'Mantém o produto disponível nas listagens e fluxos de seleção.'
+                    : 'Mantém o produto salvo, mas marcado como inativo na aplicação.'}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     </FormModalFrame>
   );
@@ -207,6 +263,33 @@ const styles = StyleSheet.create({
   },
   fieldGroup: {
     gap: 6,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  statusRow: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusTextWrap: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  statusTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  statusDescription: {
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   errorText: {
     fontSize: 12,

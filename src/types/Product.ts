@@ -20,6 +20,7 @@ export type ProductUpsertRequest = {
   nomeModelo: string;
   cor: string;
   descricao?: string;
+  ativo?: boolean;
 };
 
 export type PageResponse<T> = {

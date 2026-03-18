@@ -57,6 +57,8 @@ type StockReportSummary = {
   vazios: number;
 };
 
+type StockCardVariant = 'compact' | 'full';
+
 const STATUS_COLOR: Record<StockRow['status'], string> = {
   Disponível: '#2E7D32',
   Reservado: '#E67E22',
@@ -153,6 +155,42 @@ function buildLocationLabel(
   return `${areaPrefix}Fileira ${row.fileira} / Grade ${row.grade} / Nível ${row.nivel}`;
 }
 
+function normalizeLocationSegment(value: string | null | undefined): string {
+  const normalized = String(value ?? '').trim();
+
+  if (!normalized || normalized === '-') {
+    return '';
+  }
+
+  return normalized;
+}
+
+function buildCompactLocationLabel(
+  row: Pick<StockRow, 'areaNome' | 'fileira' | 'grade' | 'nivel'>
+): string {
+  const areaName = normalizeLocationSegment(row.areaNome);
+  const shelfRow = normalizeLocationSegment(row.fileira);
+  const grid = normalizeLocationSegment(row.grade);
+  const level = normalizeLocationSegment(row.nivel);
+  const locationSegments: string[] = [];
+
+  if (areaName) {
+    locationSegments.push(areaName);
+  }
+
+  if (shelfRow || grid || level) {
+    const locationCode = [shelfRow && `F${shelfRow}`, grid && `G${grid}`, level && `N${level}`]
+      .filter(Boolean)
+      .join(' / ');
+
+    if (locationCode) {
+      locationSegments.push(locationCode);
+    }
+  }
+
+  return locationSegments.join(' | ');
+}
+
 function compareStockRows(
   left: StockRow,
   right: StockRow,
@@ -194,6 +232,113 @@ function mapStockItemToRow(item: StockItemDTO): StockRow {
     cor: normalizeText(item.cor, ''),
     descricao: normalizeText(item.descricao, ''),
   };
+}
+
+function StockItemCard({
+  row,
+  variant,
+}: {
+  row: StockRow;
+  variant: StockCardVariant;
+}) {
+  const { theme } = useThemeContext();
+  const textSecondary =
+    (theme.colors as typeof theme.colors & { textSecondary?: string }).textSecondary ??
+    theme.colors.text;
+  const compactLocationLabel = buildCompactLocationLabel(row);
+  const productCode = row.codigoSistemaWester || 'Não informado';
+
+  if (variant === 'full') {
+    return (
+      <View style={styles.stockDesktopRow}>
+        <View style={styles.tableColStatus}>
+          <StockStatusBadge status={row.status} />
+        </View>
+
+        <View style={styles.tableColProduct}>
+          <Text style={[styles.stockTitle, { color: theme.colors.text }]}>{row.produto}</Text>
+        </View>
+
+        <View style={styles.tableCol}>
+          <Text style={[styles.stockMeta, { color: textSecondary }]}>{buildLocationLabel(row)}</Text>
+        </View>
+
+        <View style={styles.tableColQty}>
+          <Text style={[styles.stockQtyDesktop, { color: theme.colors.text }]}>
+            {row.quantidade}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.stockCompactContent}>
+      <View style={styles.stockCompactHeader}>
+        <View style={styles.stockCompactProductBlock}>
+          <Text
+            numberOfLines={2}
+            ellipsizeMode="tail"
+            style={[styles.stockTitle, styles.stockCompactTitle, { color: theme.colors.text }]}
+          >
+            {row.produto}
+          </Text>
+
+          {compactLocationLabel ? (
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={[styles.stockSubtitle, styles.stockCompactLocation, { color: textSecondary }]}
+            >
+              {compactLocationLabel}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.stockCompactQuantityBlock}>
+          <Text style={[styles.stockCompactQuantityLabel, { color: textSecondary }]}>
+            Quantidade
+          </Text>
+          <Text
+            style={[
+              styles.stockQty,
+              styles.stockCompactQuantityValue,
+              { color: theme.colors.text },
+            ]}
+          >
+            {row.quantidade}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.stockCompactFooter}>
+        <View
+          style={[
+            styles.stockCompactCodeChip,
+            {
+              backgroundColor: withAlpha(theme.colors.primary, 0.08),
+              borderColor: withAlpha(theme.colors.primary, 0.22),
+            },
+          ]}
+        >
+          <Text style={[styles.stockCompactCodeLabel, { color: theme.colors.primary }]}>
+            CDG_WESTER
+          </Text>
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[styles.stockCompactCodeValue, { color: theme.colors.text }]}
+          >
+            {productCode}
+          </Text>
+        </View>
+
+        <View style={styles.stockCompactStatusWrap}>
+          <StockStatusBadge status={row.status} />
+        </View>
+      </View>
+    </View>
+  );
 }
 
 function buildReportSummary(rows: StockRow[]): StockReportSummary {
@@ -356,7 +501,8 @@ export default function DashboardScreen() {
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
-  const isWide = width >= 900;
+  const isTabletOrDesktop = width >= 900;
+  const stockCardVariant: StockCardVariant = isTabletOrDesktop ? 'full' : 'compact';
 
   const areaOptions = useMemo(
     () => [
@@ -648,7 +794,7 @@ export default function DashboardScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       {...dashboardScrollableLayout.scrollViewProps}
     >
-      <DashboardQuickActions navigation={navigation} isWide={isWide} />
+      <DashboardQuickActions navigation={navigation} isWide={isTabletOrDesktop} />
 
       <View
         style={[
@@ -722,7 +868,7 @@ export default function DashboardScreen() {
         <View
           style={[
             styles.filtersRow,
-            !isWide && styles.filtersRowMobile,
+            !isTabletOrDesktop && styles.filtersRowMobile,
             isAreaFilterOpen && styles.filtersRowOpen,
           ]}
         >
@@ -733,7 +879,7 @@ export default function DashboardScreen() {
               setFilter(value);
               setPage(0);
             }}
-            style={[styles.filterInput, !isWide && styles.filterInputMobile]}
+            style={[styles.filterInput, !isTabletOrDesktop && styles.filterInputMobile]}
             left={<TextInput.Icon icon="magnify" />}
           />
 
@@ -749,23 +895,23 @@ export default function DashboardScreen() {
               setPage(0);
             }}
             accessibilityLabel="Selecionar setor para filtrar itens de estoque"
-            compact={!isWide}
-            width={isWide ? 240 : '100%'}
-            minWidth={isWide ? 220 : 0}
-            maxWidth={isWide ? 320 : '100%'}
+            compact={!isTabletOrDesktop}
+            width={isTabletOrDesktop ? 240 : '100%'}
+            minWidth={isTabletOrDesktop ? 220 : 0}
+            maxWidth={isTabletOrDesktop ? 320 : '100%'}
           />
 
           <View
             style={[
               styles.sortRow,
-              !isWide && styles.sortRowMobile,
-              isWide && Platform.OS === 'web' && styles.sortRowDesktopWeb,
+              !isTabletOrDesktop && styles.sortRowMobile,
+              isTabletOrDesktop && Platform.OS === 'web' && styles.sortRowDesktopWeb,
             ]}
           >
             <Text
               style={[
                 styles.sortLabel,
-                !isWide && styles.sortLabelMobile,
+                !isTabletOrDesktop && styles.sortLabelMobile,
                 { color: (theme.colors as any).textSecondary ?? theme.colors.text },
               ]}
             >
@@ -778,7 +924,7 @@ export default function DashboardScreen() {
                 col === 'produto'
                   ? 'Produto'
                   : col === 'quantidade'
-                    ? isWide
+                    ? isTabletOrDesktop
                       ? 'Quantidade'
                       : 'Qtd.'
                     : 'Status';
@@ -845,7 +991,7 @@ export default function DashboardScreen() {
           <AppLoadingState message="Carregando dados reais..." style={styles.loadingBox} />
         ) : (
           <>
-            {isWide && (
+            {isTabletOrDesktop && (
               <View style={[styles.listHeader, { borderBottomColor: theme.colors.outlineVariant }]}>
                 <View style={styles.tableColStatus}>
                   <Text style={[styles.listHeaderText, { color: theme.colors.primary }]}>
@@ -889,6 +1035,7 @@ export default function DashboardScreen() {
 
                     return [
                       styles.stockCard,
+                      stockCardVariant === 'compact' ? styles.stockCardCompact : null,
                       Platform.OS === 'web' && styles.sortActionButtonWeb,
                       Platform.OS === 'web' && styles.stockCardInteractiveWeb,
                       {
@@ -911,61 +1058,7 @@ export default function DashboardScreen() {
                     ];
                   }}
                 >
-                  {isWide ? (
-                    <View style={styles.stockDesktopRow}>
-                      <View style={styles.tableColStatus}>
-                        <StockStatusBadge status={row.status} />
-                      </View>
-
-                      <View style={styles.tableColProduct}>
-                        <Text style={[styles.stockTitle, { color: theme.colors.text }]}>
-                          {row.produto}
-                        </Text>
-                      </View>
-
-                      <View style={styles.tableCol}>
-                        <Text
-                          style={[
-                            styles.stockMeta,
-                            { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-                          ]}
-                        >
-                          {buildLocationLabel(row)}
-                        </Text>
-                      </View>
-
-                      <View style={styles.tableColQty}>
-                        <Text style={[styles.stockQtyDesktop, { color: theme.colors.text }]}>
-                          {row.quantidade}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : (
-                    <>
-                      <View style={styles.stockTopRow}>
-                        <View style={styles.stockProductMobile}>
-                          <Text style={[styles.stockTitle, { color: theme.colors.text }]}>
-                            {row.produto}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.stockSubtitle,
-                              { color: (theme.colors as any).textSecondary ?? theme.colors.text },
-                            ]}
-                          >
-                            {buildLocationLabel(row)}
-                          </Text>
-                        </View>
-                        <Text style={[styles.stockQty, { color: theme.colors.text }]}>
-                          {row.quantidade}
-                        </Text>
-                      </View>
-
-                      <View style={styles.stockMetaRow}>
-                        <StockStatusBadge status={row.status} />
-                      </View>
-                    </>
-                  )}
+                  <StockItemCard row={row} variant={stockCardVariant} />
                 </Pressable>
               ))}
 
@@ -992,11 +1085,13 @@ export default function DashboardScreen() {
             </View>
 
             {totalItems > 0 ? (
-              <View style={[styles.paginationRow, !isWide && styles.paginationRowMobile]}>
+              <View
+                style={[styles.paginationRow, !isTabletOrDesktop && styles.paginationRowMobile]}
+              >
                 <Text
                   style={[
                     styles.paginationLabel,
-                    !isWide && styles.paginationLabelMobile,
+                    !isTabletOrDesktop && styles.paginationLabelMobile,
                     { color: (theme.colors as any).textSecondary ?? theme.colors.text },
                   ]}
                 >
@@ -1004,7 +1099,10 @@ export default function DashboardScreen() {
                 </Text>
 
                 <View
-                  style={[styles.paginationControls, !isWide && styles.paginationControlsMobile]}
+                  style={[
+                    styles.paginationControls,
+                    !isTabletOrDesktop && styles.paginationControlsMobile,
+                  ]}
                 >
                   <Pressable
                     accessibilityRole="button"
@@ -1108,7 +1206,9 @@ export default function DashboardScreen() {
                     </Text>
                   </Pressable>
 
-                  <View style={[styles.itemsPerPage, !isWide && styles.itemsPerPageMobile]}>
+                  <View
+                    style={[styles.itemsPerPage, !isTabletOrDesktop && styles.itemsPerPageMobile]}
+                  >
                     {[5, 10, 20, 50, 100].map((size) => (
                       <Pressable
                         key={size}
@@ -1396,6 +1496,7 @@ const styles = StyleSheet.create({
   qtyText: { textAlign: 'right' },
   list: { gap: 12, marginTop: 10 },
   stockCard: { borderRadius: 14, borderWidth: 1, padding: 14 },
+  stockCardCompact: { padding: 12 },
   stockCardInteractiveWeb:
     Platform.OS === 'web'
       ? ({
@@ -1403,19 +1504,69 @@ const styles = StyleSheet.create({
         } as any)
       : ({} as any),
   stockDesktopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stockTopRow: {
+  stockCompactContent: {
+    gap: 10,
+  },
+  stockCompactHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
   },
-  stockProductMobile: { flex: 1, minWidth: 0 },
-  stockMetaRow: {
+  stockCompactProductBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  stockCompactTitle: {
+    lineHeight: 22,
+  },
+  stockCompactLocation: {
+    marginTop: 0,
+  },
+  stockCompactQuantityBlock: {
+    minWidth: 88,
+    alignItems: 'flex-end',
+    gap: 2,
+    flexShrink: 0,
+  },
+  stockCompactQuantityLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+  },
+  stockCompactQuantityValue: {
+    fontSize: 22,
+    lineHeight: 26,
+  },
+  stockCompactFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    marginTop: 10,
+    justifyContent: 'space-between',
     gap: 10,
+  },
+  stockCompactCodeChip: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  stockCompactCodeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  stockCompactCodeValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  stockCompactStatusWrap: {
+    flexShrink: 0,
+    alignItems: 'flex-end',
   },
   stockTitle: { fontSize: 16, fontWeight: '800' },
   stockSubtitle: { marginTop: 4, fontSize: 12 },

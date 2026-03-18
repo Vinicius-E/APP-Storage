@@ -280,6 +280,14 @@ export default function ProductManagement() {
     setFeedback((current) => ({ ...current, visible: false }));
   }, []);
 
+  const syncEditedProductInCurrentList = useCallback((updatedProduct: Product) => {
+    setItems((currentItems) =>
+      currentItems.map((currentProduct) =>
+        currentProduct.id === updatedProduct.id ? updatedProduct : currentProduct
+      )
+    );
+  }, []);
+
   const fetchProducts = useCallback(
     async (targetPage = page, refresh = false) => {
       const requestId = latestFetchRequestRef.current + 1;
@@ -390,12 +398,13 @@ export default function ProductManagement() {
     setEditingProduct(null);
   };
 
-  const handleSubmitForm = async (payload: ProductUpsertRequest) => {
+  const handleSubmitForm = useCallback(async (payload: ProductUpsertRequest) => {
     try {
       setSavingForm(true);
 
       if (editingProduct) {
-        await updateProduct(editingProduct.id, payload);
+        const updatedProduct = await updateProduct(editingProduct.id, payload);
+        syncEditedProductInCurrentList(updatedProduct);
         showFeedback('success', 'Produto atualizado com sucesso.');
       } else {
         await createProduct(payload);
@@ -418,7 +427,7 @@ export default function ProductManagement() {
     } finally {
       setSavingForm(false);
     }
-  };
+  }, [editingProduct, fetchProducts, page, showFeedback, syncEditedProductInCurrentList]);
 
   const handleAskStatusChange = (product: Product) => {
     if (product.ativo && !canInactivateProducts) {
