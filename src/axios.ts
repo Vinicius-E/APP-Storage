@@ -1,4 +1,5 @@
 import axios, { AxiosHeaders, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
+import { API_BASE_URL, IS_DEVELOPMENT_API_LOGGING_ENABLED } from './config/apiConfig';
 
 type RequestMetadata = {
   requestId: string;
@@ -14,33 +15,21 @@ export type ApiRequestOptions = AxiosRequestConfig & {
   skipAuth?: boolean;
 };
 
-const DEFAULT_API_BASE_URL = 'https://api-storage-wivi.onrender.com';
 const DEFAULT_TIMEOUT_MS = 15000;
 const SLOW_REQUEST_THRESHOLD_MS = 1000;
 const VERY_SLOW_REQUEST_THRESHOLD_MS = 3000;
-
-function resolveApiBaseUrl(): string {
-  const configuredBaseUrl =
-    process.env.EXPO_PUBLIC_API_BASE_URL ??
-    process.env.VITE_API_BASE_URL ??
-    DEFAULT_API_BASE_URL;
-
-  const normalizedBaseUrl = configuredBaseUrl.trim().replace(/\/+$/, '');
-
-  if (normalizedBaseUrl.toLowerCase().endsWith('/api')) {
-    return normalizedBaseUrl.slice(0, -4) || DEFAULT_API_BASE_URL;
-  }
-
-  return normalizedBaseUrl || DEFAULT_API_BASE_URL;
-}
 
 function createRequestId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function buildRequestUrl(config?: InternalAxiosRequestConfig): string {
+  return `${config?.baseURL ?? ''}${config?.url ?? ''}` || '<unknown-url>';
+}
+
 function buildRequestLabel(config?: InternalAxiosRequestConfig): string {
   const method = String(config?.method ?? 'get').toUpperCase();
-  const url = `${config?.baseURL ?? ''}${config?.url ?? ''}` || '<unknown-url>';
+  const url = buildRequestUrl(config);
   return `${method} ${url}`;
 }
 
@@ -71,9 +60,27 @@ function logApiRequestCompletion(
   }
 }
 
-const rawBaseURL = resolveApiBaseUrl();
+function logApiRequestFailureDetailsForDevelopment(error: unknown): void {
+  if (!IS_DEVELOPMENT_API_LOGGING_ENABLED || !error || typeof error !== 'object') {
+    return;
+  }
 
-const baseURL = rawBaseURL.replace(/\/+$/, '');
+  const requestConfig = (error as { config?: InternalAxiosRequestConfig }).config;
+  const statusCode =
+    (error as { response?: { status?: number } }).response?.status ?? '<no-status>';
+  const responseData = (error as { response?: { data?: unknown } }).response?.data;
+  const requestMethod = String(requestConfig?.method ?? 'get').toUpperCase();
+  const requestUrl = buildRequestUrl(requestConfig);
+
+  console.error('[API][DEV] Request failed', {
+    requestMethod,
+    requestUrl,
+    statusCode,
+    responseData,
+  });
+}
+
+const baseURL = API_BASE_URL.replace(/\/+$/, '');
 
 let authToken: string | null = null;
 
@@ -116,6 +123,7 @@ API.interceptors.response.use(
         : undefined;
 
     logApiRequestCompletion(error.config as ApiRequestConfig | undefined, statusCode, true);
+    logApiRequestFailureDetailsForDevelopment(error);
     return Promise.reject(error);
   }
 );

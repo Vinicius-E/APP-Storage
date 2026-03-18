@@ -896,9 +896,7 @@ export default function ProfileManagement() {
             ? `Confirma ${statusConfirmation.nextActive ? 'a ativação' : 'a inativação'} de "${statusConfirmation.profile.description}"?`
             : ''
         }
-        confirmLabel={
-          statusConfirmation?.nextActive ? 'Confirmar ativação' : 'Confirmar inativação'
-        }
+        confirmLabel={'Confirmar'}
         confirmIcon={
           statusConfirmation?.nextActive ? 'check-circle-outline' : 'close-circle-outline'
         }

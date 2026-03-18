@@ -752,9 +752,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
             ? `Confirma ${statusConfirmation.nextActive ? 'a ativação' : 'a inativação'} de "${statusConfirmation.area.name}"?`
             : ''
         }
-        confirmLabel={
-          statusConfirmation?.nextActive ? 'Confirmar ativação' : 'Confirmar inativação'
-        }
+        confirmLabel={statusConfirmation?.nextActive ? 'Confirmar' : 'Confirmar'}
         confirmIcon={
           statusConfirmation?.nextActive ? 'check-circle-outline' : 'close-circle-outline'
         }

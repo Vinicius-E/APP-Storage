@@ -58,8 +58,13 @@ type ProductResponseShape = Partial<Product> & {
   dataAtualizacao?: string | null;
 };
 
-const PRODUCT_COLLECTION_ENDPOINTS = ['/api/produtos', '/api/products'];
-const PRODUCT_MUTATION_COLLECTION_ENDPOINT = '/api/produtos';
+const PRODUCT_CANONICAL_COLLECTION_ENDPOINT = '/api/products';
+const PRODUCT_LEGACY_COLLECTION_ENDPOINT = '/api/produtos';
+const PRODUCT_COLLECTION_ENDPOINTS = [
+  PRODUCT_CANONICAL_COLLECTION_ENDPOINT,
+  PRODUCT_LEGACY_COLLECTION_ENDPOINT,
+];
+const PRODUCT_MUTATION_COLLECTION_ENDPOINT = PRODUCT_CANONICAL_COLLECTION_ENDPOINT;
 const MOCK_STORAGE_KEY = '@storage-system/mock-products';
 const SEARCH_FETCH_SIZE = 1000;
 
@@ -111,7 +116,7 @@ function isBrokenProductCollectionFallbackError(path: string, error: unknown): b
   const status = extractErrorStatus(error);
   const message = extractErrorMessage(error).toLowerCase();
 
-  if (!path.includes('/api/products')) {
+  if (path !== PRODUCT_CANONICAL_COLLECTION_ENDPOINT) {
     return false;
   }
 
@@ -129,22 +134,22 @@ function isBrokenProductCollectionFallbackError(path: string, error: unknown): b
 }
 
 function buildProductDetailEndpoint(id: number): string {
-  return `/api/produtos/${id}`;
+  return `${PRODUCT_CANONICAL_COLLECTION_ENDPOINT}/${id}`;
 }
 
 function buildActivateEndpoints(id: number): string[] {
   return [
-    `/api/products/${id}/activate`,
-    `/api/produtos/${id}/activate`,
-    `/api/produtos/${id}/ativar`,
+    `${PRODUCT_CANONICAL_COLLECTION_ENDPOINT}/${id}/activate`,
+    `${PRODUCT_LEGACY_COLLECTION_ENDPOINT}/${id}/activate`,
+    `${PRODUCT_LEGACY_COLLECTION_ENDPOINT}/${id}/ativar`,
   ];
 }
 
 function buildInactivateEndpoints(id: number): string[] {
   return [
-    `/api/products/${id}/inactivate`,
-    `/api/produtos/${id}/inactivate`,
-    `/api/produtos/${id}/inativar`,
+    `${PRODUCT_CANONICAL_COLLECTION_ENDPOINT}/${id}/inactivate`,
+    `${PRODUCT_LEGACY_COLLECTION_ENDPOINT}/${id}/inactivate`,
+    `${PRODUCT_LEGACY_COLLECTION_ENDPOINT}/${id}/inativar`,
   ];
 }
 

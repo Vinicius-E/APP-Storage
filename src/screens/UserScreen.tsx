@@ -829,9 +829,7 @@ export default function UserScreen() {
         type: 'error',
         message: resolveRequestErrorMessage(
           error,
-          creating
-            ? 'NÃ£o foi possÃ­vel criar o usuÃ¡rio.'
-            : 'NÃ£o foi possÃ­vel atualizar o usuÃ¡rio.'
+          creating ? 'Não foi possível criar o usuário.' : 'Não foi possível atualizar o usuário.'
         ),
       });
     } finally {
@@ -849,12 +847,12 @@ export default function UserScreen() {
     const confirmarNovaSenha = changePasswordForm.confirmarNovaSenha.trim();
 
     if (novaSenha.length < 6) {
-      Alert.alert('ValidaÃ§Ã£o', 'A nova senha deve ter no mÃ­nimo 6 caracteres.');
+      Alert.alert('Validação', 'A nova senha deve ter no mínimo 6 caracteres.');
       return;
     }
 
     if (novaSenha !== confirmarNovaSenha) {
-      Alert.alert('ValidaÃ§Ã£o', 'A confirmaÃ§Ã£o da nova senha nÃ£o confere.');
+      Alert.alert('Validação', 'A confirmação da nova senha não confere.');
       return;
     }
 
@@ -869,7 +867,7 @@ export default function UserScreen() {
       Alert.alert('Sucesso', 'Senha alterada com sucesso.');
     } catch (error) {
       console.error('Falha ao alterar senha:', error);
-      Alert.alert('Erro', 'NÃ£o foi possÃ­vel alterar a senha. Confira a senha atual.');
+      Alert.alert('Erro', 'Não foi possível alterar a senha. Confira a senha atual.');
     } finally {
       setSavingPassword(false);
     }
@@ -1202,7 +1200,7 @@ export default function UserScreen() {
                         color={iconColor}
                       />
                       <Text style={[styles.actionButtonText, { color: contentColor }]}>
-                        Novo usuÃ¡rio
+                        Novo usuário
                       </Text>
                     </>
                   );
