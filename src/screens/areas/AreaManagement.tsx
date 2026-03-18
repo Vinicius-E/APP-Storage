@@ -20,6 +20,7 @@ import ListActionButton from '../../components/ListActionButton';
 import ListPaginationControls from '../../components/ListPaginationControls';
 import StatusBadge from '../../components/StatusBadge';
 import AppTextInput from '../../components/AppTextInput';
+import { useAppScreenScrollableLayout } from '../../hooks/useAppScreenScrollableLayout';
 import {
   activateArea,
   createArea,
@@ -92,6 +93,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
     (theme.colors as typeof theme.colors & { pageBackground?: string }).pageBackground ??
     theme.colors.background;
   const { width } = useWindowDimensions();
+  const areaScrollableLayout = useAppScreenScrollableLayout(16);
   const { selectedAreaId, refreshAreas, selectAreaById } = useAreaContext();
   const { hasPermission } = usePermissions();
   const isMobile = width < 920;
@@ -618,7 +620,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
       <View style={[styles.root, { backgroundColor: pageBackground }]}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, areaScrollableLayout.contentContainerStyle]}
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
@@ -630,6 +632,7 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
               colors={[theme.colors.primary]}
             />
           }
+          {...areaScrollableLayout.scrollViewProps}
         >
           <Surface
             style={[
@@ -773,8 +776,8 @@ export default function AreaManagement({ navigation }: { navigation: any }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  scroll: { flex: 1 },
+  root: { flex: 1, minHeight: 0 },
+  scroll: { flex: 1, minHeight: 0 },
   content: { padding: 24, gap: 14 },
   stateBlock: { minHeight: 220, justifyContent: 'center' },
   cards: { gap: 12 },

@@ -19,6 +19,7 @@ import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
+import { useAppScreenScrollableLayout } from '../hooks/useAppScreenScrollableLayout';
 import { getUserFacingErrorMessage } from '../utils/userFacingError';
 import {
   UsuarioResponseDTO,
@@ -378,6 +379,7 @@ export default function UserScreen() {
   const { theme } = useThemeContext();
   const { hasPermission } = usePermissions();
   const { width } = useWindowDimensions();
+  const userScrollableLayout = useAppScreenScrollableLayout(16);
   const isCompact = width < 780;
   const colors = theme.colors as typeof theme.colors & { text?: string; textSecondary?: string };
   const textColor = colors.text ?? theme.colors.onSurface;
@@ -1063,13 +1065,15 @@ export default function UserScreen() {
   return (
     <>
       <ScrollView
-        style={{ backgroundColor: 'transparent' }}
+        style={[styles.scroll, { backgroundColor: 'transparent' }]}
         scrollEnabled={!isAnyModalVisible}
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, userScrollableLayout.contentContainerStyle]}
         onScrollBeginDrag={() => setOpenDropdown(null)}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void fetchUsers(true)} />
         }
+        {...userScrollableLayout.scrollViewProps}
       >
         <Surface
           style={[
@@ -1741,6 +1745,10 @@ export default function UserScreen() {
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+    minHeight: 0,
+  },
   container: { gap: 12 },
   sectionCard: { borderRadius: 16, borderWidth: 1, padding: 14, overflow: 'visible' },
   sectionCardRaised: {

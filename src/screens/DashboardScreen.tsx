@@ -24,6 +24,7 @@ import FilterSelect from '../components/FilterSelect';
 import ModalFrame from '../components/warehouse2d/modals/ModalFrame';
 import { useAreaContext } from '../areas/AreaContext';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
+import { useAppScreenScrollableLayout } from '../hooks/useAppScreenScrollableLayout';
 import { listAllStockItems, listStockItems, type StockItemDTO } from '../services/stockItemApi';
 import { useThemeContext } from '../theme/ThemeContext';
 import { getUserFacingErrorMessage } from '../utils/userFacingError';
@@ -322,6 +323,7 @@ export default function DashboardScreen() {
     (theme.colors as typeof theme.colors & { pageBackground?: string }).pageBackground ??
     theme.colors.background;
   const { width } = useWindowDimensions();
+  const dashboardScrollableLayout = useAppScreenScrollableLayout(24);
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
 
   const { areas } = useAreaContext();
@@ -636,8 +638,15 @@ export default function DashboardScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={[styles.container, { backgroundColor: pageBackground }]}
+      style={styles.scroll}
+      contentContainerStyle={[
+        styles.container,
+        { backgroundColor: pageBackground },
+        dashboardScrollableLayout.contentContainerStyle,
+      ]}
+      keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      {...dashboardScrollableLayout.scrollViewProps}
     >
       <DashboardQuickActions navigation={navigation} isWide={isWide} />
 
@@ -1304,6 +1313,10 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+    minHeight: 0,
+  },
   container: { padding: 24, gap: 20 },
   tableCard: { borderRadius: 18, borderWidth: 1, padding: 16 },
   tableHeader: {

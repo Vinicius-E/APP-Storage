@@ -25,6 +25,7 @@ import FilterSelect from '../components/FilterSelect';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
+import { useAppScreenScrollableLayout } from '../hooks/useAppScreenScrollableLayout';
 import {
   HistoricoMovimentacaoFilterRequestDTO,
   HistoricoMovimentacaoResponseDTO,
@@ -730,6 +731,7 @@ function locationLabel(
 export default function HistoryScreen() {
   const { theme } = useThemeContext();
   const { width, height } = useWindowDimensions();
+  const historyScrollableLayout = useAppScreenScrollableLayout(16);
   const isCompact = width < 820;
   const isCompactDatePicker = width < 560;
   const colors = theme.colors as typeof theme.colors & { textSecondary?: string };
@@ -1116,9 +1118,11 @@ export default function HistoryScreen() {
         data={items}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
+        style={styles.list}
         scrollEnabled={!isDetailModalVisible}
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, historyScrollableLayout.contentContainerStyle]}
         removeClippedSubviews={false}
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponentStyle={
           isOperationDropdownOpen ? styles.historyHeaderRaised : styles.historyHeaderBase
         }
@@ -1411,6 +1415,7 @@ export default function HistoryScreen() {
             onRefresh={() => void fetchPage(0, false, 'refresh')}
           />
         }
+        {...historyScrollableLayout.scrollViewProps}
       />
 
       {isCompactDatePicker ? (
@@ -1584,6 +1589,10 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  list: {
+    flex: 1,
+    minHeight: 0,
+  },
   container: { gap: 12 },
   frame: { width: '100%' },
   historyHeaderBase: { zIndex: 1, position: 'relative' },

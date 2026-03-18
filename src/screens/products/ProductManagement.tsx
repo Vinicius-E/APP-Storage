@@ -18,6 +18,7 @@ import AppLoadingState from '../../components/AppLoadingState';
 import ListActionButton from '../../components/ListActionButton';
 import StatusBadge from '../../components/StatusBadge';
 import AppTextInput from '../../components/AppTextInput';
+import { useAppScreenScrollableLayout } from '../../hooks/useAppScreenScrollableLayout';
 import { Modal, Portal, Surface, Text, TextInput } from 'react-native-paper';
 import { usePermissions } from '../../security/permissions';
 import ProductFormModal from './components/ProductFormModal';
@@ -230,6 +231,7 @@ export default function ProductManagement() {
     theme.colors.background;
   const { hasPermission } = usePermissions();
   const { width } = useWindowDimensions();
+  const productScrollableLayout = useAppScreenScrollableLayout(16);
   const isMobile = width < 920;
   const isDesktopWeb = IS_WEB && width >= 1200;
   const [items, setItems] = useState<Product[]>([]);
@@ -870,6 +872,7 @@ export default function ProductManagement() {
           contentContainerStyle={[
             styles.scrollContent,
             isDesktopWeb ? styles.scrollContentWeb : null,
+            productScrollableLayout.contentContainerStyle,
           ]}
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={() => setOpenFilter(null)}
@@ -881,6 +884,7 @@ export default function ProductManagement() {
               colors={[theme.colors.primary]}
             />
           }
+          {...productScrollableLayout.scrollViewProps}
         >
           <Surface
             style={[
@@ -1064,9 +1068,11 @@ export default function ProductManagement() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    minHeight: 0,
   },
   scroll: {
     flex: 1,
+    minHeight: 0,
   },
   scrollContent: {
     paddingHorizontal: 16,

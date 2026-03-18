@@ -30,6 +30,7 @@ import { useThemeContext } from '../theme/ThemeContext';
 import { RequireAuth } from '../auth/RequireAuth';
 import { useAuth } from '../auth/AuthContext';
 import { WarehouseSearchProvider, useWarehouseSearch } from '../search/WarehouseSearchContext';
+import { useAppScreenScrollableLayout } from '../hooks/useAppScreenScrollableLayout';
 import {
   getScreenKeyFromRouteName,
   RequireScreenAccess,
@@ -100,6 +101,7 @@ function ProfileScreen() {
   const { user, signOut } = useAuth() as any;
   const { colors } = theme;
   const { width: screenWidth } = useWindowDimensions();
+  const profileScrollableLayout = useAppScreenScrollableLayout(16);
 
   const isWide = IS_WEB && screenWidth >= 900;
   const dangerButtonWebStyle = IS_WEB
@@ -125,7 +127,12 @@ function ProfileScreen() {
   return (
     <ScrollView
       style={[styles.profileRoot, { backgroundColor: 'transparent' }]}
-      contentContainerStyle={[styles.profileContent]}
+      contentContainerStyle={[
+        styles.profileContent,
+        profileScrollableLayout.contentContainerStyle,
+      ]}
+      keyboardShouldPersistTaps="handled"
+      {...profileScrollableLayout.scrollViewProps}
     >
       <View
         style={[
@@ -342,14 +349,23 @@ function ThemedDrawerContent(props: any) {
     <DrawerContentScrollView
       {...props}
       style={{ backgroundColor: colors.surfaceVariant }}
+      automaticallyAdjustContentInsets
+      automaticallyAdjustsScrollIndicatorInsets
+      contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={[
         styles.drawerScrollContent,
         {
           backgroundColor: colors.surfaceVariant,
           paddingTop: insets.top,
-          paddingBottom: Math.max(insets.bottom, 12),
+          paddingBottom: insets.bottom + 12,
         },
       ]}
+      scrollIndicatorInsets={{
+        top: insets.top,
+        bottom: insets.bottom + 12,
+        left: 0,
+        right: 0,
+      }}
     >
       {isAuthenticated ? (
         <>
@@ -580,6 +596,7 @@ function ScreenFrame({
   children: React.ReactNode;
 }) {
   const { theme } = useThemeContext();
+  const safeAreaInsets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const shellBackground =
     (theme.colors as typeof theme.colors & { appShellBackground?: string }).appShellBackground ??
@@ -627,6 +644,9 @@ function ScreenFrame({
       <View
         style={[
           styles.screenBody,
+          {
+            paddingBottom: safeAreaInsets.bottom,
+          },
           showLargeCanvas
             ? ({
                 backgroundColor: shellBackground,
@@ -983,11 +1003,13 @@ export default function DrawerNavigator() {
 
 const styles = StyleSheet.create({
   drawerScrollContent: {
+    flexGrow: 1,
     paddingTop: 0,
     paddingBottom: 12,
   },
   screenFrame: {
     flex: 1,
+    minHeight: 0,
   },
   screenHeader: {
     minHeight: 56,
@@ -1021,6 +1043,7 @@ const styles = StyleSheet.create({
   },
   screenBody: {
     flex: 1,
+    minHeight: 0,
     minWidth: 0,
     width: '100%',
     paddingHorizontal: 0,
@@ -1028,6 +1051,7 @@ const styles = StyleSheet.create({
   },
   screenBodyInner: {
     flex: 1,
+    minHeight: 0,
     minWidth: 0,
     width: '100%',
     borderWidth: 1,
@@ -1038,6 +1062,7 @@ const styles = StyleSheet.create({
   },
   screenBodyInnerFullWidth: {
     flex: 1,
+    minHeight: 0,
     minWidth: 0,
     width: '100%',
     maxWidth: '100%',
@@ -1154,6 +1179,7 @@ const styles = StyleSheet.create({
 
   profileRoot: {
     flex: 1,
+    minHeight: 0,
   },
   profileContent: {
     gap: 14,

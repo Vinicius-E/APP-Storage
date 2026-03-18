@@ -18,6 +18,7 @@ import AppLoadingState from '../../components/AppLoadingState';
 import AppTextInput from '../../components/AppTextInput';
 import ListActionButton from '../../components/ListActionButton';
 import StatusBadge from '../../components/StatusBadge';
+import { useAppScreenScrollableLayout } from '../../hooks/useAppScreenScrollableLayout';
 import { SCREEN_LABELS, usePermissions } from '../../security/permissions';
 import listScreenStyles from '../../styles/listScreen';
 import { useThemeContext } from '../../theme/ThemeContext';
@@ -223,6 +224,7 @@ export default function ProfileManagement() {
     (theme.colors as typeof theme.colors & { pageBackground?: string }).pageBackground ??
     theme.colors.background;
   const { width } = useWindowDimensions();
+  const profileScrollableLayout = useAppScreenScrollableLayout(16);
   const { hasPermission } = usePermissions();
   const isMobile = width < 920;
   const [items, setItems] = useState<ProfileDTO[]>([]);
@@ -741,7 +743,10 @@ export default function ProfileManagement() {
       <View style={[styles.root, { backgroundColor: pageBackground }]}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            profileScrollableLayout.contentContainerStyle,
+          ]}
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={() => setOpenFilter(null)}
           refreshControl={
@@ -752,6 +757,7 @@ export default function ProfileManagement() {
               colors={[theme.colors.primary]}
             />
           }
+          {...profileScrollableLayout.scrollViewProps}
         >
           <Surface
             style={[
@@ -921,9 +927,11 @@ export default function ProfileManagement() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    minHeight: 0,
   },
   scroll: {
     flex: 1,
+    minHeight: 0,
   },
   scrollContent: {
     /* paddingHorizontal: 16,
