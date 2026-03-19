@@ -22,6 +22,7 @@ import RegisterScreen from '../screens/auth/RegisterScreen';
 import AreaManagement from '../screens/areas/AreaManagement';
 import DashboardScreen from '../screens/DashboardScreen';
 import HistoryScreen from '../screens/HistoryScreen';
+import ReportsScreen from '../screens/reports/ReportsScreen';
 import UserScreen from '../screens/UserScreen';
 import ProductManagement from '../screens/products/ProductManagement';
 import ProfileManagement from '../screens/profiles/ProfileManagement';
@@ -305,13 +306,14 @@ function ThemedDrawerContent(props: any) {
     () =>
       new Map([
         ['Dashboard', 1],
-        ['Armazém', 2],
-        ['Produtos', 3],
-        ['Histórico', 4],
-        ['Áreas', 5],
-        ['Perfis', 6],
-        ['Usuários', 7],
-        ['Perfil', 8],
+        ['Relatórios', 2],
+        ['Armazém', 3],
+        ['Produtos', 4],
+        ['Histórico', 5],
+        ['Áreas', 6],
+        ['Perfis', 7],
+        ['Usuários', 8],
+        ['Perfil', 9],
       ]),
     []
   );
@@ -453,6 +455,7 @@ function ThemedDrawerContent(props: any) {
               !isAuthenticated &&
               (route.name === 'Dashboard' ||
                 route.name === 'Armazém' ||
+                route.name === 'Relatórios' ||
                 route.name === 'Áreas' ||
                 route.name === 'Produtos' ||
                 route.name === 'Usuários' ||
@@ -804,6 +807,36 @@ export default function DrawerNavigator() {
                 <RequireScreenAccess screenKey="DASHBOARD">
                   <ScreenFrame title="Dashboard" navigation={props.navigation} fullWidth>
                     <DashboardScreen {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
+              </RequireAuth>
+            )}
+          </Drawer.Screen>
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen
+            name="Relatórios"
+            options={{ title: 'Relatórios' }}
+          >
+            {(props: any) => (
+              <RequireScreenAccess screenKey="REPORTS">
+                <ScreenFrame title="Relatórios" navigation={props.navigation} fullWidth={IS_WEB}>
+                  <ReportsScreen />
+                </ScreenFrame>
+              </RequireScreenAccess>
+            )}
+          </Drawer.Screen>
+        ) : (
+          <Drawer.Screen
+            name="Relatórios"
+            options={{ title: 'Relatórios', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
+              <RequireAuth>
+                <RequireScreenAccess screenKey="REPORTS">
+                  <ScreenFrame title="Relatórios" navigation={props.navigation} fullWidth={IS_WEB}>
+                    <ReportsScreen />
                   </ScreenFrame>
                 </RequireScreenAccess>
               </RequireAuth>

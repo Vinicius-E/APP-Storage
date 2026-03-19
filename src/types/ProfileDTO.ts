@@ -2,6 +2,7 @@ export type ProfileType = 'READ_ONLY' | 'FULL_ACCESS';
 
 export type ScreenKey =
   | 'DASHBOARD'
+  | 'REPORTS'
   | 'WAREHOUSE'
   | 'PRODUCTS'
   | 'USERS'

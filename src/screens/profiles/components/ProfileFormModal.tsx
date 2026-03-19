@@ -30,6 +30,7 @@ type FormState = {
 
 const SCREEN_OPTIONS: ScreenKey[] = [
   'DASHBOARD',
+  'REPORTS',
   'WAREHOUSE',
   'PRODUCTS',
   'USERS',
