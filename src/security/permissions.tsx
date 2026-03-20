@@ -8,6 +8,8 @@ import { ActionKey, ProfileDTO, ScreenKey } from '../types/ProfileDTO';
 
 export const SCREEN_LABELS: Record<ScreenKey, string> = {
   DASHBOARD: 'Dashboard',
+  ALERTS: 'Alertas',
+  MOVEMENTS: 'Movimentacoes',
   REPORTS: 'Relatorios',
   WAREHOUSE: 'Armazem',
   PRODUCTS: 'Produtos',
@@ -18,6 +20,8 @@ export const SCREEN_LABELS: Record<ScreenKey, string> = {
 
 const ALL_SCREENS: ScreenKey[] = [
   'DASHBOARD',
+  'ALERTS',
+  'MOVEMENTS',
   'REPORTS',
   'WAREHOUSE',
   'PRODUCTS',
@@ -38,14 +42,14 @@ const DEFAULT_PROFILE_SEED: ProfileDTO[] = [
     id: 2,
     type: 'FULL_ACCESS',
     description: 'Operador',
-    allowedScreens: ['DASHBOARD', 'REPORTS', 'WAREHOUSE', 'PRODUCTS', 'HISTORY'],
+    allowedScreens: ['DASHBOARD', 'ALERTS', 'MOVEMENTS', 'REPORTS', 'WAREHOUSE', 'PRODUCTS', 'HISTORY'],
     active: true,
   },
   {
     id: 3,
     type: 'READ_ONLY',
     description: 'Leitura',
-    allowedScreens: ['DASHBOARD', 'REPORTS', 'WAREHOUSE', 'PRODUCTS', 'HISTORY'],
+    allowedScreens: ['DASHBOARD', 'ALERTS', 'REPORTS', 'WAREHOUSE', 'PRODUCTS', 'HISTORY'],
     active: true,
   },
 ];
@@ -134,6 +138,8 @@ export function getScreenKeyFromRouteName(routeName: string): ScreenKey | null {
   const normalized = normalizeToken(routeName);
 
   if (normalized === 'DASHBOARD') return 'DASHBOARD';
+  if (normalized === 'ALERTAS') return 'ALERTS';
+  if (normalized === 'MOVIMENTACOES') return 'MOVEMENTS';
   if (normalized === 'RELATORIOS') return 'REPORTS';
   if (normalized === 'ARMAZEM') return 'WAREHOUSE';
   if (normalized === 'PRODUTOS') return 'PRODUCTS';
