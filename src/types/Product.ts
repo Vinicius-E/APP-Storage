@@ -11,6 +11,8 @@ export type Product = {
   marca?: string;
   categoria?: string;
   ativo: boolean;
+  estoqueMinimo?: number | null;
+  estoqueMaximo?: number | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -21,6 +23,8 @@ export type ProductUpsertRequest = {
   cor: string;
   descricao?: string;
   ativo?: boolean;
+  estoqueMinimo?: number | null;
+  estoqueMaximo?: number | null;
 };
 
 export type PageResponse<T> = {

@@ -21,6 +21,8 @@ type FormState = {
   cor: string;
   descricao: string;
   ativo: boolean;
+  estoqueMinimo: string;
+  estoqueMaximo: string;
 };
 
 type TouchedState = Record<keyof FormState, boolean>;
@@ -31,6 +33,8 @@ const EMPTY_FORM: FormState = {
   cor: '',
   descricao: '',
   ativo: true,
+  estoqueMinimo: '',
+  estoqueMaximo: '',
 };
 
 const EMPTY_TOUCHED: TouchedState = {
@@ -39,6 +43,8 @@ const EMPTY_TOUCHED: TouchedState = {
   cor: false,
   descricao: false,
   ativo: false,
+  estoqueMinimo: false,
+  estoqueMaximo: false,
 };
 
 function toFormState(product?: Product | null): FormState {
@@ -52,7 +58,30 @@ function toFormState(product?: Product | null): FormState {
     cor: product.cor ?? '',
     descricao: product.descricao ?? '',
     ativo: product.ativo !== false,
+    estoqueMinimo:
+      typeof product.estoqueMinimo === 'number' && Number.isFinite(product.estoqueMinimo)
+        ? String(product.estoqueMinimo)
+        : '',
+    estoqueMaximo:
+      typeof product.estoqueMaximo === 'number' && Number.isFinite(product.estoqueMaximo)
+        ? String(product.estoqueMaximo)
+        : '',
   };
+}
+
+function parseOptionalThreshold(value: string): number | null | 'invalid' {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (!/^\d+$/.test(normalized)) {
+    return 'invalid';
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 'invalid';
 }
 
 export default function ProductFormModal({
@@ -79,17 +108,48 @@ export default function ProductFormModal({
   const codigoValue = form.codigo.trim();
   const nomeModeloValue = form.nomeModelo.trim();
   const corValue = form.cor.trim();
+  const estoqueMinimoValue = parseOptionalThreshold(form.estoqueMinimo);
+  const estoqueMaximoValue = parseOptionalThreshold(form.estoqueMaximo);
+  const hasThresholdRelationError =
+    typeof estoqueMinimoValue === 'number' &&
+    typeof estoqueMaximoValue === 'number' &&
+    estoqueMaximoValue < estoqueMinimoValue;
 
   const errors = useMemo(
     () => ({
       nomeModelo:
         touched.nomeModelo && !nomeModeloValue ? 'Informe o nome/modelo do produto.' : '',
       cor: touched.cor && !corValue ? 'Informe a cor do produto.' : '',
+      estoqueMinimo:
+        touched.estoqueMinimo && estoqueMinimoValue === 'invalid'
+          ? 'Informe um numero inteiro maior ou igual a zero.'
+          : '',
+      estoqueMaximo:
+        touched.estoqueMaximo && estoqueMaximoValue === 'invalid'
+          ? 'Informe um numero inteiro maior ou igual a zero.'
+          : touched.estoqueMaximo && hasThresholdRelationError
+            ? 'Estoque maximo nao pode ser menor que o estoque minimo.'
+            : '',
     }),
-    [corValue, nomeModeloValue, touched.cor, touched.nomeModelo]
+    [
+      corValue,
+      estoqueMaximoValue,
+      estoqueMinimoValue,
+      hasThresholdRelationError,
+      nomeModeloValue,
+      touched.cor,
+      touched.estoqueMaximo,
+      touched.estoqueMinimo,
+      touched.nomeModelo,
+    ]
   );
 
-  const isValid = nomeModeloValue.length > 0 && corValue.length > 0;
+  const isValid =
+    nomeModeloValue.length > 0 &&
+    corValue.length > 0 &&
+    estoqueMinimoValue !== 'invalid' &&
+    estoqueMaximoValue !== 'invalid' &&
+    !hasThresholdRelationError;
 
   const updateField = (field: keyof FormState, value: string) => {
     setForm((current) => ({
@@ -123,6 +183,8 @@ export default function ProductFormModal({
       cor: true,
       descricao: true,
       ativo: true,
+      estoqueMinimo: true,
+      estoqueMaximo: true,
     });
 
     if (!isValid || saving) {
@@ -135,6 +197,8 @@ export default function ProductFormModal({
       cor: corValue,
       descricao: form.descricao.trim() || undefined,
       ativo: mode === 'edit' ? form.ativo : true,
+      estoqueMinimo: typeof estoqueMinimoValue === 'number' ? estoqueMinimoValue : null,
+      estoqueMaximo: typeof estoqueMaximoValue === 'number' ? estoqueMaximoValue : null,
     });
   };
 
@@ -214,6 +278,42 @@ export default function ProductFormModal({
           />
         </View>
 
+        <View style={styles.thresholdRow}>
+          <View style={[styles.fieldGroup, styles.thresholdField]}>
+            <AppTextInput
+              label="Estoque minimo"
+              value={form.estoqueMinimo}
+              onChangeText={(value) => updateField('estoqueMinimo', value)}
+              onBlur={() => touchField('estoqueMinimo')}
+              keyboardType="number-pad"
+              inputMode="numeric"
+              autoCorrect={false}
+              maxLength={9}
+              accessibilityLabel="Campo estoque minimo do produto"
+            />
+            {errors.estoqueMinimo ? (
+              <Text style={[styles.errorText, { color: theme.colors.error }]}>{errors.estoqueMinimo}</Text>
+            ) : null}
+          </View>
+
+          <View style={[styles.fieldGroup, styles.thresholdField]}>
+            <AppTextInput
+              label="Estoque maximo"
+              value={form.estoqueMaximo}
+              onChangeText={(value) => updateField('estoqueMaximo', value)}
+              onBlur={() => touchField('estoqueMaximo')}
+              keyboardType="number-pad"
+              inputMode="numeric"
+              autoCorrect={false}
+              maxLength={9}
+              accessibilityLabel="Campo estoque maximo do produto"
+            />
+            {errors.estoqueMaximo ? (
+              <Text style={[styles.errorText, { color: theme.colors.error }]}>{errors.estoqueMaximo}</Text>
+            ) : null}
+          </View>
+        </View>
+
         {mode === 'edit' ? (
           <View style={styles.fieldGroup}>
             <Text style={[styles.fieldLabel, { color: theme.colors.primary }]}>Status</Text>
@@ -263,6 +363,15 @@ const styles = StyleSheet.create({
   },
   fieldGroup: {
     gap: 6,
+  },
+  thresholdRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  thresholdField: {
+    flex: 1,
+    minWidth: 0,
   },
   fieldLabel: {
     fontSize: 12,

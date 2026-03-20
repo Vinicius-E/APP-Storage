@@ -50,6 +50,12 @@ type ProductResponseShape = Partial<Product> & {
   active?: boolean | string | number | null;
   enabled?: boolean | string | number | null;
   status?: string | null;
+  estoqueMinimo?: number | string | null;
+  estoque_minimo?: number | string | null;
+  minimumStock?: number | string | null;
+  estoqueMaximo?: number | string | null;
+  estoque_maximo?: number | string | null;
+  maximumStock?: number | string | null;
   createdAt?: string | null;
   created_at?: string | null;
   dataCriacao?: string | null;
@@ -196,6 +202,19 @@ function normalizeActiveValue(raw: ProductResponseShape): boolean {
   return true;
 }
 
+function normalizeOptionalInteger(value: unknown): number | null {
+  if (value == null || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Math.max(0, Math.trunc(parsed));
+}
+
 function sanitizeProduct(product: ProductResponseShape): Product {
   const codigoSistemaWester = firstText(
     product.codigo,
@@ -232,6 +251,12 @@ function sanitizeProduct(product: ProductResponseShape): Product {
   );
   const createdAt = firstText(product.createdAt, product.created_at, product.dataCriacao);
   const updatedAt = firstText(product.updatedAt, product.updated_at, product.dataAtualizacao);
+  const estoqueMinimo = normalizeOptionalInteger(
+    product.estoqueMinimo ?? product.estoque_minimo ?? product.minimumStock
+  );
+  const estoqueMaximo = normalizeOptionalInteger(
+    product.estoqueMaximo ?? product.estoque_maximo ?? product.maximumStock
+  );
 
   return {
     id: Number(product.id ?? product.productId ?? product.produtoId ?? 0),
@@ -244,6 +269,8 @@ function sanitizeProduct(product: ProductResponseShape): Product {
     marca,
     categoria,
     ativo: normalizeActiveValue(product),
+    estoqueMinimo,
+    estoqueMaximo,
     createdAt,
     updatedAt,
   };
@@ -424,6 +451,8 @@ function sanitizeUpsertPayload(payload: ProductUpsertRequest): ProductUpsertRequ
     cor: payload.cor.trim(),
     descricao: payload.descricao?.trim() || undefined,
     ativo: typeof payload.ativo === 'boolean' ? payload.ativo : undefined,
+    estoqueMinimo: normalizeOptionalInteger(payload.estoqueMinimo),
+    estoqueMaximo: normalizeOptionalInteger(payload.estoqueMaximo),
   };
 }
 
@@ -433,6 +462,8 @@ function buildBackendUpsertPayload(payload: ProductUpsertRequest): {
   cor: string;
   descricao?: string;
   ativo?: boolean;
+  estoqueMinimo: number | null;
+  estoqueMaximo: number | null;
 } {
   const normalizedPayload = sanitizeUpsertPayload(payload);
 
@@ -442,6 +473,8 @@ function buildBackendUpsertPayload(payload: ProductUpsertRequest): {
     cor: normalizedPayload.cor,
     ...(normalizedPayload.descricao ? { descricao: normalizedPayload.descricao } : {}),
     ...(typeof normalizedPayload.ativo === 'boolean' ? { ativo: normalizedPayload.ativo } : {}),
+    estoqueMinimo: normalizedPayload.estoqueMinimo ?? null,
+    estoqueMaximo: normalizedPayload.estoqueMaximo ?? null,
   };
 }
 
@@ -498,6 +531,8 @@ async function createMockProduct(payload: ProductUpsertRequest): Promise<Product
     cor: normalizedPayload.cor,
     descricao: normalizedPayload.descricao,
     ativo: normalizedPayload.ativo !== false,
+    estoqueMinimo: normalizedPayload.estoqueMinimo ?? null,
+    estoqueMaximo: normalizedPayload.estoqueMaximo ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -525,6 +560,8 @@ async function updateMockProduct(id: number, payload: ProductUpsertRequest): Pro
     cor: normalizedPayload.cor,
     descricao: normalizedPayload.descricao,
     ativo: typeof normalizedPayload.ativo === 'boolean' ? normalizedPayload.ativo : current.ativo,
+    estoqueMinimo: normalizedPayload.estoqueMinimo ?? null,
+    estoqueMaximo: normalizedPayload.estoqueMaximo ?? null,
     updatedAt: new Date().toISOString(),
   };
 
