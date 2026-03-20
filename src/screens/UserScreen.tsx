@@ -128,7 +128,7 @@ const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: strin
   },
   {
     key: 'warehouse:read',
-    title: 'Consultar armazÃ©m',
+    title: 'Consultar armazém',
     description: 'Visualiza mapa, fileiras e grades.',
   },
   {
@@ -138,8 +138,8 @@ const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: strin
   },
   {
     key: 'users:update',
-    title: 'Editar usuÃ¡rios',
-    description: 'Pode alterar dados de usuÃ¡rios.',
+    title: 'Editar usuários',
+    description: 'Pode alterar dados de usuários.',
   },
 ];
 
@@ -634,7 +634,7 @@ export default function UserScreen() {
 
       setProfileOptions(Array.from(uniqueOptions.values()));
     } catch (error) {
-      console.error('Falha ao carregar perfis para filtros de usuÃ¡rio:', error);
+      console.error('Falha ao carregar perfis para filtros de usuário:', error);
       setProfileOptions([]);
     }
   }, []);
@@ -653,7 +653,7 @@ export default function UserScreen() {
         const data = await listarUsuarios();
         setUsers(data.map((user) => toManagedUser(user, profileOptions)));
       } catch (error) {
-        console.error('Falha ao listar usuÃ¡rios:', error);
+        console.error('Falha ao listar usuários:', error);
         const backendMessage = resolveRequestErrorMessage(error, '');
         setErrorMessage(backendMessage || API_STATE_MESSAGES.users.error.description);
       } finally {
@@ -823,10 +823,10 @@ export default function UserScreen() {
       await fetchUsers(false);
       setStatusFeedback({
         type: 'success',
-        message: creating ? 'UsuÃ¡rio criado com sucesso.' : 'UsuÃ¡rio atualizado com sucesso.',
+        message: creating ? 'Usuário criado com sucesso.' : 'Usuário atualizado com sucesso.',
       });
     } catch (error) {
-      console.error('Falha ao salvar usuÃ¡rio:', error);
+      console.error('Falha ao salvar usuário:', error);
       setStatusFeedback({
         type: 'error',
         message: resolveRequestErrorMessage(
@@ -1084,7 +1084,7 @@ export default function UserScreen() {
           elevation={0}
         >
           <AppTextInput
-            label="Buscar usuÃ¡rio"
+            label="Buscar usuário"
             value={search}
             onChangeText={(value) => {
               setSearch(value);
@@ -1222,7 +1222,7 @@ export default function UserScreen() {
             ]}
             elevation={0}
           >
-            <AppLoadingState message="Carregando usuÃ¡rios..." style={styles.loadingBox} />
+            <AppLoadingState message="Carregando usuários..." style={styles.loadingBox} />
           </Surface>
         ) : null}
 
@@ -1350,7 +1350,7 @@ export default function UserScreen() {
                       </View>
                       <View pointerEvents="none">
                         <Chip compact>
-                          {enabled}/{PERMISSIONS.length} permissÃµes
+                          {enabled}/{PERMISSIONS.length} permissões
                         </Chip>
                       </View>
                     </View>
@@ -1367,7 +1367,7 @@ export default function UserScreen() {
                       ]}
                     >
                       <Text style={[styles.permissionLabel, { color: textSecondary }]}>
-                        PermissÃµes habilitadas
+                        Permissões habilitadas
                       </Text>
                       <Text style={[styles.permissionValue, { color: textColor }]}>
                         {enabled} de {PERMISSIONS.length} ({permissionPercent}%)

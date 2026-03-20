@@ -32,7 +32,10 @@ export function AddGradeNivelButton({ onPress, borderColor, primaryColor, mode =
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
       style={[styles.addGradeButton, { borderColor }, hoverStyle]}
@@ -53,7 +56,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minWidth: 140,
     height: 150,
-    minHeight: 150,
+    minHeight: 180,
 
     borderWidth: 1,
     borderStyle: 'dashed',

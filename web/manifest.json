@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Storage System",
   "short_name": "Estoque",
-  "description": "Sistema de armazenamento, usuarios e historico do armazem.",
+  "description": "Sistema WMS para controle de estoque com gestão de produtos, localização estruturada, movimentações, histórico e relatórios.",
   "lang": "pt-BR",
   "dir": "ltr",
   "start_url": "/",

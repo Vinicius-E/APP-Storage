@@ -88,7 +88,7 @@ export default function LoginScreen() {
       }
 
       if (error.response?.status === 403) {
-        return getUserFacingErrorMessage(error, 'Seu usuario nao pode acessar o sistema.');
+        return getUserFacingErrorMessage(error, 'Seu usuário nao pode acessar o sistema.');
       }
 
       return getUserFacingErrorMessage(

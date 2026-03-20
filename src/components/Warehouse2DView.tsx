@@ -2462,6 +2462,7 @@ export default function Warehouse2DView() {
                     return (
                       <Pressable
                         key={fileira.id}
+                        onPress={() => toggleFileiraExpand(fileira)}
                         onHoverIn={() =>
                           setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))
                         }
@@ -2481,7 +2482,10 @@ export default function Warehouse2DView() {
                         ]}
                       >
                         <Pressable
-                          onPress={() => toggleFileiraExpand(fileira)}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            toggleFileiraExpand(fileira);
+                          }}
                           style={({ pressed }) => [
                             styles.fileiraHeader,
                             pressed && { opacity: 0.7 },
@@ -2534,13 +2538,16 @@ export default function Warehouse2DView() {
                               : baseGradeWidth + Math.max(0, countForWidth - 1) * perNivelWidth;
 
                           return (
-                            <View key={grade.id} style={styles.gradeWrapper}>
-                              <View style={[styles.gradeInner, { width }]}>
-                                <Pressable
-                                  onPress={() => handleGradePress(grade)}
-                                  onHoverIn={() => {
-                                    setHoverGrade((prev) => ({ ...prev, [grade.id]: true }));
-                                    setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }));
+                              <View key={grade.id} style={styles.gradeWrapper}>
+                                <View style={[styles.gradeInner, { width }]}>
+                                  <Pressable
+                                    onPress={(event) => {
+                                      event.stopPropagation();
+                                      handleGradePress(grade);
+                                    }}
+                                    onHoverIn={() => {
+                                      setHoverGrade((prev) => ({ ...prev, [grade.id]: true }));
+                                      setHoverFileira((prev) => ({ ...prev, [fileira.id]: false }));
                                   }}
                                   onHoverOut={() =>
                                     setHoverGrade((prev) => ({ ...prev, [grade.id]: false }))
@@ -3425,15 +3432,19 @@ export default function Warehouse2DView() {
                   const isFileiraHovered = !!hoverFileira[fileira.id];
 
                   return (
-                    <View
+                    <Pressable
                       key={fileira.id}
+                      onPress={() => toggleFileiraExpand(fileira)}
                       style={[
                         styles.fileiraContainer,
                         { backgroundColor: colors.surface, borderColor: colors.outline },
                       ]}
                     >
                       <Pressable
-                        onPress={() => toggleFileiraExpand(fileira)}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          toggleFileiraExpand(fileira);
+                        }}
                         onHoverIn={() =>
                           setHoverFileira((prev) => ({ ...prev, [fileira.id]: true }))
                         }
@@ -3495,7 +3506,10 @@ export default function Warehouse2DView() {
                           <View key={grade.id} style={styles.gradeWrapper}>
                             <View style={[styles.gradeInner, { width }]}>
                               <Pressable
-                                onPress={() => handleGradePress(grade)}
+                                onPress={(event) => {
+                                  event.stopPropagation();
+                                  handleGradePress(grade);
+                                }}
                                 onHoverIn={() =>
                                   setHoverGrade((prev) => ({ ...prev, [grade.id]: true }))
                                 }
@@ -3734,12 +3748,15 @@ export default function Warehouse2DView() {
                       })}
 
                       <Pressable
-                        onPress={() => openAddGradeDecisionForFileira(fileira)}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          openAddGradeDecisionForFileira(fileira);
+                        }}
                         style={[styles.addGradeButton, { borderColor: colors.primary }]}
                       >
                         <AntDesign name="plus" size={22} color={colors.primary} />
                       </Pressable>
-                    </View>
+                    </Pressable>
                   );
                 })}
 
