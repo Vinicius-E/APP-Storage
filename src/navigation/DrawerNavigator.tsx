@@ -128,10 +128,7 @@ function ProfileScreen() {
   return (
     <ScrollView
       style={[styles.profileRoot, { backgroundColor: 'transparent' }]}
-      contentContainerStyle={[
-        styles.profileContent,
-        profileScrollableLayout.contentContainerStyle,
-      ]}
+      contentContainerStyle={[styles.profileContent, profileScrollableLayout.contentContainerStyle]}
       keyboardShouldPersistTaps="handled"
       {...profileScrollableLayout.scrollViewProps}
     >
@@ -785,10 +782,7 @@ export default function DrawerNavigator() {
         </Drawer.Screen>
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Dashboard"
-            options={{ title: 'Dashboard' }}
-          >
+          <Drawer.Screen name="Dashboard" options={{ title: 'Dashboard' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="DASHBOARD">
                 <ScreenFrame title="Dashboard" navigation={props.navigation} fullWidth>
@@ -814,7 +808,7 @@ export default function DrawerNavigator() {
           </Drawer.Screen>
         )}
 
-        {isAuthenticated ? (
+        {/* {isAuthenticated ? (
           <Drawer.Screen
             name="Relatórios"
             options={{ title: 'Relatórios' }}
@@ -842,13 +836,10 @@ export default function DrawerNavigator() {
               </RequireAuth>
             )}
           </Drawer.Screen>
-        )}
+        )} */}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Armazém"
-            options={{ title: 'Armazém' }}
-          >
+          <Drawer.Screen name="Armazém" options={{ title: 'Armazém' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="WAREHOUSE">
                 <ScreenFrame
@@ -891,10 +882,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Áreas"
-            options={{ title: 'Setores' }}
-          >
+          <Drawer.Screen name="Áreas" options={{ title: 'Setores' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="WAREHOUSE">
                 <ScreenFrame title="Setores" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -921,10 +909,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Produtos"
-            options={{ title: 'Produtos' }}
-          >
+          <Drawer.Screen name="Produtos" options={{ title: 'Produtos' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="PRODUCTS">
                 <ScreenFrame title="Produtos" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -951,10 +936,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Perfis"
-            options={{ title: 'Perfis' }}
-          >
+          <Drawer.Screen name="Perfis" options={{ title: 'Perfis' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="PROFILES">
                 <ScreenFrame title="Perfis" navigation={props.navigation}>
@@ -981,10 +963,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Histórico"
-            options={{ title: 'Histórico' }}
-          >
+          <Drawer.Screen name="Histórico" options={{ title: 'Histórico' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="HISTORY">
                 <ScreenFrame title="Histórico" navigation={props.navigation}>
@@ -1011,10 +990,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Usuários"
-            options={{ title: 'Usuários' }}
-          >
+          <Drawer.Screen name="Usuários" options={{ title: 'Usuários' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="USERS">
                 <ScreenFrame title="Usuários" navigation={props.navigation}>
