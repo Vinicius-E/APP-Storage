@@ -35,6 +35,7 @@ import { useAppScreenScrollableLayout } from '../hooks/useAppScreenScrollableLay
 import {
   getScreenKeyFromRouteName,
   RequireScreenAccess,
+  resolveProfileForUser,
   usePermissions,
 } from '../security/permissions';
 
@@ -116,7 +117,9 @@ function ProfileScreen() {
 
   const name = String(user?.nome ?? user?.name ?? 'Usuário');
   const email = String(user?.email ?? user?.username ?? user?.login ?? '');
-  const role = String(user?.perfil ?? user?.role ?? user?.authorities?.[0] ?? 'OPERADOR');
+  const role = resolveProfileForUser(
+    String(user?.perfil ?? user?.role ?? user?.authorities?.[0] ?? 'OPERADOR')
+  ).description;
   const id = user?.id != null ? String(user.id) : '';
   const createdAt = user?.createdAt ? String(user.createdAt) : '';
   const initials = getInitials(name || email);

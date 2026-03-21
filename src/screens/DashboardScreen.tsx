@@ -80,25 +80,25 @@ type ConsolidatedStockProduct = {
 };
 
 const PCP_REPORT_TEXT = {
-  reportTitle: 'WESTER - Relat\u00F3rio PCP de Estoque por Produto',
-  reportSubtitle: 'Consulta por produto, c\u00F3digo, localiza\u00E7\u00E3o e limites de estoque',
-  sortLabel: 'Ordena\u00E7\u00E3o',
+  reportTitle: 'WESTER - Relatório PCP de Estoque por Produto',
+  reportSubtitle: 'Consulta por produto, código, localização e limites de estoque',
+  sortLabel: 'Ordenação',
   summaryDescription:
-    'Produtos repetidos em localiza\u00E7\u00F5es diferentes permanecem na tabela detalhada e s\u00E3o somados nesta se\u00E7\u00E3o.',
-  codeLabel: 'C\u00F3digo',
-  minimumStockLabel: 'Estoque m\u00EDnimo',
-  maximumStockLabel: 'Estoque m\u00E1ximo',
+    'Produtos repetidos em diferentes localizações permanecem na tabela detalhada e são consolidados nesta seção.',
+  codeLabel: 'Código',
+  minimumStockLabel: 'Estoque mínimo',
+  maximumStockLabel: 'Estoque máximo',
   consolidatedStatusLabel: 'Status consolidado',
-  detailedTableTitle: 'Tabela detalhada por localiza\u00E7\u00E3o',
-  locationLabel: 'Localiza\u00E7\u00E3o',
-  notInformed: 'N\u00E3o informado',
-  notDefined: 'N\u00E3o definido',
-  availableStatus: 'Dispon\u00EDvel',
-  unavailableStatus: 'Indispon\u00EDvel',
-  availableRule: 'Status Dispon\u00EDvel considera produto ativo com quantidade maior que zero.',
-  unavailableRule: 'Status Indispon\u00EDvel considera produto inativo ou quantidade igual a zero.',
+  detailedTableTitle: 'Tabela detalhada por localização',
+  locationLabel: 'Localização',
+  notInformed: 'Não informado',
+  notDefined: 'Não definido',
+  availableStatus: 'Disponível',
+  unavailableStatus: 'Indisponível',
+  availableRule: 'Status "Disponível" considera produto ativo com quantidade maior que zero.',
+  unavailableRule: 'Status "Indisponível" considera produto inativo ou quantidade igual a zero.',
   detailedTableRule:
-    'A tabela detalhada mant\u00E9m todas as ocorr\u00EAncias por localiza\u00E7\u00E3o retornadas pela busca.',
+    'A tabela detalhada apresenta todas as ocorrências por localização retornadas na consulta.',
 } as const;
 
 const STATUS_COLOR: Record<string, string> = {
@@ -256,7 +256,9 @@ function formatReportStatus(status: string): string {
     : PCP_REPORT_TEXT.unavailableStatus;
 }
 
-function buildProductGroupingKey(row: Pick<StockRow, 'produtoId' | 'codigoSistemaWester' | 'produto'>): string {
+function buildProductGroupingKey(
+  row: Pick<StockRow, 'produtoId' | 'codigoSistemaWester' | 'produto'>
+): string {
   const productId = row.produtoId != null ? String(row.produtoId) : 'sem-produto';
   const productCode = normalizeText(row.codigoSistemaWester, 'sem-codigo');
   const productName = normalizeText(row.produto, 'Sem produto');
@@ -269,7 +271,8 @@ function buildPcpReportSummary(rows: StockRow[]): StockReportSummary {
   let quantidadeTotal = 0;
 
   for (const row of rows) {
-    const areaKey = row.areaId != null ? String(row.areaId) : normalizeText(row.areaNome, 'sem-area');
+    const areaKey =
+      row.areaId != null ? String(row.areaId) : normalizeText(row.areaNome, 'sem-area');
 
     areaKeys.add(areaKey);
     productKeys.add(buildProductGroupingKey(row));
@@ -366,21 +369,14 @@ function mapStockItemToRow(item: StockItemDTO): StockRow {
   };
 }
 
-function StockItemCard({
-  row,
-  variant,
-}: {
-  row: StockRow;
-  variant: StockCardVariant;
-}) {
+function StockItemCard({ row, variant }: { row: StockRow; variant: StockCardVariant }) {
   const { theme } = useThemeContext();
   const textSecondary =
     (theme.colors as typeof theme.colors & { textSecondary?: string }).textSecondary ??
     theme.colors.text;
   const compactLocationLabel = buildCompactLocationLabel(row);
   const productCode = row.codigoSistemaWester || 'Não informado';
-  const stockLimitsLabel =
-    `Min ${formatStockLimit(row.estoqueMinimo)}  •  Max ${formatStockLimit(row.estoqueMaximo)}`;
+  const stockLimitsLabel = `Min ${formatStockLimit(row.estoqueMinimo)}  •  Max ${formatStockLimit(row.estoqueMaximo)}`;
 
   if (variant === 'full') {
     return (
@@ -398,7 +394,9 @@ function StockItemCard({
         </View>
 
         <View style={styles.tableCol}>
-          <Text style={[styles.stockMeta, { color: textSecondary }]}>{buildLocationLabel(row)}</Text>
+          <Text style={[styles.stockMeta, { color: textSecondary }]}>
+            {buildLocationLabel(row)}
+          </Text>
         </View>
 
         <View style={styles.tableColQty}>
@@ -810,7 +808,10 @@ export default function DashboardScreen() {
         filters: [
           { label: 'Busca aplicada', value: appliedFilter || 'Todos os produtos' },
           { label: 'Setor', value: selectedAreaLabel },
-          { label: PCP_REPORT_TEXT.sortLabel, value: `${sortLabel} (${sortDirection.toUpperCase()})` },
+          {
+            label: PCP_REPORT_TEXT.sortLabel,
+            value: `${sortLabel} (${sortDirection.toUpperCase()})`,
+          },
         ],
         summary: [
           { label: 'Registros encontrados', value: String(pcpReportSummary.totalRegistros) },
