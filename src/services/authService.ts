@@ -19,6 +19,6 @@ export async function registerUser(data: RegisterPayload): Promise<void> {
     login: data.login,
     nome: data.nome,
     senha: data.senha,
-    perfil: 'LEITURA',
+    perfil: 'CONSULTOR',
   });
 }

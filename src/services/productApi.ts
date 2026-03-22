@@ -46,14 +46,16 @@ type ProductResponseShape = Partial<Product> & {
   tipoProduto?: string | null;
   cor?: string | null;
   color?: string | null;
-  estoqueMinimo?: number | string | null;
-  minimumStock?: number | string | null;
-  estoqueMaximo?: number | string | null;
-  maximumStock?: number | string | null;
   ativo?: boolean | string | number | null;
   active?: boolean | string | number | null;
   enabled?: boolean | string | number | null;
   status?: string | null;
+  estoqueMinimo?: number | string | null;
+  estoque_minimo?: number | string | null;
+  minimumStock?: number | string | null;
+  estoqueMaximo?: number | string | null;
+  estoque_maximo?: number | string | null;
+  maximumStock?: number | string | null;
   createdAt?: string | null;
   created_at?: string | null;
   dataCriacao?: string | null;
@@ -172,21 +174,6 @@ function firstText(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-function parseNullableInteger(...values: unknown[]): number | undefined {
-  for (const value of values) {
-    if (value == null || value === '') {
-      continue;
-    }
-
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return Math.trunc(parsed);
-    }
-  }
-
-  return undefined;
-}
-
 function normalizeActiveValue(raw: ProductResponseShape): boolean {
   const candidates = [raw.ativo, raw.active, raw.enabled, raw.status];
 
@@ -213,6 +200,19 @@ function normalizeActiveValue(raw: ProductResponseShape): boolean {
   }
 
   return true;
+}
+
+function normalizeOptionalInteger(value: unknown): number | null {
+  if (value == null || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Math.max(0, Math.trunc(parsed));
 }
 
 function sanitizeProduct(product: ProductResponseShape): Product {
@@ -251,8 +251,12 @@ function sanitizeProduct(product: ProductResponseShape): Product {
   );
   const createdAt = firstText(product.createdAt, product.created_at, product.dataCriacao);
   const updatedAt = firstText(product.updatedAt, product.updated_at, product.dataAtualizacao);
-  const estoqueMinimo = parseNullableInteger(product.estoqueMinimo, product.minimumStock);
-  const estoqueMaximo = parseNullableInteger(product.estoqueMaximo, product.maximumStock);
+  const estoqueMinimo = normalizeOptionalInteger(
+    product.estoqueMinimo ?? product.estoque_minimo ?? product.minimumStock
+  );
+  const estoqueMaximo = normalizeOptionalInteger(
+    product.estoqueMaximo ?? product.estoque_maximo ?? product.maximumStock
+  );
 
   return {
     id: Number(product.id ?? product.productId ?? product.produtoId ?? 0),
@@ -447,14 +451,8 @@ function sanitizeUpsertPayload(payload: ProductUpsertRequest): ProductUpsertRequ
     cor: payload.cor.trim(),
     descricao: payload.descricao?.trim() || undefined,
     ativo: typeof payload.ativo === 'boolean' ? payload.ativo : undefined,
-    estoqueMinimo:
-      typeof payload.estoqueMinimo === 'number' && Number.isFinite(payload.estoqueMinimo)
-        ? Math.max(0, Math.trunc(payload.estoqueMinimo))
-        : undefined,
-    estoqueMaximo:
-      typeof payload.estoqueMaximo === 'number' && Number.isFinite(payload.estoqueMaximo)
-        ? Math.max(0, Math.trunc(payload.estoqueMaximo))
-        : undefined,
+    estoqueMinimo: normalizeOptionalInteger(payload.estoqueMinimo),
+    estoqueMaximo: normalizeOptionalInteger(payload.estoqueMaximo),
   };
 }
 
@@ -464,8 +462,8 @@ function buildBackendUpsertPayload(payload: ProductUpsertRequest): {
   cor: string;
   descricao?: string;
   ativo?: boolean;
-  estoqueMinimo?: number;
-  estoqueMaximo?: number;
+  estoqueMinimo: number | null;
+  estoqueMaximo: number | null;
 } {
   const normalizedPayload = sanitizeUpsertPayload(payload);
 
@@ -475,12 +473,8 @@ function buildBackendUpsertPayload(payload: ProductUpsertRequest): {
     cor: normalizedPayload.cor,
     ...(normalizedPayload.descricao ? { descricao: normalizedPayload.descricao } : {}),
     ...(typeof normalizedPayload.ativo === 'boolean' ? { ativo: normalizedPayload.ativo } : {}),
-    ...(typeof normalizedPayload.estoqueMinimo === 'number'
-      ? { estoqueMinimo: normalizedPayload.estoqueMinimo }
-      : {}),
-    ...(typeof normalizedPayload.estoqueMaximo === 'number'
-      ? { estoqueMaximo: normalizedPayload.estoqueMaximo }
-      : {}),
+    estoqueMinimo: normalizedPayload.estoqueMinimo ?? null,
+    estoqueMaximo: normalizedPayload.estoqueMaximo ?? null,
   };
 }
 
@@ -537,8 +531,8 @@ async function createMockProduct(payload: ProductUpsertRequest): Promise<Product
     cor: normalizedPayload.cor,
     descricao: normalizedPayload.descricao,
     ativo: normalizedPayload.ativo !== false,
-    estoqueMinimo: normalizedPayload.estoqueMinimo,
-    estoqueMaximo: normalizedPayload.estoqueMaximo,
+    estoqueMinimo: normalizedPayload.estoqueMinimo ?? null,
+    estoqueMaximo: normalizedPayload.estoqueMaximo ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -566,14 +560,8 @@ async function updateMockProduct(id: number, payload: ProductUpsertRequest): Pro
     cor: normalizedPayload.cor,
     descricao: normalizedPayload.descricao,
     ativo: typeof normalizedPayload.ativo === 'boolean' ? normalizedPayload.ativo : current.ativo,
-    estoqueMinimo:
-      typeof normalizedPayload.estoqueMinimo === 'number'
-        ? normalizedPayload.estoqueMinimo
-        : current.estoqueMinimo,
-    estoqueMaximo:
-      typeof normalizedPayload.estoqueMaximo === 'number'
-        ? normalizedPayload.estoqueMaximo
-        : current.estoqueMaximo,
+    estoqueMinimo: normalizedPayload.estoqueMinimo ?? null,
+    estoqueMaximo: normalizedPayload.estoqueMaximo ?? null,
     updatedAt: new Date().toISOString(),
   };
 

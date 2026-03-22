@@ -1,3 +1,6 @@
+import { AreaDTO } from './Area';
+import { Product } from './Product';
+
 export type StockMovementType = 'ENTRADA' | 'SAIDA' | 'TRANSFERENCIA' | 'AJUSTE';
 
 export type StockMovementRequestDTO = {
@@ -39,17 +42,17 @@ export type StockMovementRecentDTO = {
   id: number;
   timestamp: string;
   tipoMovimentacao: string;
-  produtoId?: number | null;
   produtoNomeModelo?: string | null;
+  quantidadeMovimentada?: number | null;
   produtoCodigoSistemaWester?: string | null;
   usuarioNome?: string | null;
-  quantidadeAlterada?: number | null;
-  quantidadeAnterior?: number | null;
-  quantidadeNova?: number | null;
-  nivelLabel?: string | null;
-  nivelOrigemLabel?: string | null;
-  nivelDestinoLabel?: string | null;
   detalhesAlteracao?: string | null;
+};
+
+export type StockMovementInitialContextDTO = {
+  areas: AreaDTO[];
+  products: Product[];
+  recentMovements: StockMovementRecentDTO[];
 };
 
 export type StockLevelItemDTO = {
@@ -63,4 +66,21 @@ export type StockLevelItemDTO = {
   produtoDescricao?: string | null;
   quantidade: number;
   dataAtualizacao?: string | null;
+};
+
+export type StockMovementLevelDTO = {
+  id: number;
+  identificador: string;
+};
+
+export type StockMovementGradeDTO = {
+  id: number;
+  identificador: string;
+  niveis: StockMovementLevelDTO[];
+};
+
+export type StockMovementFileiraDTO = {
+  id: number;
+  identificador: string;
+  grades: StockMovementGradeDTO[];
 };

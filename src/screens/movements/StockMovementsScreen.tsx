@@ -8,18 +8,22 @@ import AppTextInput from '../../components/AppTextInput';
 import FilterSelect from '../../components/FilterSelect';
 import ListActionButton from '../../components/ListActionButton';
 import { useAppScreenScrollableLayout } from '../../hooks/useAppScreenScrollableLayout';
-import { listAreas } from '../../services/areaApi';
-import { listProducts } from '../../services/productApi';
 import {
   createStockMovement,
+  fetchStockMovementAreaStructure,
+  fetchStockMovementInitialContext,
   fetchStockItemByLevel,
   listRecentStockMovements,
 } from '../../services/stockMovementApi';
-import { Fileira, listarFileirasPorArea } from '../../services/warehouse2DService';
 import { useThemeContext } from '../../theme/ThemeContext';
 import { AreaDTO } from '../../types/Area';
 import { Product } from '../../types/Product';
-import { StockLevelItemDTO, StockMovementRecentDTO, StockMovementType } from '../../types/StockMovement';
+import {
+  StockLevelItemDTO,
+  StockMovementFileiraDTO,
+  StockMovementRecentDTO,
+  StockMovementType,
+} from '../../types/StockMovement';
 
 type Props = { navigation: any };
 type Option = { value: string; label: string };
@@ -79,7 +83,7 @@ export default function StockMovementsScreen({ navigation }: Props) {
 
   const [areas, setAreas] = useState<AreaDTO[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [structures, setStructures] = useState<Record<number, Fileira[]>>({});
+  const [structures, setStructures] = useState<Record<number, StockMovementFileiraDTO[]>>({});
   const [movementType, setMovementType] = useState<StockMovementType>('ENTRADA');
   const [adjustmentMode, setAdjustmentMode] = useState<'SALDO_FINAL' | 'DIFERENCA'>('SALDO_FINAL');
   const [productSearch, setProductSearch] = useState('');
@@ -106,15 +110,14 @@ export default function StockMovementsScreen({ navigation }: Props) {
     type: 'success',
   });
 
-  const loadCatalog = useCallback(async () => {
+  const loadInitialContext = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     try {
-      const [areasResponse, productsResponse] = await Promise.all([
-        listAreas({ page: 0, size: 200, search: '' }),
-        listProducts({ page: 0, size: 1000, search: '', status: 'ATIVO' }),
-      ]);
-      setAreas((areasResponse.items ?? []).filter((area) => area.active !== false));
-      setProducts((productsResponse.items ?? []).filter((product) => product.ativo !== false));
+      const response = await fetchStockMovementInitialContext({ forceRefresh });
+      setAreas((response.areas ?? []).filter((area) => area.active !== false));
+      setProducts((response.products ?? []).filter((product) => product.ativo !== false));
+      setRecent(response.recentMovements ?? []);
+      setLoadingRecent(false);
     } catch (error: any) {
       setFeedback({
         visible: true,
@@ -122,6 +125,7 @@ export default function StockMovementsScreen({ navigation }: Props) {
         message: error?.message ?? 'Nao foi possivel carregar dados para movimentacao.',
       });
     } finally {
+      setLoadingRecent(false);
       setLoading(false);
     }
   }, []);
@@ -138,16 +142,15 @@ export default function StockMovementsScreen({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    void loadCatalog();
-    void loadRecent();
-  }, [loadCatalog, loadRecent]);
+    void loadInitialContext();
+  }, [loadInitialContext]);
 
   const ensureStructure = useCallback(async (areaId: string) => {
     const parsedAreaId = Number(areaId);
     if (!Number.isFinite(parsedAreaId) || parsedAreaId <= 0 || structures[parsedAreaId]) {
       return;
     }
-    const fileiras = await listarFileirasPorArea(parsedAreaId);
+    const fileiras = await fetchStockMovementAreaStructure(parsedAreaId);
     setStructures((current) => ({ ...current, [parsedAreaId]: fileiras }));
   }, [structures]);
 
@@ -222,6 +225,9 @@ export default function StockMovementsScreen({ navigation }: Props) {
     [areas]
   );
 
+  const initialCardIsOpen = openFilter === 'tipo' || openFilter === 'produto';
+  const parametersCardIsOpen = openFilter === 'ajuste';
+
   const renderLocation = (
     title: string,
     selection: LocationSelection,
@@ -232,11 +238,19 @@ export default function StockMovementsScreen({ navigation }: Props) {
     const fileiraOptions = getFileiras(selection).map((fileira) => ({ value: String(fileira.id), label: fileira.identificador }));
     const gradeOptions = getGrades(selection).map((grade) => ({ value: String(grade.id), label: grade.identificador }));
     const nivelOptions = getNiveis(selection).map((nivel) => ({ value: String(nivel.id), label: nivel.identificador }));
+    const locationCardIsOpen = openFilter?.startsWith(`${prefix}-`) === true;
 
     return (
-      <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline }]} elevation={0}>
+      <Surface
+        style={[
+          styles.card,
+          locationCardIsOpen ? styles.cardOpen : null,
+          { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
+        ]}
+        elevation={0}
+      >
         <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{title}</Text>
-        <View style={[styles.selectGrid, isMobile ? styles.selectGridCompact : null]}>
+        <View style={[styles.selectGrid, locationCardIsOpen ? styles.selectGridOpen : null, isMobile ? styles.selectGridCompact : null]}>
           <FilterSelect
             label="Setor"
             value={selection.areaId}
@@ -397,19 +411,26 @@ export default function StockMovementsScreen({ navigation }: Props) {
           contentContainerStyle={[styles.scrollContent, layout.contentContainerStyle]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void (async () => {
             setRefreshing(true);
-            await Promise.all([loadCatalog(), loadRecent()]);
+            await loadInitialContext(true);
             setRefreshing(false);
           })()} />}
           onScrollBeginDrag={() => setOpenFilter(null)}
           {...layout.scrollViewProps}
         >
-          <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline }]} elevation={0}>
+          <Surface
+            style={[
+              styles.card,
+              initialCardIsOpen ? styles.cardOpen : null,
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
+            ]}
+            elevation={0}
+          >
             <Text style={[styles.screenTitle, { color: theme.colors.text }]}>Movimentacao de Estoque</Text>
             <Text style={[styles.screenSubtitle, { color: theme.colors.onSurfaceVariant }]}>
               Registre entradas, saidas, transferencias e ajustes com historico operacional.
             </Text>
 
-            <View style={[styles.selectGrid, isMobile ? styles.selectGridCompact : null]}>
+            <View style={[styles.selectGrid, initialCardIsOpen ? styles.selectGridOpen : null, isMobile ? styles.selectGridCompact : null]}>
               <FilterSelect
                 label="Tipo"
                 value={movementType}
@@ -466,7 +487,14 @@ export default function StockMovementsScreen({ navigation }: Props) {
           {movementType === 'TRANSFERENCIA' &&
             renderLocation('Destino', destinationLocation, setDestinationLocation, 'destination', destinationItem)}
 
-          <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline }]} elevation={0}>
+          <Surface
+            style={[
+              styles.card,
+              parametersCardIsOpen ? styles.cardOpen : null,
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline },
+            ]}
+            elevation={0}
+          >
             <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Parametros</Text>
             {movementType === 'AJUSTE' ? (
               <FilterSelect
@@ -553,7 +581,7 @@ export default function StockMovementsScreen({ navigation }: Props) {
                       {movement.produtoCodigoSistemaWester || 'Sem codigo'} · {recentDate(movement.timestamp)}
                     </Text>
                     <Text style={[styles.recentMeta, { color: theme.colors.onSurfaceVariant }]}>
-                      {movement.usuarioNome || 'Usuario nao identificado'}
+                      Quantidade: {movement.quantidadeMovimentada ?? 0} un.
                     </Text>
                     <Text style={[styles.recentDetail, { color: theme.colors.text }]}>
                       {movement.detalhesAlteracao || 'Sem detalhes adicionais.'}
@@ -580,11 +608,24 @@ const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0 },
   scroll: { flex: 1, minHeight: 0 },
   scrollContent: { paddingHorizontal: 16, paddingVertical: 16, gap: 16 },
-  card: { borderWidth: 1, borderRadius: 20, padding: 18, gap: 14 },
+  card: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 18,
+    gap: 14,
+    position: 'relative',
+    zIndex: 1,
+    overflow: 'visible',
+  },
+  cardOpen: {
+    zIndex: 50,
+    elevation: 30,
+  },
   screenTitle: { fontSize: 24, fontWeight: '900' },
   screenSubtitle: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
   cardTitle: { fontSize: 18, fontWeight: '900' },
-  selectGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  selectGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, overflow: 'visible', zIndex: 1 },
+  selectGridOpen: { zIndex: 60 },
   selectGridCompact: { flexDirection: 'column' },
   preview: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, gap: 4 },
   previewLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },

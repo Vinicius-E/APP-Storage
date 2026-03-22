@@ -29,6 +29,12 @@ export type ReportPdfTable = {
   body: string[][];
 };
 
+export type ReportPdfSection = {
+  title: string;
+  description?: string;
+  table: ReportPdfTable;
+};
+
 export type ReportPdfConfig = {
   fileName: string;
   title: string;
@@ -37,7 +43,10 @@ export type ReportPdfConfig = {
   filters: ReportPdfFilter[];
   summary: ReportPdfSummaryMetric[];
   charts: ReportPdfChart[];
+  sections?: ReportPdfSection[];
+  tableTitle?: string;
   table: ReportPdfTable;
+  notes?: string[];
 };
 
 function escapeHtml(value: string): string {
@@ -53,6 +62,16 @@ function clampChartPoints(points: ReportPdfChartPoint[]): ReportPdfChartPoint[] 
   return points.filter((point) => point.value > 0).slice(0, 6);
 }
 
+const REPORT_TEXT = {
+  noAdditionalFilter: 'Nenhum filtro adicional aplicado.',
+  noChartData: 'Sem dados para este gr\u00E1fico.',
+  notesTitle: 'Observa\u00E7\u00F5es',
+  generatedAt: 'Gerado em',
+  filtersTitle: 'Filtros aplicados',
+  resultsTitle: 'Resultados',
+  pageLabel: 'P\u00E1gina',
+} as const;
+
 function buildHtml(config: ReportPdfConfig): string {
   const filtersHtml = config.filters.length
     ? config.filters
@@ -61,7 +80,7 @@ function buildHtml(config: ReportPdfConfig): string {
             `<li><strong>${escapeHtml(filter.label)}:</strong> ${escapeHtml(filter.value)}</li>`
         )
         .join('')
-    : '<li>Nenhum filtro adicional aplicado.</li>';
+    : `<li>${REPORT_TEXT.noAdditionalFilter}</li>`;
 
   const summaryHtml = config.summary
     .map(
@@ -86,14 +105,14 @@ function buildHtml(config: ReportPdfConfig): string {
           const formattedValue = point.formattedValue ?? String(point.value);
 
           return `
-            <div class="chart-row">
-              <div class="chart-head">
-                <span>${escapeHtml(point.label)}</span>
-                <strong>${escapeHtml(formattedValue)}</strong>
+            <div class="bar-row">
+              <div class="bar-label">${escapeHtml(point.label)}</div>
+              <div class="bar-wrapper">
+                <div class="progress-container">
+                  <div class="progress-bar" style="width:${widthPercent}%;background:${escapeHtml(color)};"></div>
+                </div>
               </div>
-              <div class="chart-track">
-                <div class="chart-bar" style="width:${widthPercent}%;background:${escapeHtml(color)};"></div>
-              </div>
+              <div class="bar-value">${escapeHtml(formattedValue)}</div>
             </div>
           `;
         })
@@ -108,6 +127,30 @@ function buildHtml(config: ReportPdfConfig): string {
     })
     .join('');
 
+  const sectionsHtml = (config.sections ?? [])
+    .map((section) => {
+      const headHtml = section.table.head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join('');
+      const bodyHtml = section.table.body
+        .map(
+          (row) => `
+            <tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>
+          `
+        )
+        .join('');
+
+      return `
+        <section class="section-card">
+          <h3>${escapeHtml(section.title)}</h3>
+          ${section.description ? `<p class="section-description">${escapeHtml(section.description)}</p>` : ''}
+          <table>
+            <thead><tr>${headHtml}</tr></thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>
+        </section>
+      `;
+    })
+    .join('');
+
   const headHtml = config.table.head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join('');
   const bodyHtml = config.table.body
     .map(
@@ -116,6 +159,15 @@ function buildHtml(config: ReportPdfConfig): string {
       `
     )
     .join('');
+
+  const notesHtml = config.notes?.length
+    ? `
+        <section class="notes-card">
+          <h3>${REPORT_TEXT.notesTitle}</h3>
+          <ul>${config.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>
+        </section>
+      `
+    : '';
 
   return `
     <html>
@@ -135,32 +187,51 @@ function buildHtml(config: ReportPdfConfig): string {
           .filters ul { margin: 8px 0 0; padding-left: 18px; }
           .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 20px; }
           .chart-card { border: 1px solid #D6C6B9; border-radius: 14px; padding: 14px; background: #FFF7EE; }
-          .chart-row { margin-bottom: 10px; }
-          .chart-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px; font-size: 12px; }
-          .chart-track { height: 10px; background: #EFE1D3; border-radius: 999px; overflow: hidden; }
-          .chart-bar { height: 100%; border-radius: 999px; }
+          .section-card { margin-bottom: 20px; }
+          .section-description { margin: 0 0 10px; color: #6B5A4B; font-size: 12px; }
+          .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+          .bar-label { flex: 0 0 220px; width: 220px; font-weight: 500; font-size: 12px; color: #2A1C11; }
+          .bar-wrapper { flex: 1; max-width: 400px; }
+          .bar-value { flex: 0 0 60px; width: 60px; text-align: right; font-size: 12px; font-weight: 600; color: #2A1C11; }
+          .progress-container { height: 6px; background-color: #EFE6DD; border-radius: 4px; overflow: hidden; }
+          .progress-bar { height: 6px; border-radius: 4px; min-width: 8px; background-color: #2E7D32; }
+          .notes-card { border: 1px solid #D6C6B9; border-radius: 14px; padding: 14px 16px; background: #FFF7EE; margin-top: 20px; }
+          .notes-card ul { margin: 8px 0 0; padding-left: 18px; }
           table { width: 100%; border-collapse: collapse; font-size: 12px; }
           th { background: #9C5B17; color: #FFFFFF; text-align: left; padding: 8px; }
           td { border-bottom: 1px solid #E1D4C9; padding: 8px; vertical-align: top; }
+          @media (max-width: 720px) {
+            .bar-row { flex-wrap: wrap; align-items: flex-start; }
+            .bar-label { flex: 0 0 100%; width: 100%; }
+            .bar-wrapper { flex: 1 1 auto; max-width: none; min-width: 0; }
+          }
+          @media print {
+            .progress-container { height: 5px; }
+            .progress-bar { height: 5px; }
+            .bar-label { font-size: 11px; }
+            .bar-value { font-size: 11px; }
+          }
         </style>
       </head>
       <body>
         <h1>${escapeHtml(config.title)}</h1>
         <h2>${escapeHtml(config.subtitle ?? '')}</h2>
-        <p class="meta">Gerado em: ${escapeHtml(config.generatedAt)}</p>
+        <p class="meta">${REPORT_TEXT.generatedAt}: ${escapeHtml(config.generatedAt)}</p>
         <section class="filters">
-          <h3>Filtros aplicados</h3>
+          <h3>${REPORT_TEXT.filtersTitle}</h3>
           <ul>${filtersHtml}</ul>
         </section>
         <section class="summary-grid">${summaryHtml}</section>
         <section class="chart-grid">${chartsHtml}</section>
+        ${sectionsHtml}
         <section>
-          <h3>Resultados</h3>
+          <h3>${escapeHtml(config.tableTitle ?? REPORT_TEXT.resultsTitle)}</h3>
           <table>
             <thead><tr>${headHtml}</tr></thead>
             <tbody>${bodyHtml}</tbody>
           </table>
         </section>
+        ${notesHtml}
       </body>
     </html>
   `;
@@ -215,14 +286,14 @@ async function exportPdfOnWeb(config: ReportPdfConfig): Promise<void> {
   pdfDocument.setFont('helvetica', 'normal');
   pdfDocument.setFontSize(10);
   pdfDocument.setTextColor(107, 90, 75);
-  pdfDocument.text(`Gerado em: ${config.generatedAt}`, 40, cursorY);
+  pdfDocument.text(`${REPORT_TEXT.generatedAt}: ${config.generatedAt}`, 40, cursorY);
   cursorY += 22;
 
   ensureSpace(64);
   pdfDocument.setFont('helvetica', 'bold');
   pdfDocument.setFontSize(12);
   pdfDocument.setTextColor(156, 91, 23);
-  pdfDocument.text('Filtros aplicados', 40, cursorY);
+  pdfDocument.text(REPORT_TEXT.filtersTitle, 40, cursorY);
   cursorY += 12;
 
   pdfDocument.setFont('helvetica', 'normal');
@@ -230,7 +301,7 @@ async function exportPdfOnWeb(config: ReportPdfConfig): Promise<void> {
   pdfDocument.setTextColor(42, 28, 17);
   const filters = config.filters.length
     ? config.filters.map((filter) => `${filter.label}: ${filter.value}`)
-    : ['Nenhum filtro adicional aplicado.'];
+    : [REPORT_TEXT.noAdditionalFilter];
 
   for (const filter of filters) {
     const lines = pdfDocument.splitTextToSize(filter, pageWidth - 80);
@@ -270,13 +341,31 @@ async function exportPdfOnWeb(config: ReportPdfConfig): Promise<void> {
 
   cursorY += Math.ceil(config.summary.length / 2) * 54 + 8;
 
+  const chartLabelWidth = Math.min(220, Math.max(170, pageWidth * 0.34));
+  const chartValueWidth = 60;
+  const chartGap = 10;
+  const chartTrackHeight = 6;
+  const chartRowHeight = 18;
+  const chartLeftX = 40;
+  const chartRightMargin = 40;
+  const chartTrackX = chartLeftX + chartLabelWidth + chartGap;
+  const availableTrackWidth =
+    pageWidth -
+    chartLeftX -
+    chartRightMargin -
+    chartLabelWidth -
+    chartValueWidth -
+    chartGap * 2;
+  const chartTrackWidth = Math.min(400, Math.max(140, availableTrackWidth));
+  const chartValueX = chartTrackX + chartTrackWidth + chartGap + chartValueWidth;
+
   config.charts.forEach((chart) => {
     const points = clampChartPoints(chart.points);
     if (points.length === 0) {
       return;
     }
 
-    ensureSpace(40 + points.length * 26);
+    ensureSpace(34 + points.length * chartRowHeight);
     pdfDocument.setFont('helvetica', 'bold');
     pdfDocument.setFontSize(12);
     pdfDocument.setTextColor(156, 91, 23);
@@ -286,29 +375,85 @@ async function exportPdfOnWeb(config: ReportPdfConfig): Promise<void> {
     const maxValue = Math.max(...points.map((point) => point.value), 1);
 
     points.forEach((point) => {
-      ensureSpace(24);
-      const barColor = point.color ?? '#9C5B17';
+      ensureSpace(chartRowHeight);
+      const barColor = point.color ?? '#8B5E34';
       const normalizedValue = Math.max(point.value / maxValue, 0.04);
-      const barWidth = (pageWidth - 220) * normalizedValue;
+      const barWidth = chartTrackWidth * normalizedValue;
       const [red, green, blue] = hexToRgb(barColor);
+      const labelLines = pdfDocument.splitTextToSize(point.label, chartLabelWidth);
+      const labelText = labelLines[0] ?? point.label;
+      const barY = cursorY + 2;
 
       pdfDocument.setFont('helvetica', 'normal');
       pdfDocument.setFontSize(10);
       pdfDocument.setTextColor(42, 28, 17);
-      pdfDocument.text(point.label, 40, cursorY + 8);
-      pdfDocument.text(point.formattedValue ?? String(point.value), pageWidth - 40, cursorY + 8, {
+      pdfDocument.text(labelText, chartLeftX, cursorY + 8, { maxWidth: chartLabelWidth });
+      pdfDocument.text(point.formattedValue ?? String(point.value), chartValueX, cursorY + 8, {
         align: 'right',
       });
-      pdfDocument.setFillColor(239, 225, 211);
-      pdfDocument.roundedRect(150, cursorY, pageWidth - 220, 10, 4, 4, 'F');
+      pdfDocument.setFillColor(239, 230, 221);
+      pdfDocument.roundedRect(chartTrackX, barY, chartTrackWidth, chartTrackHeight, 3, 3, 'F');
       pdfDocument.setFillColor(red, green, blue);
-      pdfDocument.roundedRect(150, cursorY, barWidth, 10, 4, 4, 'F');
-      cursorY += 24;
+      pdfDocument.roundedRect(chartTrackX, barY, barWidth, chartTrackHeight, 3, 3, 'F');
+      cursorY += chartRowHeight;
     });
   });
 
+  for (const section of config.sections ?? []) {
+    ensureSpace(32);
+    pdfDocument.setFont('helvetica', 'bold');
+    pdfDocument.setFontSize(12);
+    pdfDocument.setTextColor(156, 91, 23);
+    pdfDocument.text(section.title, 40, cursorY);
+    cursorY += 18;
+
+    if (section.description) {
+      pdfDocument.setFont('helvetica', 'normal');
+      pdfDocument.setFontSize(10);
+      pdfDocument.setTextColor(107, 90, 75);
+      const descriptionLines = pdfDocument.splitTextToSize(section.description, pageWidth - 80);
+      ensureSpace(descriptionLines.length * 12 + 6);
+      pdfDocument.text(descriptionLines, 40, cursorY);
+      cursorY += descriptionLines.length * 12 + 6;
+    }
+
+    autoTable(pdfDocument, {
+      startY: cursorY,
+      margin: { left: 32, right: 32, top: 24, bottom: 24 },
+      head: [section.table.head],
+      body: section.table.body,
+      theme: 'grid',
+      styles: {
+        fontSize: 9,
+        cellPadding: 5,
+        textColor: [42, 28, 17],
+        overflow: 'linebreak',
+      },
+      headStyles: {
+        fillColor: [156, 91, 23],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+      },
+      alternateRowStyles: {
+        fillColor: [251, 244, 235],
+      },
+    });
+
+    const pdfDocumentWithTables = pdfDocument as typeof pdfDocument & {
+      lastAutoTable?: { finalY: number };
+    };
+    cursorY = (pdfDocumentWithTables.lastAutoTable?.finalY ?? cursorY) + 20;
+  }
+
+  ensureSpace(32);
+  pdfDocument.setFont('helvetica', 'bold');
+  pdfDocument.setFontSize(12);
+  pdfDocument.setTextColor(156, 91, 23);
+  pdfDocument.text(config.tableTitle ?? REPORT_TEXT.resultsTitle, 40, cursorY);
+  cursorY += 16;
+
   autoTable(pdfDocument, {
-    startY: cursorY + 4,
+    startY: cursorY,
     margin: { left: 32, right: 32, top: 24, bottom: 24 },
     head: [config.table.head],
     body: config.table.body,
@@ -328,6 +473,31 @@ async function exportPdfOnWeb(config: ReportPdfConfig): Promise<void> {
       fillColor: [251, 244, 235],
     },
   });
+
+  const pdfDocumentWithTables = pdfDocument as typeof pdfDocument & {
+    lastAutoTable?: { finalY: number };
+  };
+  cursorY = (pdfDocumentWithTables.lastAutoTable?.finalY ?? cursorY) + 18;
+
+  if (config.notes?.length) {
+    ensureSpace(24);
+    pdfDocument.setFont('helvetica', 'bold');
+    pdfDocument.setFontSize(12);
+    pdfDocument.setTextColor(156, 91, 23);
+    pdfDocument.text(REPORT_TEXT.notesTitle, 40, cursorY);
+    cursorY += 16;
+
+    pdfDocument.setFont('helvetica', 'normal');
+    pdfDocument.setFontSize(10);
+    pdfDocument.setTextColor(42, 28, 17);
+
+    for (const note of config.notes) {
+      const noteLines = pdfDocument.splitTextToSize(`- ${note}`, pageWidth - 80);
+      ensureSpace(noteLines.length * 12 + 4);
+      pdfDocument.text(noteLines, 40, cursorY);
+      cursorY += noteLines.length * 12 + 2;
+    }
+  }
 
   const pageCount = pdfDocument.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {

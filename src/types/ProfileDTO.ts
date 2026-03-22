@@ -15,6 +15,7 @@ export type ActionKey = 'CREATE' | 'EDIT' | 'INACTIVATE' | 'ACTIVATE' | 'VIEW';
 
 export type ProfileDTO = {
   id: number;
+  code: string;
   type: ProfileType;
   description: string;
   allowedScreens: ScreenKey[];

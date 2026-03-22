@@ -31,6 +31,73 @@ const PROFILE_STORAGE_KEY = '@storage-system/mock-profiles';
 let forceMockMode = false;
 let cachedProfiles: ProfileDTO[] | null = null;
 
+function normalizeToken(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
+    .trim();
+}
+
+function resolveDefaultProfile(raw: {
+  code?: string;
+  description?: string;
+  type?: string;
+}): ProfileDTO {
+  const defaults = getDefaultProfilesSeed();
+  const codeToken = normalizeToken(String(raw.code ?? ''));
+  const descriptionToken = normalizeToken(String(raw.description ?? ''));
+  const typeToken = normalizeToken(String(raw.type ?? ''));
+
+  if (codeToken.includes('ADMIN') || descriptionToken.includes('ADMIN')) {
+    return defaults[0];
+  }
+
+  if (
+    codeToken.includes('CONSULTOR') ||
+    codeToken.includes('LEITURA') ||
+    descriptionToken.includes('CONSULTOR') ||
+    descriptionToken.includes('LEITURA') ||
+    typeToken.includes('READ_ONLY') ||
+    typeToken.includes('READONLY')
+  ) {
+    return defaults[2];
+  }
+
+  return defaults[1];
+}
+
+function normalizeAllowedScreens(raw: unknown, fallback: ProfileDTO['allowedScreens']) {
+  if (Array.isArray(raw)) {
+    const values = raw.filter(
+      (item): item is ProfileDTO['allowedScreens'][number] => typeof item === 'string'
+    );
+
+    if (values.length > 0) {
+      return [...new Set(values)];
+    }
+  }
+
+  if (typeof raw === 'string' && raw.trim()) {
+    const values = raw
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean) as ProfileDTO['allowedScreens'];
+
+    if (values.length > 0) {
+      return [...new Set(values)];
+    }
+  }
+
+  return [...fallback];
+}
+
+function generateProfileCode(description: string): string {
+  return normalizeToken(description);
+}
+
 function extractErrorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object') {
     return undefined;
@@ -98,17 +165,67 @@ function buildInactivateEndpoints(id: number): string[] {
   ];
 }
 
-function sanitizeProfile(raw: Partial<ProfileDTO>): ProfileDTO {
+function sanitizeProfile(raw: Partial<ProfileDTO> & Record<string, unknown>): ProfileDTO {
+  const fallbackProfile = resolveDefaultProfile({
+    code:
+      typeof raw.code === 'string'
+        ? raw.code
+        : typeof raw.codigo === 'string'
+          ? raw.codigo
+          : undefined,
+    description:
+      typeof raw.description === 'string'
+        ? raw.description
+        : typeof raw.descricao === 'string'
+          ? raw.descricao
+          : undefined,
+    type:
+      typeof raw.type === 'string'
+        ? raw.type
+        : typeof raw.tipoAcesso === 'string'
+          ? raw.tipoAcesso
+          : undefined,
+  });
+  const rawCode =
+    typeof raw.code === 'string'
+      ? raw.code
+      : typeof raw.codigo === 'string'
+        ? raw.codigo
+        : fallbackProfile.code;
+  const rawDescription =
+    typeof raw.description === 'string'
+      ? raw.description
+      : typeof raw.descricao === 'string'
+        ? raw.descricao
+        : fallbackProfile.description;
+  const normalizedCode = generateProfileCode(rawCode || rawDescription || fallbackProfile.code);
+  const resolvedType =
+    raw.type === 'READ_ONLY' || raw.type === 'FULL_ACCESS'
+      ? raw.type
+      : raw.tipoAcesso === 'READ_ONLY' || raw.tipoAcesso === 'FULL_ACCESS'
+        ? raw.tipoAcesso
+        : fallbackProfile.type;
+  const resolvedDescription =
+    normalizedCode === 'CONSULTOR' && normalizeToken(rawDescription) === 'LEITURA'
+      ? fallbackProfile.description
+      : String(rawDescription ?? fallbackProfile.description).trim() || fallbackProfile.description;
+
   return {
     id: Number(raw.id ?? 0),
-    type: raw.type === 'READ_ONLY' ? 'READ_ONLY' : 'FULL_ACCESS',
-    description: String(raw.description ?? '').trim(),
-    allowedScreens: Array.isArray(raw.allowedScreens)
-      ? raw.allowedScreens.filter((item): item is ProfileDTO['allowedScreens'][number] => typeof item === 'string')
-      : [],
-    active: raw.active !== false,
-    createdAt: raw.createdAt?.toString() || undefined,
-    updatedAt: raw.updatedAt?.toString() || undefined,
+    code: normalizedCode || fallbackProfile.code,
+    type: resolvedType,
+    description: resolvedDescription,
+    allowedScreens: normalizeAllowedScreens(
+      raw.allowedScreens ?? raw.telasPermitidas,
+      fallbackProfile.allowedScreens
+    ),
+    active: raw.active !== false && raw.ativo !== false,
+    createdAt:
+      (typeof raw.createdAt === 'string' ? raw.createdAt : undefined) ??
+      (typeof raw.criadoEm === 'string' ? raw.criadoEm : undefined),
+    updatedAt:
+      (typeof raw.updatedAt === 'string' ? raw.updatedAt : undefined) ??
+      (typeof raw.atualizadoEm === 'string' ? raw.atualizadoEm : undefined),
   };
 }
 
@@ -213,7 +330,10 @@ async function loadMockProfiles(): Promise<ProfileDTO[]> {
 
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      cachedProfiles = parsed.map((item) => sanitizeProfile(item as Partial<ProfileDTO>));
+      cachedProfiles = parsed.map((item) =>
+        sanitizeProfile(item as Partial<ProfileDTO> & Record<string, unknown>)
+      );
+      await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(cachedProfiles));
     } else {
       cachedProfiles = getDefaultProfilesSeed();
       await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(cachedProfiles));
@@ -278,6 +398,7 @@ async function createMockProfile(payload: ProfileUpsertRequest): Promise<Profile
 
   const created: ProfileDTO = {
     id: nextId,
+    code: generateProfileCode(normalized.description),
     type: normalized.type,
     description: normalized.description,
     allowedScreens: normalized.allowedScreens,
@@ -302,7 +423,10 @@ async function updateMockProfile(id: number, payload: ProfileUpsertRequest): Pro
   const nextProfiles = [...profiles];
   nextProfiles[index] = {
     ...nextProfiles[index],
-    ...normalized,
+    type: normalized.type,
+    description: normalized.description,
+    allowedScreens: normalized.allowedScreens,
+    active: normalized.active !== false,
     updatedAt: new Date().toISOString(),
   };
 

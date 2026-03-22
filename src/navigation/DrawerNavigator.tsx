@@ -37,6 +37,7 @@ import { useAppScreenScrollableLayout } from '../hooks/useAppScreenScrollableLay
 import {
   getScreenKeyFromRouteName,
   RequireScreenAccess,
+  resolveProfileForUser,
   usePermissions,
 } from '../security/permissions';
 
@@ -118,7 +119,9 @@ function ProfileScreen() {
 
   const name = String(user?.nome ?? user?.name ?? 'Usuário');
   const email = String(user?.email ?? user?.username ?? user?.login ?? '');
-  const role = String(user?.perfil ?? user?.role ?? user?.authorities?.[0] ?? 'OPERADOR');
+  const role = resolveProfileForUser(
+    String(user?.perfil ?? user?.role ?? user?.authorities?.[0] ?? 'OPERADOR')
+  ).description;
   const id = user?.id != null ? String(user.id) : '';
   const createdAt = user?.createdAt ? String(user.createdAt) : '';
   const initials = getInitials(name || email);
@@ -130,10 +133,7 @@ function ProfileScreen() {
   return (
     <ScrollView
       style={[styles.profileRoot, { backgroundColor: 'transparent' }]}
-      contentContainerStyle={[
-        styles.profileContent,
-        profileScrollableLayout.contentContainerStyle,
-      ]}
+      contentContainerStyle={[styles.profileContent, profileScrollableLayout.contentContainerStyle]}
       keyboardShouldPersistTaps="handled"
       {...profileScrollableLayout.scrollViewProps}
     >
@@ -791,10 +791,7 @@ export default function DrawerNavigator() {
         </Drawer.Screen>
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Dashboard"
-            options={{ title: 'Dashboard' }}
-          >
+          <Drawer.Screen name="Dashboard" options={{ title: 'Dashboard' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="DASHBOARD">
                 <ScreenFrame title="Dashboard" navigation={props.navigation} fullWidth>
@@ -821,10 +818,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Alertas"
-            options={{ title: 'Alertas' }}
-          >
+          <Drawer.Screen name="Alertas" options={{ title: 'Alertas' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="ALERTS">
                 <ScreenFrame title="Alertas" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -851,10 +845,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Movimentações"
-            options={{ title: 'Movimentações' }}
-          >
+          <Drawer.Screen name="Movimentações" options={{ title: 'Movimentações' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="MOVEMENTS">
                 <ScreenFrame title="Movimentações" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -871,7 +862,11 @@ export default function DrawerNavigator() {
             {(props: any) => (
               <RequireAuth>
                 <RequireScreenAccess screenKey="MOVEMENTS">
-                  <ScreenFrame title="Movimentações" navigation={props.navigation} fullWidth={IS_WEB}>
+                  <ScreenFrame
+                    title="Movimentações"
+                    navigation={props.navigation}
+                    fullWidth={IS_WEB}
+                  >
                     <StockMovementsScreen {...props} />
                   </ScreenFrame>
                 </RequireScreenAccess>
@@ -881,10 +876,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Relatórios"
-            options={{ title: 'Relatórios' }}
-          >
+          <Drawer.Screen name="Relatórios" options={{ title: 'Relatórios' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="REPORTS">
                 <ScreenFrame title="Relatórios" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -911,10 +903,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Armazém"
-            options={{ title: 'Armazém' }}
-          >
+          <Drawer.Screen name="Armazém" options={{ title: 'Armazém' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="WAREHOUSE">
                 <ScreenFrame
@@ -957,10 +946,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Áreas"
-            options={{ title: 'Setores' }}
-          >
+          <Drawer.Screen name="Áreas" options={{ title: 'Setores' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="WAREHOUSE">
                 <ScreenFrame title="Setores" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -987,10 +973,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Produtos"
-            options={{ title: 'Produtos' }}
-          >
+          <Drawer.Screen name="Produtos" options={{ title: 'Produtos' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="PRODUCTS">
                 <ScreenFrame title="Produtos" navigation={props.navigation} fullWidth={IS_WEB}>
@@ -1017,10 +1000,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Perfis"
-            options={{ title: 'Perfis' }}
-          >
+          <Drawer.Screen name="Perfis" options={{ title: 'Perfis' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="PROFILES">
                 <ScreenFrame title="Perfis" navigation={props.navigation}>
@@ -1047,10 +1027,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Histórico"
-            options={{ title: 'Histórico' }}
-          >
+          <Drawer.Screen name="Histórico" options={{ title: 'Histórico' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="HISTORY">
                 <ScreenFrame title="Histórico" navigation={props.navigation}>
@@ -1077,10 +1054,7 @@ export default function DrawerNavigator() {
         )}
 
         {isAuthenticated ? (
-          <Drawer.Screen
-            name="Usuários"
-            options={{ title: 'Usuários' }}
-          >
+          <Drawer.Screen name="Usuários" options={{ title: 'Usuários' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="USERS">
                 <ScreenFrame title="Usuários" navigation={props.navigation}>

@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
@@ -18,35 +19,46 @@ import AlertDialog from '../components/AlertDialog';
 import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
+import FilterSelect, { FilterSelectOption } from '../components/FilterSelect';
 import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessages';
 import { useAppScreenScrollableLayout } from '../hooks/useAppScreenScrollableLayout';
 import { getUserFacingErrorMessage } from '../utils/userFacingError';
 import {
   UsuarioResponseDTO,
   alterarSenhaUsuario,
+  listarPerfisAtivosUsuario,
   atualizarStatusUsuario,
   atualizarUsuario,
   criarUsuario,
   listarUsuarios,
 } from '../services/usuarioApi';
 import { listProfiles } from '../services/profileApi';
-import { usePermissions } from '../security/permissions';
+import { SCREEN_LABELS, usePermissions } from '../security/permissions';
 import { useThemeContext } from '../theme/ThemeContext';
-import { ProfileDTO, ProfileType } from '../types/ProfileDTO';
+import { ProfileDTO, ScreenKey } from '../types/ProfileDTO';
 
 type UserRole = string;
 type UserStatus = 'active' | 'inactive';
 type StatusFilter = 'all' | 'active' | 'inactive';
 type RoleFilter = string;
 type FilterDropdownKey = 'status' | 'role';
-type PermissionKey = 'dashboard:view' | 'warehouse:read' | 'warehouse:update' | 'users:update';
-type PermissionState = Record<PermissionKey, boolean>;
 
 type ProfileOption = {
   value: string;
   label: string;
   accessibilityLabel: string;
-  type: ProfileType;
+  available: boolean;
+};
+
+type UserPermissionDetails = {
+  enabledScreens: ScreenKey[];
+  disabledScreens: ScreenKey[];
+  enabledCount: number;
+  totalCount: number;
+  coveragePercent: number;
+  accessLevelLabel: string;
+  mapped: boolean;
+  helperText: string;
 };
 
 type ManagedUser = {
@@ -58,7 +70,7 @@ type ManagedUser = {
   team: string;
   status: UserStatus;
   lastAccess: string;
-  permissions: PermissionState;
+  permissionDetails: UserPermissionDetails;
 };
 
 type EditForm = {
@@ -104,7 +116,7 @@ type InteractivePalette = {
 type HoverablePressableState = PressableStateCallbackType & { hovered?: boolean };
 
 const ALL_ROLE_FILTER = 'Todos';
-const DEFAULT_ROLE_VALUE = 'LEITURA';
+const DEFAULT_ROLE_VALUE = 'CONSULTOR';
 
 const STATUS_FILTER_OPTIONS: Array<{
   value: StatusFilter;
@@ -120,28 +132,7 @@ const STATUS_FILTER_OPTIONS: Array<{
   },
 ];
 
-const PERMISSIONS: Array<{ key: PermissionKey; title: string; description: string }> = [
-  {
-    key: 'dashboard:view',
-    title: 'Acessar dashboard',
-    description: 'Visualiza indicadores gerais.',
-  },
-  {
-    key: 'warehouse:read',
-    title: 'Consultar armazÃ©m',
-    description: 'Visualiza mapa, fileiras e grades.',
-  },
-  {
-    key: 'warehouse:update',
-    title: 'Editar estoque',
-    description: 'Pode atualizar quantidade e produto.',
-  },
-  {
-    key: 'users:update',
-    title: 'Editar usuÃ¡rios',
-    description: 'Pode alterar dados de usuÃ¡rios.',
-  },
-];
+const ALL_SCREEN_KEYS = Object.keys(SCREEN_LABELS) as ScreenKey[];
 
 const emptyEditForm: EditForm = {
   name: '',
@@ -176,7 +167,7 @@ function formatProfileLabel(value: string): string {
   const normalized = normalizeProfileToken(value);
 
   if (!normalized) {
-    return 'Leitura';
+    return 'Consultor';
   }
 
   if (normalized.includes('ADMIN')) {
@@ -184,11 +175,12 @@ function formatProfileLabel(value: string): string {
   }
 
   if (
+    normalized.includes('CONSULTOR') ||
     normalized.includes('LEITURA') ||
     normalized.includes('READ_ONLY') ||
     normalized.includes('READONLY')
   ) {
-    return 'Leitura';
+    return 'Consultor';
   }
 
   if (normalized.includes('OPERADOR')) {
@@ -208,31 +200,31 @@ function buildProfileAccessibilityLabel(value: string): string {
   return `action-users-filter-role-${normalized || 'perfil'}`;
 }
 
-function buildProfileOption(profile: ProfileDTO): ProfileOption {
-  const label = profile.description.trim() || formatProfileLabel(profile.type);
-  const value = normalizeProfileToken(label);
+function buildProfileOption(profile: {
+  code?: string | null;
+  description?: string | null;
+  active?: boolean | null;
+}): ProfileOption {
+  const profileCode = normalizeProfileToken(String(profile.code ?? profile.description ?? ''));
+  const label = String(profile.description ?? '').trim() || formatProfileLabel(profileCode);
+  const value = profileCode || DEFAULT_ROLE_VALUE;
 
   return {
-    value: value || DEFAULT_ROLE_VALUE,
+    value,
     label,
     accessibilityLabel: buildProfileAccessibilityLabel(value || label),
-    type: profile.type,
+    available: profile.active !== false,
   };
 }
 
-function buildFallbackProfileOption(value: string): ProfileOption {
+function buildUnavailableProfileOption(value: string): ProfileOption {
   const normalized = normalizeProfileToken(value) || DEFAULT_ROLE_VALUE;
 
   return {
     value: normalized,
-    label: formatProfileLabel(normalized),
+    label: `${formatProfileLabel(normalized)} (indisponivel)`,
     accessibilityLabel: buildProfileAccessibilityLabel(normalized),
-    type:
-      normalized.includes('LEITURA') ||
-      normalized.includes('READ_ONLY') ||
-      normalized.includes('READONLY')
-        ? 'READ_ONLY'
-        : 'FULL_ACCESS',
+    available: false,
   };
 }
 
@@ -271,41 +263,154 @@ function mapRoleToPerfil(role: UserRole, profileOptions: ProfileOption[] = []): 
   return byFallbackLabel?.value ?? normalized;
 }
 
-function permissionsByRole(role: UserRole): PermissionState {
-  const normalized = normalizeProfileToken(role);
+function matchesProfileKind(value: string, kind: 'admin' | 'read' | 'operator'): boolean {
+  const normalized = normalizeProfileToken(value);
 
-  if (normalized.includes('ADMIN')) {
+  if (kind === 'admin') {
+    return normalized.includes('ADMIN');
+  }
+
+  if (kind === 'read') {
+    return (
+      normalized.includes('CONSULTOR') ||
+      normalized.includes('LEITURA') ||
+      normalized.includes('READ_ONLY') ||
+      normalized.includes('READONLY')
+    );
+  }
+
+  return (
+    normalized.includes('OPERADOR') ||
+    normalized.includes('FULL_ACCESS') ||
+    normalized.includes('FULLACCESS')
+  );
+}
+
+function buildProfileOptionsFromCatalog(profileCatalog: ProfileDTO[]): ProfileOption[] {
+  const uniqueOptions = new Map<string, ProfileOption>();
+
+  profileCatalog
+    .filter((profile) => profile.active !== false)
+    .forEach((profile) => {
+      const option = buildProfileOption(profile);
+      if (!uniqueOptions.has(option.value)) {
+        uniqueOptions.set(option.value, option);
+      }
+    });
+
+  return Array.from(uniqueOptions.values());
+}
+
+function findProfileDefinition(
+  profileValue: string,
+  profileLabel: string,
+  profileCatalog: ProfileDTO[]
+): ProfileDTO | null {
+  const normalizedValue = normalizeProfileToken(profileValue);
+  const normalizedLabel = normalizeProfileToken(profileLabel);
+
+  const exactMatch = profileCatalog.find((profile) => {
+    const profileCode = normalizeProfileToken(profile.code);
+    const profileDescription = normalizeProfileToken(profile.description);
+
+    return (
+      profileCode === normalizedValue ||
+      profileDescription === normalizedValue ||
+      profileCode === normalizedLabel ||
+      profileDescription === normalizedLabel
+    );
+  });
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  if (matchesProfileKind(normalizedValue, 'admin') || matchesProfileKind(normalizedLabel, 'admin')) {
+    return (
+      profileCatalog.find(
+        (profile) =>
+          matchesProfileKind(profile.code, 'admin') ||
+          matchesProfileKind(profile.description, 'admin')
+      ) ?? null
+    );
+  }
+
+  if (matchesProfileKind(normalizedValue, 'read') || matchesProfileKind(normalizedLabel, 'read')) {
+    return (
+      profileCatalog.find(
+        (profile) =>
+          matchesProfileKind(profile.code, 'read') ||
+          matchesProfileKind(profile.description, 'read')
+      ) ?? null
+    );
+  }
+
+  if (
+    matchesProfileKind(normalizedValue, 'operator') ||
+    matchesProfileKind(normalizedLabel, 'operator')
+  ) {
+    return (
+      profileCatalog.find(
+        (profile) =>
+          matchesProfileKind(profile.code, 'operator') ||
+          matchesProfileKind(profile.description, 'operator')
+      ) ?? null
+    );
+  }
+
+  return null;
+}
+
+function buildUserPermissionDetails(
+  profileValue: string,
+  profileLabel: string,
+  profileCatalog: ProfileDTO[]
+): UserPermissionDetails {
+  const permissionTemplate = findProfileDefinition(profileValue, profileLabel, profileCatalog);
+
+  if (!permissionTemplate) {
     return {
-      'dashboard:view': true,
-      'warehouse:read': true,
-      'warehouse:update': true,
-      'users:update': true,
+      enabledScreens: [],
+      disabledScreens: [...ALL_SCREEN_KEYS],
+      enabledCount: 0,
+      totalCount: ALL_SCREEN_KEYS.length,
+      coveragePercent: 0,
+      accessLevelLabel: 'Perfil sem mapeamento',
+      mapped: false,
+      helperText: 'As permissoes atuais desse perfil nao puderam ser carregadas.',
     };
   }
 
-  if (normalized.includes('OPERADOR') || normalized.includes('FULL_ACCESS')) {
-    return {
-      'dashboard:view': true,
-      'warehouse:read': true,
-      'warehouse:update': true,
-      'users:update': false,
-    };
-  }
+  const enabledScreens = ALL_SCREEN_KEYS.filter((screenKey) =>
+    permissionTemplate.allowedScreens.includes(screenKey)
+  );
+  const disabledScreens = ALL_SCREEN_KEYS.filter((screenKey) => !enabledScreens.includes(screenKey));
+  const enabledCount = enabledScreens.length;
+  const totalCount = ALL_SCREEN_KEYS.length;
 
   return {
-    'dashboard:view': true,
-    'warehouse:read': true,
-    'warehouse:update': false,
-    'users:update': false,
+    enabledScreens,
+    disabledScreens,
+    enabledCount,
+    totalCount,
+    coveragePercent: totalCount === 0 ? 0 : Math.round((enabledCount / totalCount) * 100),
+    accessLevelLabel: permissionTemplate.type === 'FULL_ACCESS' ? 'Acesso total' : 'Leitura',
+    mapped: true,
+    helperText:
+      permissionTemplate.type === 'FULL_ACCESS'
+        ? 'Pode editar os recursos liberados pelo perfil.'
+        : 'Pode apenas visualizar os recursos liberados pelo perfil.',
   };
 }
 
 function toManagedUser(
   user: UsuarioResponseDTO,
+  profileCatalog: ProfileDTO[] = [],
   profileOptions: ProfileOption[] = []
 ): ManagedUser {
-  const profileValue = mapRoleToPerfil(user.perfil, profileOptions);
-  const role = mapPerfilToRole(profileValue, profileOptions);
+  const profileValue = normalizeProfileToken(user.perfil) || DEFAULT_ROLE_VALUE;
+  const profileDefinition = findProfileDefinition(profileValue, profileValue, profileCatalog);
+  const role = profileDefinition?.description ?? mapPerfilToRole(profileValue, profileOptions);
 
   return {
     id: user.id,
@@ -316,7 +421,7 @@ function toManagedUser(
     team: 'â€”',
     status: user.ativo ? 'active' : 'inactive',
     lastAccess: 'â€”',
-    permissions: permissionsByRole(role),
+    permissionDetails: buildUserPermissionDetails(profileValue, role, profileCatalog),
   };
 }
 
@@ -385,7 +490,8 @@ export default function UserScreen() {
   const textColor = colors.text ?? theme.colors.onSurface;
   const textSecondary = colors.textSecondary ?? theme.colors.onSurfaceVariant;
 
-  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [rawUsers, setRawUsers] = useState<UsuarioResponseDTO[]>([]);
+  const [profileCatalog, setProfileCatalog] = useState<ProfileDTO[]>([]);
   const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -411,6 +517,10 @@ export default function UserScreen() {
   const [isChangePasswordExpanded, setIsChangePasswordExpanded] = useState(false);
   const [statusConfirmTarget, setStatusConfirmTarget] = useState<StatusConfirmTarget | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<StatusFeedback | null>(null);
+  const [editRoleSelectOpen, setEditRoleSelectOpen] = useState(false);
+  const [permissionModalUserId, setPermissionModalUserId] = useState<number | null>(null);
+  const [permissionModalRoleValue, setPermissionModalRoleValue] = useState(DEFAULT_ROLE_VALUE);
+  const [permissionRoleSelectOpen, setPermissionRoleSelectOpen] = useState(false);
 
   const actionTransitionStyle = Platform.OS === 'web' ? styles.interactiveWeb : undefined;
   const actionBusy = submitting || savingPassword;
@@ -418,7 +528,9 @@ export default function UserScreen() {
   const canEditUserProfiles = hasPermission('PROFILES', 'EDIT');
   const isEditModalVisible = editingUserId !== null;
   const isStatusConfirmModalVisible = statusConfirmTarget !== null;
-  const isAnyModalVisible = isEditModalVisible || isStatusConfirmModalVisible;
+  const isPermissionModalVisible = permissionModalUserId !== null;
+  const isAnyModalVisible =
+    isEditModalVisible || isStatusConfirmModalVisible || isPermissionModalVisible;
 
   const getInteractivePalette = useCallback(
     (variant: InteractiveVariant): InteractivePalette => {
@@ -599,6 +711,10 @@ export default function UserScreen() {
     );
   }, [profileOptions]);
 
+  const users = useMemo(() => {
+    return rawUsers.map((user) => toManagedUser(user, profileCatalog, profileOptions));
+  }, [profileCatalog, profileOptions, rawUsers]);
+
   const editableProfileOptions = useMemo(() => {
     if (!editForm.role) {
       return profileOptions;
@@ -608,72 +724,160 @@ export default function UserScreen() {
       return profileOptions;
     }
 
-    return [...profileOptions, buildFallbackProfileOption(editForm.role)];
+    return [...profileOptions, buildUnavailableProfileOption(editForm.role)];
   }, [editForm.role, profileOptions]);
+
+  const selectedEditRoleOption = useMemo(() => {
+    return findProfileOption(editableProfileOptions, editForm.role);
+  }, [editForm.role, editableProfileOptions]);
+
+  const isSelectedEditRoleAvailable = selectedEditRoleOption?.available !== false;
 
   const selectedEditRoleLabel = useMemo(() => {
     return mapPerfilToRole(editForm.role, editableProfileOptions);
   }, [editForm.role, editableProfileOptions]);
 
-  const fetchProfileOptions = useCallback(async () => {
-    try {
-      const response = await listProfiles({
-        page: 0,
-        size: 100,
-      });
+  const editProfileSelectOptions = useMemo<FilterSelectOption[]>(() => {
+    return editableProfileOptions.map((profileOption) => ({
+      value: profileOption.value,
+      label: profileOption.label,
+      accessibilityLabel: profileOption.accessibilityLabel,
+      disabled: !profileOption.available,
+    }));
+  }, [editableProfileOptions]);
 
-      const uniqueOptions = new Map<string, ProfileOption>();
-      (Array.isArray(response.items) ? response.items : [])
-        .filter((profile) => profile.active !== false)
-        .forEach((profile) => {
-          const option = buildProfileOption(profile);
-          if (!uniqueOptions.has(option.value)) {
-            uniqueOptions.set(option.value, option);
-          }
-        });
-
-      setProfileOptions(Array.from(uniqueOptions.values()));
-    } catch (error) {
-      console.error('Falha ao carregar perfis para filtros de usuÃ¡rio:', error);
-      setProfileOptions([]);
+  const permissionModalUser = useMemo(() => {
+    if (permissionModalUserId === null) {
+      return null;
     }
-  }, []);
 
-  const fetchUsers = useCallback(
-    async (isRefresh = false) => {
+    return users.find((user) => user.id === permissionModalUserId) ?? null;
+  }, [permissionModalUserId, users]);
+
+  const permissionModalProfileOptions = useMemo(() => {
+    if (!permissionModalRoleValue) {
+      return profileOptions;
+    }
+
+    if (findProfileOption(profileOptions, permissionModalRoleValue)) {
+      return profileOptions;
+    }
+
+    return [...profileOptions, buildUnavailableProfileOption(permissionModalRoleValue)];
+  }, [permissionModalRoleValue, profileOptions]);
+
+  const permissionModalSelectedOption = useMemo(() => {
+    return findProfileOption(permissionModalProfileOptions, permissionModalRoleValue);
+  }, [permissionModalProfileOptions, permissionModalRoleValue]);
+
+  const isSelectedPermissionRoleAvailable = permissionModalSelectedOption?.available !== false;
+
+  const permissionProfileSelectOptions = useMemo<FilterSelectOption[]>(() => {
+    return permissionModalProfileOptions.map((profileOption) => ({
+      value: profileOption.value,
+      label: profileOption.label,
+      accessibilityLabel: profileOption.accessibilityLabel,
+      disabled: !profileOption.available,
+    }));
+  }, [permissionModalProfileOptions]);
+
+  const permissionModalRoleLabel = useMemo(() => {
+    return mapPerfilToRole(permissionModalRoleValue, permissionModalProfileOptions);
+  }, [permissionModalProfileOptions, permissionModalRoleValue]);
+
+  const permissionModalDetails = useMemo(() => {
+    return buildUserPermissionDetails(
+      permissionModalRoleValue,
+      permissionModalRoleLabel,
+      profileCatalog
+    );
+  }, [permissionModalRoleLabel, permissionModalRoleValue, profileCatalog]);
+
+  const canSavePermissionProfile =
+    canEditUserProfiles &&
+    permissionModalUser !== null &&
+    isSelectedPermissionRoleAvailable &&
+    normalizeProfileToken(permissionModalUser.profileValue) !==
+      normalizeProfileToken(permissionModalRoleValue);
+
+  const loadUsersContext = useCallback(
+    async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
       setErrorMessage('');
 
-      if (isRefresh) {
+      if (mode === 'refresh') {
         setRefreshing(true);
-      } else {
+      } else if (mode === 'initial') {
         setLoading(true);
       }
 
       try {
-        const data = await listarUsuarios();
-        setUsers(data.map((user) => toManagedUser(user, profileOptions)));
+        const [profilesResult, usersResult] = await Promise.allSettled([
+          listProfiles({
+            page: 0,
+            size: 100,
+          }),
+          listarUsuarios(),
+        ]);
+
+        if (profilesResult.status === 'fulfilled') {
+          const nextCatalog = Array.isArray(profilesResult.value.items)
+            ? profilesResult.value.items
+            : [];
+
+          setProfileCatalog(nextCatalog);
+          setProfileOptions(buildProfileOptionsFromCatalog(nextCatalog));
+        } else {
+          console.error('Falha ao carregar catálogo de perfis na tela de usuários:', profilesResult.reason);
+
+          if (profileCatalog.length === 0) {
+            try {
+              const fallbackOptions = buildProfileOptionsFromCatalog(
+                (await listarPerfisAtivosUsuario()).map((profile) => ({
+                  id: profile.id,
+                  code: profile.code,
+                  type: profile.type,
+                  description: profile.description,
+                  allowedScreens: [],
+                  active: profile.active,
+                }))
+              );
+
+              setProfileOptions(fallbackOptions);
+            } catch (fallbackError) {
+              console.error('Falha ao carregar perfis ativos para a tela de usuários:', fallbackError);
+              setProfileOptions([]);
+            }
+          }
+        }
+
+        if (usersResult.status === 'fulfilled') {
+          setRawUsers(Array.isArray(usersResult.value) ? usersResult.value : []);
+        } else {
+          throw usersResult.reason;
+        }
       } catch (error) {
-        console.error('Falha ao listar usuÃ¡rios:', error);
+        console.error('Falha ao listar usuários:', error);
         const backendMessage = resolveRequestErrorMessage(error, '');
         setErrorMessage(backendMessage || API_STATE_MESSAGES.users.error.description);
       } finally {
-        if (isRefresh) {
+        if (mode === 'refresh') {
           setRefreshing(false);
-        } else {
+        } else if (mode === 'initial') {
           setLoading(false);
         }
       }
     },
-    [profileOptions]
+    [profileCatalog.length]
   );
 
-  useEffect(() => {
-    void fetchProfileOptions();
-  }, [fetchProfileOptions]);
+  useFocusEffect(
+    useCallback(() => {
+      const mode =
+        rawUsers.length === 0 && profileCatalog.length === 0 && !errorMessage ? 'initial' : 'silent';
 
-  useEffect(() => {
-    void fetchUsers(false);
-  }, [fetchUsers]);
+      void loadUsersContext(mode);
+    }, [errorMessage, loadUsersContext, profileCatalog.length, rawUsers.length])
+  );
 
   useEffect(() => {
     if (
@@ -741,6 +945,7 @@ export default function UserScreen() {
   const closeEdit = () => {
     setEditingUserId(null);
     setEditForm(emptyEditForm);
+    setEditRoleSelectOpen(false);
     resetCreatePasswordState();
     resetChangePasswordState();
   };
@@ -751,6 +956,7 @@ export default function UserScreen() {
       ...emptyEditForm,
       role: defaultRoleValue,
     });
+    setEditRoleSelectOpen(false);
     resetCreatePasswordState();
     resetChangePasswordState();
   };
@@ -764,8 +970,21 @@ export default function UserScreen() {
       password: '',
       confirmPassword: '',
     });
+    setEditRoleSelectOpen(false);
     resetCreatePasswordState();
     resetChangePasswordState();
+  };
+
+  const openPermissionModal = (user: ManagedUser) => {
+    setPermissionModalUserId(user.id);
+    setPermissionModalRoleValue(user.profileValue);
+    setPermissionRoleSelectOpen(false);
+  };
+
+  const closePermissionModal = () => {
+    setPermissionModalUserId(null);
+    setPermissionModalRoleValue(DEFAULT_ROLE_VALUE);
+    setPermissionRoleSelectOpen(false);
   };
 
   const saveUser = async () => {
@@ -786,6 +1005,11 @@ export default function UserScreen() {
 
     if (!isLoginValid(login)) {
       Alert.alert('ValidaÃ§Ã£o', 'Informe um login vÃ¡lido.');
+      return;
+    }
+
+    if (!isSelectedEditRoleAvailable) {
+      Alert.alert('Perfil indisponivel', 'Selecione um perfil ativo para salvar o usuario.');
       return;
     }
 
@@ -820,13 +1044,13 @@ export default function UserScreen() {
       }
 
       closeEdit();
-      await fetchUsers(false);
+      await loadUsersContext('silent');
       setStatusFeedback({
         type: 'success',
-        message: creating ? 'UsuÃ¡rio criado com sucesso.' : 'UsuÃ¡rio atualizado com sucesso.',
+        message: creating ? 'Usuário criado com sucesso.' : 'Usuário atualizado com sucesso.',
       });
     } catch (error) {
-      console.error('Falha ao salvar usuÃ¡rio:', error);
+      console.error('Falha ao salvar usuário:', error);
       setStatusFeedback({
         type: 'error',
         message: resolveRequestErrorMessage(
@@ -879,7 +1103,7 @@ export default function UserScreen() {
     try {
       setSubmitting(true);
       await atualizarStatusUsuario(Number(user.id), ativo);
-      await fetchUsers(false);
+      await loadUsersContext('silent');
       setStatusFeedback({
         type: 'success',
         message: ativo
@@ -921,7 +1145,7 @@ export default function UserScreen() {
     closeStatusConfirm();
 
     if (!selectedUser) {
-      await fetchUsers(false);
+      await loadUsersContext('silent');
       return;
     }
 
@@ -939,9 +1163,52 @@ export default function UserScreen() {
     await executeStatusUpdate(user, true);
   };
 
+  const savePermissionProfile = async () => {
+    if (!permissionModalUser) {
+      return;
+    }
+
+    if (!canEditUserProfiles) {
+      closePermissionModal();
+      return;
+    }
+
+    if (!isSelectedPermissionRoleAvailable) {
+      Alert.alert('Perfil indisponivel', 'Selecione um perfil ativo para atualizar as permissoes do usuario.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await atualizarUsuario(permissionModalUser.id, {
+        login: permissionModalUser.login,
+        nome: permissionModalUser.name,
+        perfil: mapRoleToPerfil(permissionModalRoleValue, permissionModalProfileOptions),
+      });
+      closePermissionModal();
+      await loadUsersContext('silent');
+      setStatusFeedback({
+        type: 'success',
+        message: `Perfil e permissoes de ${permissionModalUser.name} atualizados com sucesso.`,
+      });
+    } catch (error) {
+      console.error('Falha ao atualizar perfil pelo modal de permissoes:', error);
+      setStatusFeedback({
+        type: 'error',
+        message: resolveRequestErrorMessage(
+          error,
+          'Nao foi possivel atualizar o perfil do usuario.'
+        ),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const canSaveUser =
     editForm.name.trim().length >= 2 &&
     isLoginValid(editForm.login) &&
+    isSelectedEditRoleAvailable &&
     (editingUserId === 'new'
       ? editForm.password.trim().length >= 6 &&
         editForm.password.trim() === editForm.confirmPassword.trim()
@@ -1071,7 +1338,7 @@ export default function UserScreen() {
         onScrollBeginDrag={() => setOpenDropdown(null)}
         keyboardShouldPersistTaps="handled"
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void fetchUsers(true)} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void loadUsersContext('refresh')} />
         }
         {...userScrollableLayout.scrollViewProps}
       >
@@ -1084,7 +1351,7 @@ export default function UserScreen() {
           elevation={0}
         >
           <AppTextInput
-            label="Buscar usuÃ¡rio"
+            label="Buscar usuário"
             value={search}
             onChangeText={(value) => {
               setSearch(value);
@@ -1129,7 +1396,7 @@ export default function UserScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="action-reload-users"
-                onPress={() => void fetchUsers(false)}
+                onPress={() => void loadUsersContext('silent')}
                 disabled={actionBusy || reloadBusy}
                 style={(state) => [
                   styles.actionButtonBase,
@@ -1222,7 +1489,7 @@ export default function UserScreen() {
             ]}
             elevation={0}
           >
-            <AppLoadingState message="Carregando usuÃ¡rios..." style={styles.loadingBox} />
+            <AppLoadingState message="Carregando usuários..." style={styles.loadingBox} />
           </Surface>
         ) : null}
 
@@ -1239,7 +1506,7 @@ export default function UserScreen() {
               description={API_STATE_MESSAGES.users.error.description}
               icon="alert-circle-outline"
               tone="error"
-              onRetry={() => void fetchUsers(false)}
+              onRetry={() => void loadUsersContext('silent')}
             />
           </Surface>
         ) : null}
@@ -1247,10 +1514,16 @@ export default function UserScreen() {
         {!loading && !errorMessage ? (
           <View style={styles.listBlock}>
             {filteredUsers.map((user) => {
-              const enabled = Object.values(user.permissions).filter(Boolean).length;
               const isUserActive = user.status === 'active';
-              const permissionPercent = Math.round((enabled / PERMISSIONS.length) * 100);
               const initials = getUserInitials(user.name);
+              const {
+                enabledCount,
+                totalCount,
+                coveragePercent,
+                accessLevelLabel,
+                helperText,
+                mapped,
+              } = user.permissionDetails;
 
               return (
                 <Surface
@@ -1349,49 +1622,102 @@ export default function UserScreen() {
                         <Chip compact>{statusLabel[user.status]}</Chip>
                       </View>
                       <View pointerEvents="none">
-                        <Chip compact>
-                          {enabled}/{PERMISSIONS.length} permissÃµes
-                        </Chip>
+                        <Chip compact>{enabledCount}/{totalCount} telas</Chip>
                       </View>
                     </View>
                   </View>
 
                   <View style={[styles.userMiddle, isCompact && styles.userMiddleCompact]}>
-                    <View
-                      style={[
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`action-user-permissions-${user.id}`}
+                      onPress={() => openPermissionModal(user)}
+                      disabled={actionBusy}
+                      style={(state) => [
                         styles.permissionPanel,
+                        actionTransitionStyle,
+                        resolveInteractiveStyle(state, {
+                          variant: 'neutral',
+                          disabled: actionBusy,
+                        }),
                         {
                           backgroundColor: theme.colors.surfaceVariant,
                           borderColor: theme.colors.outlineVariant,
                         },
                       ]}
                     >
-                      <Text style={[styles.permissionLabel, { color: textSecondary }]}>
-                        PermissÃµes habilitadas
-                      </Text>
-                      <Text style={[styles.permissionValue, { color: textColor }]}>
-                        {enabled} de {PERMISSIONS.length} ({permissionPercent}%)
-                      </Text>
+                      {(state) => {
+                        const iconColor = resolveInteractiveIconColor(state, {
+                          variant: 'neutral',
+                          disabled: actionBusy,
+                        });
+                        const hintColor = resolveInteractiveTextColor(state, {
+                          variant: 'neutral',
+                          disabled: actionBusy,
+                        });
 
-                      <View
-                        style={[
-                          styles.permissionTrack,
-                          {
-                            backgroundColor: theme.colors.outlineVariant,
-                          },
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.permissionFill,
-                            {
-                              backgroundColor: theme.colors.primary,
-                              width: `${permissionPercent}%`,
-                            },
-                          ]}
-                        />
-                      </View>
-                    </View>
+                        return (
+                          <>
+                            <View style={styles.permissionHeaderRow}>
+                              <View style={styles.permissionHeaderTextBlock}>
+                                <Text style={[styles.permissionLabel, { color: textSecondary }]}>
+                                  Permissoes
+                                </Text>
+                                <Text style={[styles.permissionValue, { color: textColor }]}>
+                                  {enabledCount} de {totalCount} telas
+                                </Text>
+                              </View>
+
+                              <MaterialCommunityIcons
+                                name={
+                                  canEditUserProfiles
+                                    ? 'shield-key-outline'
+                                    : 'shield-check-outline'
+                                }
+                                size={18}
+                                color={iconColor}
+                              />
+                            </View>
+
+                            <View style={styles.permissionMetaRow}>
+                              <Text style={[styles.permissionMetaText, { color: textSecondary }]}>
+                                Cobertura {coveragePercent}% · {accessLevelLabel}
+                              </Text>
+                              <Text style={[styles.permissionMetaCta, { color: hintColor }]}>
+                                {canEditUserProfiles
+                                  ? 'Clique para visualizar ou editar'
+                                  : 'Clique para visualizar'}
+                              </Text>
+                            </View>
+
+                            <View
+                              style={[
+                                styles.permissionTrack,
+                                {
+                                  backgroundColor: withAlpha(theme.colors.primary, 0.08),
+                                },
+                              ]}
+                            >
+                              <View
+                                style={[
+                                  styles.permissionFill,
+                                  {
+                                    backgroundColor: mapped
+                                      ? theme.colors.primary
+                                      : theme.colors.outline,
+                                    width: `${coveragePercent}%`,
+                                  },
+                                ]}
+                              />
+                            </View>
+
+                            <Text style={[styles.permissionSupportText, { color: textSecondary }]}>
+                              {helperText}
+                            </Text>
+                          </>
+                        );
+                      }}
+                    </Pressable>
 
                     <View style={[styles.actions, isCompact && styles.actionsCompact]}>
                       <Pressable
@@ -1596,22 +1922,35 @@ export default function UserScreen() {
           </>
         ) : null}
 
-        <Text style={[styles.helperText, { color: textSecondary }]}>Perfil</Text>
         {canEditUserProfiles ? (
-          <View style={styles.filterRow}>
-            {editableProfileOptions.map((role) => (
-              <Chip
-                key={role.value}
-                selected={editForm.role === role.value}
-                onPress={() => setEditForm((prev) => ({ ...prev, role: role.value }))}
-              >
-                {role.label}
-              </Chip>
-            ))}
+          <View style={styles.profileSelectWrap}>
+            <FilterSelect
+              label="Perfil"
+              value={editForm.role}
+              valueLabel={selectedEditRoleLabel}
+              options={editProfileSelectOptions}
+              onSelect={(value) => setEditForm((prev) => ({ ...prev, role: value }))}
+              disabled={submitting || savingPassword || editProfileSelectOptions.length === 0}
+              open={editRoleSelectOpen}
+              onOpenChange={setEditRoleSelectOpen}
+              width="100%"
+              minWidth={0}
+              maxWidth={560}
+              accessibilityLabel="Selecionar perfil do usuario"
+            />
           </View>
         ) : (
-          <Text style={[styles.userInfo, { color: textColor }]}>{selectedEditRoleLabel}</Text>
+          <>
+            <Text style={[styles.helperText, { color: textSecondary }]}>Perfil</Text>
+            <Text style={[styles.userInfo, { color: textColor }]}>{selectedEditRoleLabel}</Text>
+          </>
         )}
+
+        {!isSelectedEditRoleAvailable ? (
+          <Text style={[styles.inlineWarningText, { color: DANGER_ACTION_COLOR }]}>
+            O perfil atual nao esta mais ativo no backend. Selecione um perfil valido para salvar.
+          </Text>
+        ) : null}
 
         {typeof editingUserId === 'number' ? (
           <View style={styles.passwordSection}>
@@ -1710,6 +2049,211 @@ export default function UserScreen() {
       </AppModalFrame>
 
       <AppModalFrame
+        visible={isPermissionModalVisible}
+        title="Permissoes do usuario"
+        subtitle={permissionModalUser?.name ?? 'Visualize as permissoes herdadas pelo perfil'}
+        onDismiss={closePermissionModal}
+        dismissDisabled={submitting}
+        maxWidth={620}
+        maxHeightRatio={0.86}
+        bodyStyle={styles.permissionModalBodyScroll}
+        scrollContentStyle={styles.permissionModalBodyContent}
+        actions={[
+          {
+            label: canEditUserProfiles ? 'Fechar' : 'OK',
+            onPress: closePermissionModal,
+            disabled: submitting,
+            tone: 'secondary',
+          },
+          ...(canEditUserProfiles
+            ? [
+                {
+                  label: 'Salvar perfil',
+                  onPress: () => {
+                    void savePermissionProfile();
+                  },
+                  disabled: !canSavePermissionProfile || submitting,
+                  loading: submitting,
+                  tone: 'primary' as const,
+                },
+              ]
+            : []),
+        ]}
+      >
+        {permissionModalUser ? (
+          <>
+            <Surface
+              style={[
+                styles.permissionModalSummaryCard,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+              ]}
+              elevation={0}
+            >
+              <View style={styles.permissionModalSummaryRow}>
+                <View style={styles.permissionModalSummaryBlock}>
+                  <Text style={[styles.permissionModalSummaryLabel, { color: textSecondary }]}>
+                    Usuario
+                  </Text>
+                  <Text style={[styles.permissionModalSummaryValue, { color: textColor }]}>
+                    {permissionModalUser.name}
+                  </Text>
+                </View>
+
+                <View style={styles.permissionModalSummaryBlock}>
+                  <Text style={[styles.permissionModalSummaryLabel, { color: textSecondary }]}>
+                    Perfil em uso
+                  </Text>
+                  <Text style={[styles.permissionModalSummaryValue, { color: textColor }]}>
+                    {permissionModalRoleLabel}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.permissionModalSummaryMetrics}>
+                <View style={styles.permissionMetricItem}>
+                  <Text style={[styles.permissionMetricLabel, { color: textSecondary }]}>
+                    Cobertura
+                  </Text>
+                  <Text style={[styles.permissionMetricValue, { color: textColor }]}>
+                    {permissionModalDetails.coveragePercent}%
+                  </Text>
+                </View>
+
+                <View style={styles.permissionMetricItem}>
+                  <Text style={[styles.permissionMetricLabel, { color: textSecondary }]}>
+                    Telas habilitadas
+                  </Text>
+                  <Text style={[styles.permissionMetricValue, { color: textColor }]}>
+                    {permissionModalDetails.enabledCount} de {permissionModalDetails.totalCount}
+                  </Text>
+                </View>
+
+                <View style={styles.permissionMetricItem}>
+                  <Text style={[styles.permissionMetricLabel, { color: textSecondary }]}>
+                    Nivel
+                  </Text>
+                  <Text style={[styles.permissionMetricValue, { color: textColor }]}>
+                    {permissionModalDetails.accessLevelLabel}
+                  </Text>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.permissionTrack,
+                  {
+                    backgroundColor: withAlpha(theme.colors.primary, 0.08),
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.permissionFill,
+                    {
+                      backgroundColor: permissionModalDetails.mapped
+                        ? theme.colors.primary
+                        : theme.colors.outline,
+                      width: `${permissionModalDetails.coveragePercent}%`,
+                    },
+                  ]}
+                />
+              </View>
+
+              <Text style={[styles.permissionSupportText, { color: textSecondary }]}>
+                {permissionModalDetails.helperText}
+              </Text>
+            </Surface>
+
+            {canEditUserProfiles ? (
+              <View style={styles.permissionModalEditorSection}>
+                <FilterSelect
+                  label="Perfil"
+                  value={permissionModalRoleValue}
+                  valueLabel={permissionModalRoleLabel}
+                  options={permissionProfileSelectOptions}
+                  onSelect={setPermissionModalRoleValue}
+                  disabled={submitting || permissionProfileSelectOptions.length === 0}
+                  open={permissionRoleSelectOpen}
+                  onOpenChange={setPermissionRoleSelectOpen}
+                  width="100%"
+                  minWidth={0}
+                  maxWidth={600}
+                  accessibilityLabel="Selecionar perfil para atualizar permissoes"
+                />
+
+                {!isSelectedPermissionRoleAvailable ? (
+                  <Text style={[styles.inlineWarningText, { color: DANGER_ACTION_COLOR }]}>
+                    O perfil atual nao esta disponivel. Selecione um perfil ativo para atualizar o usuario.
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            <View style={styles.permissionList}>
+              {ALL_SCREEN_KEYS.map((screenKey) => {
+                const screenEnabled = permissionModalDetails.enabledScreens.includes(screenKey);
+                const screenStatusLabel = screenEnabled
+                  ? permissionModalDetails.accessLevelLabel === 'Acesso total'
+                    ? 'Edicao'
+                    : 'Leitura'
+                  : 'Bloqueada';
+                const screenStatusColor = screenEnabled
+                  ? theme.colors.primary
+                  : theme.colors.onSurfaceVariant;
+
+                return (
+                  <View
+                    key={screenKey}
+                    style={[
+                      styles.permissionListItem,
+                      {
+                        backgroundColor: theme.colors.surface,
+                        borderColor: theme.colors.outlineVariant,
+                      },
+                    ]}
+                  >
+                    <View style={styles.permissionListItemText}>
+                      <Text style={[styles.permissionListTitle, { color: textColor }]}>
+                        {SCREEN_LABELS[screenKey]}
+                      </Text>
+                      <Text style={[styles.permissionListDescription, { color: textSecondary }]}>
+                        {screenEnabled
+                          ? permissionModalDetails.accessLevelLabel === 'Acesso total'
+                            ? 'Tela liberada para consulta e alteracao.'
+                            : 'Tela liberada apenas para consulta.'
+                          : 'Tela bloqueada para este perfil.'}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.permissionStatusPill,
+                        {
+                          backgroundColor: screenEnabled
+                            ? withAlpha(theme.colors.primary, 0.1)
+                            : theme.colors.surfaceVariant,
+                          borderColor: screenEnabled
+                            ? withAlpha(theme.colors.primary, 0.26)
+                            : theme.colors.outlineVariant,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.permissionStatusPillText, { color: screenStatusColor }]}>
+                        {screenStatusLabel}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
+      </AppModalFrame>
+
+      <AppModalFrame
         visible={isStatusConfirmModalVisible}
         title="Inativar usuário"
         subtitle={'Deseja inativar ' + (statusConfirmTarget?.name ?? 'este usuário') + '?'}
@@ -1772,6 +2316,9 @@ const styles = StyleSheet.create({
   createBtnCompact: { flex: 1, minWidth: 0 },
   actionButtonText: { flexShrink: 1, fontSize: 14, fontWeight: '800' },
   input: { marginBottom: 8 },
+  profileSelectWrap: {
+    marginBottom: 6,
+  },
   filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1928,14 +2475,48 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 10,
     minWidth: 230,
     flex: 1,
   },
+  permissionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  permissionHeaderTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
   permissionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   permissionValue: { fontSize: 13, fontWeight: '800', marginTop: 2 },
-  permissionTrack: { marginTop: 8, height: 8, borderRadius: 999, overflow: 'hidden' },
+  permissionMetaRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  permissionMetaText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  permissionMetaCta: {
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  permissionTrack: { marginTop: 8, height: 6, borderRadius: 999, overflow: 'hidden' },
   permissionFill: { height: '100%', borderRadius: 999 },
+  permissionSupportText: {
+    marginTop: 8,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -2035,9 +2616,113 @@ const styles = StyleSheet.create({
   confirmTitle: { marginBottom: 4 },
   confirmMessage: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   helperText: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
+  inlineWarningText: {
+    marginTop: 2,
+    marginBottom: 6,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 10 },
   passwordSection: { marginTop: 8 },
   passwordDivider: { marginBottom: 10 },
   passwordTitle: { fontSize: 16, marginBottom: 6 },
   passwordActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 2 },
+  permissionModalSummaryCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
+    marginBottom: 14,
+  },
+  permissionModalSummaryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  permissionModalSummaryBlock: {
+    flex: 1,
+    minWidth: 180,
+    gap: 2,
+  },
+  permissionModalSummaryLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  permissionModalSummaryValue: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  permissionModalSummaryMetrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  permissionMetricItem: {
+    flex: 1,
+    minWidth: 140,
+    gap: 2,
+  },
+  permissionMetricLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  permissionMetricValue: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  permissionModalEditorSection: {
+    marginBottom: 14,
+    position: 'relative',
+    zIndex: 3200,
+    elevation: 32,
+  },
+  permissionModalBodyScroll: {
+    overflow: 'visible',
+  },
+  permissionModalBodyContent: {
+    overflow: 'visible',
+  },
+  permissionList: {
+    gap: 8,
+    position: 'relative',
+    zIndex: 1,
+  },
+  permissionListItem: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  permissionListItemText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  permissionListTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  permissionListDescription: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  permissionStatusPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    flexShrink: 0,
+  },
+  permissionStatusPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
 });

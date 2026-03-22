@@ -16,6 +16,9 @@ export type StockItemDTO = {
   nomeModelo: string | null;
   descricao: string | null;
   cor: string | null;
+  produtoAtivo: boolean;
+  estoqueMinimo: number | null;
+  estoqueMaximo: number | null;
   quantidade: number;
 };
 
@@ -51,6 +54,9 @@ type RawStockItemShape = Partial<StockItemDTO> & {
   nomeModelo?: string | null;
   descricao?: string | null;
   cor?: string | null;
+  produtoAtivo?: boolean | string | number | null;
+  estoqueMinimo?: number | string | null;
+  estoqueMaximo?: number | string | null;
   quantidade?: number | string | null;
 };
 
@@ -83,6 +89,30 @@ function toText(value: unknown): string | null {
   return normalized === '' ? null : normalized;
 }
 
+function toBoolean(value: unknown, fallback = true): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toUpperCase();
+
+    if (['TRUE', '1', 'ATIVO', 'ACTIVE', 'SIM', 'YES'].includes(normalized)) {
+      return true;
+    }
+
+    if (['FALSE', '0', 'INATIVO', 'INACTIVE', 'NAO', 'NO'].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return fallback;
+}
+
 function sanitizeStockItem(raw: RawStockItemShape): StockItemDTO {
   return {
     itemEstoqueId: Math.max(toNumber(raw.itemEstoqueId) ?? 0, 0),
@@ -100,6 +130,9 @@ function sanitizeStockItem(raw: RawStockItemShape): StockItemDTO {
     nomeModelo: toText(raw.nomeModelo),
     descricao: toText(raw.descricao),
     cor: toText(raw.cor),
+    produtoAtivo: toBoolean(raw.produtoAtivo, true),
+    estoqueMinimo: toNumber(raw.estoqueMinimo),
+    estoqueMaximo: toNumber(raw.estoqueMaximo),
     quantidade: Math.max(toNumber(raw.quantidade) ?? 0, 0),
   };
 }

@@ -78,7 +78,7 @@ export default function StocksReportTab({
     updatePageSize,
   } = useReportQuery({
     initialFilter,
-    fetcher: async (filter) => fetchStocksReport(filter),
+    fetcher: fetchStocksReport,
   });
   const [openFilter, setOpenFilter] = useState<'status' | 'sort' | 'direction' | 'size' | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -93,6 +93,7 @@ export default function StocksReportTab({
   const pageSizeLabel =
     PAGE_SIZE_OPTIONS.find((option) => Number(option.value) === filters.size)?.label ??
     `${filters.size} / página`;
+  const filtersMenuOpen = openFilter !== null;
 
   const handleExport = async () => {
     if (!data || data.pagination.totalItems === 0) {
@@ -249,13 +250,20 @@ export default function StocksReportTab({
       <Surface
         style={[
           listScreenStyles.toolbarSurface,
+          filtersMenuOpen ? listScreenStyles.toolbarSurfaceRaised : null,
           {
             backgroundColor: theme.colors.surface,
             borderColor: theme.colors.outline,
           },
         ]}
       >
-        <View style={[styles.filtersGrid, isCompact ? styles.filtersGridCompact : null]}>
+        <View
+          style={[
+            styles.filtersGrid,
+            filtersMenuOpen ? styles.filtersLayerOpen : null,
+            isCompact ? styles.filtersGridCompact : null,
+          ]}
+        >
           <View style={styles.flexField}>
             <AppTextInput
               label="Setor"
@@ -291,7 +299,13 @@ export default function StocksReportTab({
           </View>
         </View>
 
-        <View style={[styles.filtersFooter, isCompact ? styles.filtersFooterCompact : null]}>
+        <View
+          style={[
+            styles.filtersFooter,
+            filtersMenuOpen ? styles.filtersLayerOpen : null,
+            isCompact ? styles.filtersFooterCompact : null,
+          ]}
+        >
           <FilterSelect
             label="Status"
             value={statusValue}
@@ -375,6 +389,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+    overflow: 'visible',
+    zIndex: 1,
   },
   filtersGridCompact: {
     flexDirection: 'column',
@@ -387,9 +403,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+    overflow: 'visible',
+    zIndex: 1,
   },
   filtersFooterCompact: {
     flexDirection: 'column',
+  },
+  filtersLayerOpen: {
+    zIndex: 60,
   },
   actionsRow: {
     flexDirection: 'row',

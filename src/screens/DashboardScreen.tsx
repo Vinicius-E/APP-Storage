@@ -27,14 +27,17 @@ import { API_STATE_MESSAGES, getApiEmptyCopy } from '../constants/apiStateMessag
 import { useAppScreenScrollableLayout } from '../hooks/useAppScreenScrollableLayout';
 import { listAllStockItems, listStockItems, type StockItemDTO } from '../services/stockItemApi';
 import { useThemeContext } from '../theme/ThemeContext';
+import { exportReportPdf } from '../utils/reportPdf';
 import { getUserFacingErrorMessage } from '../utils/userFacingError';
 
 type DashboardSortColumn = 'produto' | 'quantidade' | 'status';
+type StockStatus = 'Disponivel' | 'Indisponivel';
 
 type StockRow = {
   id: string;
   itemEstoqueId: number;
   areaId: number | null;
+  produtoId: number | null;
   areaNome: string;
   produto: string;
   fileira: string;
@@ -42,27 +45,68 @@ type StockRow = {
   nivel: string;
   status: 'Disponível' | 'Reservado' | 'Baixo';
   quantidade: number;
+  produtoAtivo: boolean;
+  estoqueMinimo: number | null;
+  estoqueMaximo: number | null;
   codigoSistemaWester: string;
   cor: string;
   descricao: string;
 };
 
 type StockReportSummary = {
-  areas: number;
-  fileiras: number;
-  grades: number;
-  niveis: number;
-  itens: number;
-  linhas: number;
-  vazios: number;
+  totalRegistros?: number;
+  totalProdutosDistintos?: number;
+  quantidadeTotal?: number;
+  totalSetores?: number;
+  areas?: number;
+  fileiras?: number;
+  grades?: number;
+  niveis?: number;
+  itens?: number;
+  linhas?: number;
+  vazios?: number;
 };
 
 type StockCardVariant = 'compact' | 'full';
 
-const STATUS_COLOR: Record<StockRow['status'], string> = {
+type ConsolidatedStockProduct = {
+  key: string;
+  produto: string;
+  codigoSistemaWester: string;
+  quantidadeTotal: number;
+  estoqueMinimo: number | null;
+  estoqueMaximo: number | null;
+  status: StockStatus;
+};
+
+const PCP_REPORT_TEXT = {
+  reportTitle: 'WESTER - Relatório PCP de Estoque por Produto',
+  reportSubtitle: 'Consulta por produto, código, localização e limites de estoque',
+  sortLabel: 'Ordenação',
+  summaryDescription:
+    'Produtos repetidos em diferentes localizações permanecem na tabela detalhada e são consolidados nesta seção.',
+  codeLabel: 'Código',
+  minimumStockLabel: 'Estoque mínimo',
+  maximumStockLabel: 'Estoque máximo',
+  consolidatedStatusLabel: 'Status consolidado',
+  detailedTableTitle: 'Tabela detalhada por localização',
+  locationLabel: 'Localização',
+  notInformed: 'Não informado',
+  notDefined: 'Não definido',
+  availableStatus: 'Disponível',
+  unavailableStatus: 'Indisponível',
+  availableRule: 'Status "Disponível" considera produto ativo com quantidade maior que zero.',
+  unavailableRule: 'Status "Indisponível" considera produto inativo ou quantidade igual a zero.',
+  detailedTableRule:
+    'A tabela detalhada apresenta todas as ocorrências por localização retornadas na consulta.',
+} as const;
+
+const STATUS_COLOR: Record<string, string> = {
   Disponível: '#2E7D32',
   Reservado: '#E67E22',
   Baixo: '#C62828',
+  Disponivel: '#2E7D32',
+  Indisponivel: '#C62828',
 };
 
 function withAlpha(color: string, alpha: number): string {
@@ -140,12 +184,20 @@ function normalizeText(value: string | null | undefined, fallback = '-'): string
   return normalized !== '' ? normalized : fallback;
 }
 
-function computeStatus(quantidade: number): StockRow['status'] {
-  if (quantidade <= 10) {
-    return 'Baixo';
+function computeStatus(quantidade: number, produtoAtivo: boolean): StockStatus {
+  if (!produtoAtivo || quantidade <= 0) {
+    return 'Indisponivel';
   }
 
-  return 'Dispon\u00edvel' as StockRow['status'];
+  return 'Disponivel';
+}
+
+function formatStockLimit(value: number | null): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return PCP_REPORT_TEXT.notDefined;
+  }
+
+  return String(value);
 }
 
 function buildLocationLabel(
@@ -191,6 +243,85 @@ function buildCompactLocationLabel(
   return locationSegments.join(' | ');
 }
 
+function buildReportLocationLabel(
+  row: Pick<StockRow, 'areaNome' | 'fileira' | 'grade' | 'nivel'>
+): string {
+  const areaPrefix = row.areaNome ? `Setor ${row.areaNome} / ` : '';
+  return `${areaPrefix}Fileira ${row.fileira} / Grade ${row.grade} / N\u00EDvel ${row.nivel}`;
+}
+
+function formatReportStatus(status: string): string {
+  return status === 'Disponivel' || status === 'Disponível'
+    ? PCP_REPORT_TEXT.availableStatus
+    : PCP_REPORT_TEXT.unavailableStatus;
+}
+
+function buildProductGroupingKey(
+  row: Pick<StockRow, 'produtoId' | 'codigoSistemaWester' | 'produto'>
+): string {
+  const productId = row.produtoId != null ? String(row.produtoId) : 'sem-produto';
+  const productCode = normalizeText(row.codigoSistemaWester, 'sem-codigo');
+  const productName = normalizeText(row.produto, 'Sem produto');
+  return `${productId}__${productCode}__${productName}`;
+}
+
+function buildPcpReportSummary(rows: StockRow[]): StockReportSummary {
+  const areaKeys = new Set<string>();
+  const productKeys = new Set<string>();
+  let quantidadeTotal = 0;
+
+  for (const row of rows) {
+    const areaKey =
+      row.areaId != null ? String(row.areaId) : normalizeText(row.areaNome, 'sem-area');
+
+    areaKeys.add(areaKey);
+    productKeys.add(buildProductGroupingKey(row));
+    quantidadeTotal += row.quantidade;
+  }
+
+  return {
+    totalRegistros: rows.length,
+    totalProdutosDistintos: productKeys.size,
+    quantidadeTotal,
+    totalSetores: areaKeys.size,
+  };
+}
+
+function buildConsolidatedProducts(rows: StockRow[]): ConsolidatedStockProduct[] {
+  const consolidatedByKey = new Map<string, ConsolidatedStockProduct>();
+
+  for (const row of rows) {
+    const key = buildProductGroupingKey(row);
+    const current = consolidatedByKey.get(key);
+
+    if (current) {
+      current.quantidadeTotal += row.quantidade;
+      current.status = computeStatus(current.quantidadeTotal, row.produtoAtivo);
+      continue;
+    }
+
+    consolidatedByKey.set(key, {
+      key,
+      produto: row.produto,
+      codigoSistemaWester: row.codigoSistemaWester,
+      quantidadeTotal: row.quantidade,
+      estoqueMinimo: row.estoqueMinimo,
+      estoqueMaximo: row.estoqueMaximo,
+      status: computeStatus(row.quantidade, row.produtoAtivo),
+    });
+  }
+
+  return [...consolidatedByKey.values()].sort((left, right) => {
+    const quantityDifference = right.quantidadeTotal - left.quantidadeTotal;
+
+    if (quantityDifference !== 0) {
+      return quantityDifference;
+    }
+
+    return left.produto.localeCompare(right.produto, 'pt-BR');
+  });
+}
+
 function compareStockRows(
   left: StockRow,
   right: StockRow,
@@ -221,32 +352,31 @@ function mapStockItemToRow(item: StockItemDTO): StockRow {
     id: String(item.itemEstoqueId),
     itemEstoqueId: item.itemEstoqueId,
     areaId: item.areaId,
+    produtoId: item.produtoId,
     areaNome: normalizeText(item.areaNome, ''),
     produto,
     fileira: normalizeText(item.fileiraIdentificador),
     grade: normalizeText(item.gradeIdentificador),
     nivel: normalizeText(item.nivelIdentificador),
-    status: computeStatus(item.quantidade),
+    status: computeStatus(item.quantidade, item.produtoAtivo) as StockRow['status'],
     quantidade: item.quantidade,
+    produtoAtivo: item.produtoAtivo,
+    estoqueMinimo: item.estoqueMinimo,
+    estoqueMaximo: item.estoqueMaximo,
     codigoSistemaWester: normalizeText(item.codigoSistemaWester, ''),
     cor: normalizeText(item.cor, ''),
     descricao: normalizeText(item.descricao, ''),
   };
 }
 
-function StockItemCard({
-  row,
-  variant,
-}: {
-  row: StockRow;
-  variant: StockCardVariant;
-}) {
+function StockItemCard({ row, variant }: { row: StockRow; variant: StockCardVariant }) {
   const { theme } = useThemeContext();
   const textSecondary =
     (theme.colors as typeof theme.colors & { textSecondary?: string }).textSecondary ??
     theme.colors.text;
   const compactLocationLabel = buildCompactLocationLabel(row);
   const productCode = row.codigoSistemaWester || 'Não informado';
+  const stockLimitsLabel = `Min ${formatStockLimit(row.estoqueMinimo)}  •  Max ${formatStockLimit(row.estoqueMaximo)}`;
 
   if (variant === 'full') {
     return (
@@ -257,10 +387,16 @@ function StockItemCard({
 
         <View style={styles.tableColProduct}>
           <Text style={[styles.stockTitle, { color: theme.colors.text }]}>{row.produto}</Text>
+          <Text style={[styles.stockCodeLine, { color: theme.colors.primary }]}>
+            CDG_WESTER: {productCode}
+          </Text>
+          <Text style={[styles.stockLimitLine, { color: textSecondary }]}>{stockLimitsLabel}</Text>
         </View>
 
         <View style={styles.tableCol}>
-          <Text style={[styles.stockMeta, { color: textSecondary }]}>{buildLocationLabel(row)}</Text>
+          <Text style={[styles.stockMeta, { color: textSecondary }]}>
+            {buildLocationLabel(row)}
+          </Text>
         </View>
 
         <View style={styles.tableColQty}>
@@ -293,6 +429,14 @@ function StockItemCard({
               {compactLocationLabel}
             </Text>
           ) : null}
+
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[styles.stockCompactLimitLine, { color: textSecondary }]}
+          >
+            {stockLimitsLabel}
+          </Text>
         </View>
 
         <View style={styles.stockCompactQuantityBlock}>
@@ -650,6 +794,100 @@ export default function DashboardScreen() {
         return;
       }
 
+      const generatedReportAt = new Date().toLocaleString('pt-BR');
+      const pcpReportSummary = buildPcpReportSummary(reportRows);
+      const consolidatedProductsForReport = buildConsolidatedProducts(reportRows);
+      const sortLabel =
+        sortBy === 'produto' ? 'Produto' : sortBy === 'quantidade' ? 'Quantidade' : 'Status';
+
+      await exportReportPdf({
+        fileName: 'WESTER-relatorio-pcp-estoque-por-produto.pdf',
+        title: PCP_REPORT_TEXT.reportTitle,
+        subtitle: PCP_REPORT_TEXT.reportSubtitle,
+        generatedAt: generatedReportAt,
+        filters: [
+          { label: 'Busca aplicada', value: appliedFilter || 'Todos os produtos' },
+          { label: 'Setor', value: selectedAreaLabel },
+          {
+            label: PCP_REPORT_TEXT.sortLabel,
+            value: `${sortLabel} (${sortDirection.toUpperCase()})`,
+          },
+        ],
+        summary: [
+          { label: 'Registros encontrados', value: String(pcpReportSummary.totalRegistros) },
+          { label: 'Produtos distintos', value: String(pcpReportSummary.totalProdutosDistintos) },
+          {
+            label: 'Quantidade total consolidada',
+            value: String(pcpReportSummary.quantidadeTotal),
+          },
+          { label: 'Setores encontrados', value: String(pcpReportSummary.totalSetores) },
+        ],
+        charts: [
+          {
+            title: 'Quantidade consolidada por produto',
+            points: consolidatedProductsForReport.map((product) => ({
+              label: product.codigoSistemaWester
+                ? `${product.produto} (${product.codigoSistemaWester})`
+                : product.produto,
+              value: product.quantidadeTotal,
+              formattedValue: `${product.quantidadeTotal} un.`,
+              color: product.status === 'Disponivel' ? '#2E7D32' : '#C62828',
+            })),
+          },
+        ],
+        sections: [
+          {
+            title: 'Resumo consolidado por produto',
+            description: PCP_REPORT_TEXT.summaryDescription,
+            table: {
+              head: [
+                'Produto',
+                PCP_REPORT_TEXT.codeLabel,
+                'Quantidade total',
+                PCP_REPORT_TEXT.minimumStockLabel,
+                PCP_REPORT_TEXT.maximumStockLabel,
+                PCP_REPORT_TEXT.consolidatedStatusLabel,
+              ],
+              body: consolidatedProductsForReport.map((product) => [
+                product.produto,
+                product.codigoSistemaWester || PCP_REPORT_TEXT.notInformed,
+                String(product.quantidadeTotal),
+                formatStockLimit(product.estoqueMinimo),
+                formatStockLimit(product.estoqueMaximo),
+                formatReportStatus(product.status),
+              ]),
+            },
+          },
+        ],
+        tableTitle: PCP_REPORT_TEXT.detailedTableTitle,
+        table: {
+          head: [
+            'Produto',
+            PCP_REPORT_TEXT.codeLabel,
+            PCP_REPORT_TEXT.locationLabel,
+            'Quantidade',
+            PCP_REPORT_TEXT.minimumStockLabel,
+            PCP_REPORT_TEXT.maximumStockLabel,
+            'Status',
+          ],
+          body: reportRows.map((row) => [
+            row.produto,
+            row.codigoSistemaWester || PCP_REPORT_TEXT.notInformed,
+            buildReportLocationLabel(row),
+            String(row.quantidade),
+            formatStockLimit(row.estoqueMinimo),
+            formatStockLimit(row.estoqueMaximo),
+            formatReportStatus(row.status),
+          ]),
+        },
+        notes: [
+          PCP_REPORT_TEXT.availableRule,
+          PCP_REPORT_TEXT.unavailableRule,
+          PCP_REPORT_TEXT.detailedTableRule,
+        ],
+      });
+      return;
+
       const generatedAt = new Date().toLocaleString('pt-BR');
       const orderedRows = reportRows;
       const reportSummary = {
@@ -780,7 +1018,15 @@ export default function DashboardScreen() {
     } finally {
       setGeneratingReport(false);
     }
-  }, [appliedFilter, itemsPerPage, selectedAreaFilter, sortBy, sortDirection, totalItems]);
+  }, [
+    appliedFilter,
+    itemsPerPage,
+    selectedAreaFilter,
+    selectedAreaLabel,
+    sortBy,
+    sortDirection,
+    totalItems,
+  ]);
 
   return (
     <ScrollView
@@ -1348,6 +1594,24 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.productModalInfoRow}>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
+              Estoque minimo
+            </Text>
+            <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
+              {formatStockLimit(selectedRow?.estoqueMinimo ?? null)}
+            </Text>
+          </View>
+
+          <View style={styles.productModalInfoRow}>
+            <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>
+              Estoque maximo
+            </Text>
+            <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
+              {formatStockLimit(selectedRow?.estoqueMaximo ?? null)}
+            </Text>
+          </View>
+
+          <View style={styles.productModalInfoRow}>
             <Text style={[styles.productModalInfoLabel, { color: theme.colors.primary }]}>Cor</Text>
             <Text style={[styles.productModalInfoValue, { color: theme.colors.text }]}>
               {selectedRow?.cor || 'Não informada'}
@@ -1524,6 +1788,11 @@ const styles = StyleSheet.create({
   stockCompactLocation: {
     marginTop: 0,
   },
+  stockCompactLimitLine: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '700',
+  },
   stockCompactQuantityBlock: {
     minWidth: 88,
     alignItems: 'flex-end',
@@ -1569,6 +1838,16 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   stockTitle: { fontSize: 16, fontWeight: '800' },
+  stockCodeLine: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  stockLimitLine: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   stockSubtitle: { marginTop: 4, fontSize: 12 },
   stockMeta: { fontSize: 12, fontWeight: '600' },
   stockQty: { fontSize: 18, fontWeight: '800' },

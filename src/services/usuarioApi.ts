@@ -22,6 +22,14 @@ export interface UsuarioUpdateRequest {
   perfil: string;
 }
 
+export interface UsuarioPerfilDisponivelDTO {
+  id: number;
+  code: string;
+  description: string;
+  type: 'READ_ONLY' | 'FULL_ACCESS';
+  active: boolean;
+}
+
 export interface UsuarioChangePasswordRequestDTO {
   senhaAtual: string;
   novaSenha: string;
@@ -34,6 +42,11 @@ export interface UsuarioStatusUpdateRequestDTO {
 
 export async function listarUsuarios(): Promise<UsuarioResponseDTO[]> {
   const response = await API.get<UsuarioResponseDTO[]>('/api/usuarios');
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function listarPerfisAtivosUsuario(): Promise<UsuarioPerfilDisponivelDTO[]> {
+  const response = await API.get<UsuarioPerfilDisponivelDTO[]>('/api/perfis/ativos');
   return Array.isArray(response.data) ? response.data : [];
 }
 

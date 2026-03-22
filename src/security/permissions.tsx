@@ -33,6 +33,7 @@ const ALL_SCREENS: ScreenKey[] = [
 const DEFAULT_PROFILE_SEED: ProfileDTO[] = [
   {
     id: 1,
+    code: 'ADMINISTRADOR',
     type: 'FULL_ACCESS',
     description: 'Administrador',
     allowedScreens: ALL_SCREENS,
@@ -40,15 +41,25 @@ const DEFAULT_PROFILE_SEED: ProfileDTO[] = [
   },
   {
     id: 2,
+    code: 'OPERADOR',
     type: 'FULL_ACCESS',
     description: 'Operador',
-    allowedScreens: ['DASHBOARD', 'ALERTS', 'MOVEMENTS', 'REPORTS', 'WAREHOUSE', 'PRODUCTS', 'HISTORY'],
+    allowedScreens: [
+      'DASHBOARD',
+      'ALERTS',
+      'MOVEMENTS',
+      'REPORTS',
+      'WAREHOUSE',
+      'PRODUCTS',
+      'HISTORY',
+    ],
     active: true,
   },
   {
     id: 3,
+    code: 'CONSULTOR',
     type: 'READ_ONLY',
-    description: 'Leitura',
+    description: 'Consultor',
     allowedScreens: ['DASHBOARD', 'ALERTS', 'REPORTS', 'WAREHOUSE', 'PRODUCTS', 'HISTORY'],
     active: true,
   },
@@ -71,6 +82,7 @@ function findDefaultProfile(rawPerfil?: string | null): ProfileDTO {
   }
 
   if (
+    normalized.includes('CONSULTOR') ||
     normalized.includes('LEITURA') ||
     normalized.includes('READ_ONLY') ||
     normalized.includes('READONLY')
