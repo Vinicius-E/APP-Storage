@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Surface, Text, TextInput } from 'react-native-paper';
 import AppTextInput from '../../../components/AppTextInput';
+import AppEmptyState from '../../../components/AppEmptyState';
 import FilterSelect from '../../../components/FilterSelect';
 import ListActionButton from '../../../components/ListActionButton';
 import ListPaginationControls from '../../../components/ListPaginationControls';
@@ -81,9 +82,11 @@ export default function StockItemsReportTab({
     resetFilters,
     updatePage,
     updatePageSize,
+    hasFetchedOnce,
   } = useReportQuery({
     initialFilter,
-    fetcher: async (filter) => fetchStockItemsReport(filter),
+    fetcher: fetchStockItemsReport,
+    autoFetch: false,
   });
   const [openFilter, setOpenFilter] = useState<'status' | 'sort' | 'direction' | 'size' | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -96,6 +99,46 @@ export default function StockItemsReportTab({
   const pageSizeLabel =
     PAGE_SIZE_OPTIONS.find((option) => Number(option.value) === filters.size)?.label ??
     `${filters.size} / página`;
+  const filtersMenuOpen = openFilter !== null;
+  const hasRelevantFilter = useMemo(
+    () =>
+      [
+        filters.produto,
+        filters.codigoSistemaWester,
+        filters.area,
+        filters.fileira,
+        filters.grade,
+        filters.nivel,
+        filters.dataInicio,
+        filters.dataFim,
+      ].some((value) => String(value ?? '').trim().length > 0),
+    [
+      filters.area,
+      filters.codigoSistemaWester,
+      filters.dataFim,
+      filters.dataInicio,
+      filters.fileira,
+      filters.grade,
+      filters.nivel,
+      filters.produto,
+    ]
+  );
+
+  const handleApplyFilters = () => {
+    if (!hasRelevantFilter) {
+      onFeedback(
+        'error',
+        'Informe pelo menos produto, codigo, setor, fileira, grade, nivel ou periodo para consultar itens de estoque.'
+      );
+      return;
+    }
+
+    applyFilters();
+  };
+
+  const handleResetFilters = () => {
+    resetFilters({ fetch: false });
+  };
 
   const handleExport = async () => {
     if (!data || data.pagination.totalItems === 0) {
@@ -171,6 +214,17 @@ export default function StockItemsReportTab({
   };
 
   const renderResults = () => {
+    if (!hasFetchedOnce) {
+      return (
+        <AppEmptyState
+          title="Aplique filtros para consultar itens"
+          description="Informe pelo menos produto, codigo, setor, fileira, grade, nivel ou periodo e clique em Aplicar filtros."
+          icon="filter-variant"
+          style={styles.stateBlock}
+        />
+      );
+    }
+
     if (!data || data.items.length === 0) {
       return (
         <SectionState
@@ -179,7 +233,7 @@ export default function StockItemsReportTab({
           emptyTitle="Nenhum item encontrado"
           emptyDescription="Ajuste os filtros e tente novamente."
           loadingMessage="Carregando relatório de itens..."
-          onRetry={applyFilters}
+          onRetry={handleApplyFilters}
         />
       );
     }
@@ -251,13 +305,20 @@ export default function StockItemsReportTab({
       <Surface
         style={[
           listScreenStyles.toolbarSurface,
+          filtersMenuOpen ? listScreenStyles.toolbarSurfaceRaised : null,
           {
             backgroundColor: theme.colors.surface,
             borderColor: theme.colors.outline,
           },
         ]}
       >
-        <View style={[styles.filtersGrid, isCompact ? styles.filtersGridCompact : null]}>
+        <View
+          style={[
+            styles.filtersGrid,
+            filtersMenuOpen ? styles.filtersLayerOpen : null,
+            isCompact ? styles.filtersGridCompact : null,
+          ]}
+        >
           <View style={styles.flexField}>
             <AppTextInput
               label="Produto"
@@ -325,7 +386,13 @@ export default function StockItemsReportTab({
           </View>
         </View>
 
-        <View style={[styles.filtersFooter, isCompact ? styles.filtersFooterCompact : null]}>
+        <View
+          style={[
+            styles.filtersFooter,
+            filtersMenuOpen ? styles.filtersLayerOpen : null,
+            isCompact ? styles.filtersFooterCompact : null,
+          ]}
+        >
           <FilterSelect
             label="Status do item"
             value={filters.statusItem}
@@ -369,8 +436,8 @@ export default function StockItemsReportTab({
         </View>
 
         <View style={styles.actionsRow}>
-          <ListActionButton label="Aplicar filtros" icon="filter-check-outline" onPress={applyFilters} />
-          <ListActionButton label="Limpar filtros" icon="filter-off-outline" onPress={resetFilters} />
+          <ListActionButton label="Aplicar filtros" icon="filter-check-outline" onPress={handleApplyFilters} />
+          <ListActionButton label="Limpar filtros" icon="filter-off-outline" onPress={handleResetFilters} />
           <ListActionButton
             label="Gerar PDF"
             icon="file-pdf-box"
@@ -405,10 +472,16 @@ const styles = StyleSheet.create({
   sectionStack: {
     gap: 16,
   },
+  stateBlock: {
+    minHeight: 220,
+    justifyContent: 'center',
+  },
   filtersGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+    overflow: 'visible',
+    zIndex: 1,
   },
   filtersGridCompact: {
     flexDirection: 'column',
@@ -421,9 +494,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+    overflow: 'visible',
+    zIndex: 1,
   },
   filtersFooterCompact: {
     flexDirection: 'column',
+  },
+  filtersLayerOpen: {
+    zIndex: 60,
   },
   actionsRow: {
     flexDirection: 'row',
