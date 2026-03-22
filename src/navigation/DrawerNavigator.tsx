@@ -817,7 +817,7 @@ export default function DrawerNavigator() {
           </Drawer.Screen>
         )}
 
-        {isAuthenticated ? (
+        {/* {isAuthenticated ? (
           <Drawer.Screen name="Alertas" options={{ title: 'Alertas' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="ALERTS">
@@ -900,7 +900,7 @@ export default function DrawerNavigator() {
               </RequireAuth>
             )}
           </Drawer.Screen>
-        )}
+        )} */}
 
         {isAuthenticated ? (
           <Drawer.Screen name="Armazém" options={{ title: 'Armazém' }}>
