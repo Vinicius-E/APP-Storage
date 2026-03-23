@@ -19,9 +19,11 @@ import AppLoadingState from '../components/AppLoadingState';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import StockAlertsScreen from '../screens/alerts/StockAlertsScreen';
 import AreaManagement from '../screens/areas/AreaManagement';
 import DashboardScreen from '../screens/DashboardScreen';
 import HistoryScreen from '../screens/HistoryScreen';
+import StockMovementsScreen from '../screens/movements/StockMovementsScreen';
 import ReportsScreen from '../screens/reports/ReportsScreen';
 import UserScreen from '../screens/UserScreen';
 import ProductManagement from '../screens/products/ProductManagement';
@@ -306,14 +308,16 @@ function ThemedDrawerContent(props: any) {
     () =>
       new Map([
         ['Dashboard', 1],
-        ['Relatórios', 2],
-        ['Armazém', 3],
-        ['Produtos', 4],
-        ['Histórico', 5],
-        ['Áreas', 6],
-        ['Perfis', 7],
-        ['Usuários', 8],
-        ['Perfil', 9],
+        ['Alertas', 2],
+        ['Movimentações', 3],
+        ['Relatórios', 4],
+        ['Armazém', 5],
+        ['Produtos', 6],
+        ['Histórico', 7],
+        ['Áreas', 8],
+        ['Perfis', 9],
+        ['Usuários', 10],
+        ['Perfil', 11],
       ]),
     []
   );
@@ -454,6 +458,8 @@ function ThemedDrawerContent(props: any) {
             if (
               !isAuthenticated &&
               (route.name === 'Dashboard' ||
+                route.name === 'Alertas' ||
+                route.name === 'Movimentações' ||
                 route.name === 'Armazém' ||
                 route.name === 'Relatórios' ||
                 route.name === 'Áreas' ||
@@ -812,10 +818,65 @@ export default function DrawerNavigator() {
         )}
 
         {/* {isAuthenticated ? (
+          <Drawer.Screen name="Alertas" options={{ title: 'Alertas' }}>
+            {(props: any) => (
+              <RequireScreenAccess screenKey="ALERTS">
+                <ScreenFrame title="Alertas" navigation={props.navigation} fullWidth={IS_WEB}>
+                  <StockAlertsScreen {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
+            )}
+          </Drawer.Screen>
+        ) : (
           <Drawer.Screen
-            name="Relatórios"
-            options={{ title: 'Relatórios' }}
+            name="Alertas"
+            options={{ title: 'Alertas', drawerItemStyle: { display: 'none' } }}
           >
+            {(props: any) => (
+              <RequireAuth>
+                <RequireScreenAccess screenKey="ALERTS">
+                  <ScreenFrame title="Alertas" navigation={props.navigation} fullWidth={IS_WEB}>
+                    <StockAlertsScreen {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
+              </RequireAuth>
+            )}
+          </Drawer.Screen>
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen name="Movimentações" options={{ title: 'Movimentações' }}>
+            {(props: any) => (
+              <RequireScreenAccess screenKey="MOVEMENTS">
+                <ScreenFrame title="Movimentações" navigation={props.navigation} fullWidth={IS_WEB}>
+                  <StockMovementsScreen {...props} />
+                </ScreenFrame>
+              </RequireScreenAccess>
+            )}
+          </Drawer.Screen>
+        ) : (
+          <Drawer.Screen
+            name="Movimentações"
+            options={{ title: 'Movimentações', drawerItemStyle: { display: 'none' } }}
+          >
+            {(props: any) => (
+              <RequireAuth>
+                <RequireScreenAccess screenKey="MOVEMENTS">
+                  <ScreenFrame
+                    title="Movimentações"
+                    navigation={props.navigation}
+                    fullWidth={IS_WEB}
+                  >
+                    <StockMovementsScreen {...props} />
+                  </ScreenFrame>
+                </RequireScreenAccess>
+              </RequireAuth>
+            )}
+          </Drawer.Screen>
+        )}
+
+        {isAuthenticated ? (
+          <Drawer.Screen name="Relatórios" options={{ title: 'Relatórios' }}>
             {(props: any) => (
               <RequireScreenAccess screenKey="REPORTS">
                 <ScreenFrame title="Relatórios" navigation={props.navigation} fullWidth={IS_WEB}>
