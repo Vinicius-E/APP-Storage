@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -40,6 +40,7 @@ const presetToPx = (value: SizePreset): number => {
 const IS_WEB = Platform.OS === 'web';
 
 export function ActionIconButton(props: Props) {
+  const [hovered, setHovered] = useState(false);
   const {
     iconName,
     onPress,
@@ -73,9 +74,18 @@ export function ActionIconButton(props: Props) {
         }
         onPress(e);
       }}
+      onHoverIn={() => {
+        if (IS_WEB) {
+          setHovered(true);
+        }
+      }}
+      onHoverOut={() => {
+        if (IS_WEB) {
+          setHovered(false);
+        }
+      }}
       style={(state: any) => {
         const pressed = Boolean(state?.pressed);
-        const hovered = Boolean(state?.hovered);
 
         return [
           styles.btn,
@@ -87,8 +97,8 @@ export function ActionIconButton(props: Props) {
             !loading &&
             ({
               borderColor: primaryColor ?? borderColor,
+              backgroundColor: 'rgba(212, 163, 115, 0.08)',
               transform: [{ translateY: -1 }],
-              boxShadow: '0 4px 10px rgba(0,0,0,0.14)',
             } as any),
           pressed && !disabled && !loading && { opacity: 0.75 },
           style,
@@ -114,8 +124,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   webBtnAnimated: {
-    transitionProperty: 'transform, box-shadow, border-color, opacity',
+    transitionProperty: 'transform, background-color, border-color, opacity',
     transitionDuration: '140ms',
     transitionTimingFunction: 'ease-out',
+    cursor: 'pointer',
   } as any,
 });

@@ -2524,7 +2524,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     overflow: 'visible',
   },
-  actionsCompact: { justifyContent: 'flex-start', width: '100%' },
+  actionsCompact: {
+    justifyContent: 'center',
+    width: '100%',
+    alignSelf: 'center',
+  },
   rowActionBtn: { minWidth: 120 },
   interactiveWeb:
     Platform.OS === 'web'

@@ -102,7 +102,11 @@ export default function SelectGradeProductModal({
             placeholderTextColor={`${primaryColor}88`}
             autoCapitalize="none"
             autoCorrect={false}
-            style={[styles.searchInput, IS_WEB ? styles.searchInputWeb : null, { color: textColor }]}
+            style={[
+              styles.searchInput,
+              IS_WEB ? styles.searchInputWeb : null,
+              { color: textColor },
+            ]}
           />
         </View>
       </View>
@@ -128,7 +132,11 @@ export default function SelectGradeProductModal({
               keyboardType="number-pad"
               autoCapitalize="none"
               autoCorrect={false}
-              style={[styles.searchInput, IS_WEB ? styles.searchInputWeb : null, { color: textColor }]}
+              style={[
+                styles.searchInput,
+                IS_WEB ? styles.searchInputWeb : null,
+                { color: textColor },
+              ]}
             />
           </View>
           {validationMessage ? (
@@ -160,13 +168,16 @@ export default function SelectGradeProductModal({
         ) : (
           products.map((product) => {
             const selected = selectedProductId === product.id;
+            const productName = String(product.nomeModelo ?? product.nome ?? '').trim();
+            const productCode = String(product.codigoSistemaWester ?? product.codigo ?? '').trim();
+            const productColor = String(product.cor ?? '').trim();
 
             return (
               <Pressable
                 key={product.id}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
-                accessibilityLabel={`Selecionar produto ${product.nome}`}
+                accessibilityLabel={`Selecionar produto ${productName || product.nome}`}
                 onPress={() => onSelectProduct(product.id)}
                 style={(state) => {
                   const pressed = Boolean(state.pressed);
@@ -187,10 +198,13 @@ export default function SelectGradeProductModal({
               >
                 <View style={styles.optionTextWrap}>
                   <Text style={[styles.optionTitle, { color: selected ? primaryColor : textColor }]}>
-                    {product.nome}
+                    {productName || 'Produto sem nome'}
                   </Text>
                   <Text style={[styles.optionMeta, { color: secondaryTextColor }]}>
-                    {product.codigo || '—'}
+                    {productCode || '-'}
+                  </Text>
+                  <Text style={[styles.optionColor, { color: secondaryTextColor }]}>
+                    Cor: {productColor || 'Sem cor'}
                   </Text>
                 </View>
 
@@ -207,7 +221,10 @@ export default function SelectGradeProductModal({
         <Pressable
           onPress={onClose}
           disabled={confirming}
-          style={[styles.actionButton, { borderColor: outlineColor, opacity: confirming ? 0.6 : 1 }]}
+          style={[
+            styles.actionButton,
+            { borderColor: outlineColor, opacity: confirming ? 0.6 : 1 },
+          ]}
         >
           <Text style={[styles.actionText, { color: textColor }]}>Cancelar</Text>
         </Pressable>
@@ -329,6 +346,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   optionMeta: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  optionColor: {
     fontSize: 12,
     fontWeight: '600',
   },

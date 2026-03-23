@@ -929,7 +929,7 @@ export default function ProductManagement() {
                 <View
                   style={[
                     listScreenStyles.toolbarActions,
-                    isMobile ? listScreenStyles.toolbarActionsCompact : null,
+                    isMobile ? listScreenStyles.toolbarPrimaryActionCompact : null,
                   ]}
                 >
                   <ListActionButton

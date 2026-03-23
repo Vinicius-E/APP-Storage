@@ -551,15 +551,20 @@ function opAbbr(tipoOperacao: string | null | undefined): string {
   return 'OP';
 }
 
+function normalizeQuantityValue(value: number | null | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function getQuantityInfo(item: HistoricoMovimentacaoResponseDTO): QuantityInfo {
-  const anterior = Number(item.quantidadeAnterior ?? 0);
-  const nova = Number(item.quantidadeNova ?? 0);
+  const anterior = normalizeQuantityValue(item.quantidadeAnterior);
+  const nova = normalizeQuantityValue(item.quantidadeNova);
   return { anterior, nova, delta: nova - anterior };
 }
 
 function quantityFlowLabel(item: HistoricoMovimentacaoResponseDTO): string {
   const { anterior, nova } = getQuantityInfo(item);
-  return `${anterior} ? ${nova} un.`;
+  return `De ${anterior} para ${nova} un.`;
 }
 
 function qtyDetail(item: HistoricoMovimentacaoResponseDTO): string {
@@ -577,7 +582,7 @@ function qtyDetail(item: HistoricoMovimentacaoResponseDTO): string {
 
   if (op === 'RESEQUENCIAMENTO') {
     if (origem && destino) {
-      return `Realocado automaticamente: ${origem} ? ${destino}.`;
+      return `Realocado automaticamente de ${origem} para ${destino}.`;
     }
     return 'Reposicionamento automático concluído.';
   }
@@ -714,7 +719,7 @@ function locationLabel(
     hasFullLocation(destination);
 
   if (canShowRoute) {
-    return `${formatKnownLocation(origin)} ? ${formatKnownLocation(destination)}`;
+    return `De ${formatKnownLocation(origin)} para ${formatKnownLocation(destination)}`;
   }
   if (hasLocation(current)) {
     return formatKnownLocation(current);

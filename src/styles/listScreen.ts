@@ -54,6 +54,12 @@ const listScreenStyles = StyleSheet.create({
     marginLeft: 0,
     justifyContent: 'flex-start',
   },
+  toolbarPrimaryActionCompact: {
+    width: '100%',
+    marginLeft: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   toolbarBottom: {
     flexDirection: 'row',
     alignItems: 'center',

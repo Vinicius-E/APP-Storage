@@ -26,6 +26,7 @@ import { getUserFacingErrorMessage } from '../../utils/userFacingError';
 type DialogType = 'success' | 'error' | 'warning';
 
 const MIN_PASSWORD_LENGTH = 6;
+const HEADER_MIN_HEIGHT = 56;
 
 export default function LoginScreen() {
   const { width, height } = useWindowDimensions();
@@ -48,6 +49,7 @@ export default function LoginScreen() {
   const isCompact = width < 420;
   const isShortViewport = height < 760;
   const loginScrollableLayout = useAppScreenScrollableLayout(isShortViewport ? 18 : 28);
+  const contentViewportMinHeight = Math.max(height - HEADER_MIN_HEIGHT, 0);
 
   const emailValue = email.trim();
   const emailValid = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue), [emailValue]);
@@ -127,6 +129,7 @@ export default function LoginScreen() {
       <KeyboardAvoidingView
         style={[styles.page, { backgroundColor: theme.colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={HEADER_MIN_HEIGHT}
       >
         <View
           style={[
@@ -156,9 +159,14 @@ export default function LoginScreen() {
             styles.scrollContent,
             loginScrollableLayout.contentContainerStyle,
             {
-              justifyContent: isShortViewport ? 'flex-start' : 'center',
+              justifyContent: 'center',
+              minHeight: contentViewportMinHeight,
               paddingHorizontal: isCompact ? 14 : 20,
-              paddingTop: isShortViewport ? 18 : 28,
+              paddingTop: isShortViewport ? 20 : 28,
+              paddingBottom: Math.max(
+                loginScrollableLayout.bottomSpacing,
+                isShortViewport ? 20 : 28
+              ),
             },
           ]}
           {...loginScrollableLayout.scrollViewProps}

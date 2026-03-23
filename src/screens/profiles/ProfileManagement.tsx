@@ -792,7 +792,7 @@ export default function ProfileManagement() {
                 <View
                   style={[
                     listScreenStyles.toolbarActions,
-                    isMobile ? listScreenStyles.toolbarActionsCompact : null,
+                    isMobile ? listScreenStyles.toolbarPrimaryActionCompact : null,
                   ]}
                 >
                   <ListActionButton

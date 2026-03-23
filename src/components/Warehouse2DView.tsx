@@ -39,6 +39,7 @@ import AddGradeLevelDecisionModal from './warehouse2d/modals/AddGradeLevelDecisi
 import AreaDropdownSelector from './warehouse2d/AreaDropdownSelector';
 import ConfirmActionModal from './warehouse2d/modals/ConfirmActionModal';
 import FeedbackModal from './warehouse2d/modals/FeedbackModal';
+import RemoveLevelDecisionModal from './warehouse2d/modals/RemoveLevelDecisionModal';
 import SearchResultsModal from './warehouse2d/modals/SearchResultsModal';
 import SelectGradeProductModal from './warehouse2d/modals/SelectGradeProductModal';
 import WarehouseItemDetailsModal from './warehouse2d/modals/WarehouseItemDetailsModal';
@@ -160,6 +161,14 @@ type SearchResult = {
   label: string;
 };
 
+type NivelSelectionCtx = {
+  fileiraId: number;
+  gradeId: number;
+  nivelId: number;
+  label: string;
+  nivel: Nivel;
+};
+
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -215,21 +224,19 @@ export default function Warehouse2DView() {
   const [resequenceNivelId, setResequenceNivelId] = useState<number | null>(null);
 
   const [confirmRemoveVisible, setConfirmRemoveVisible] = useState(false);
-  const [pendingRemoveNivel, setPendingRemoveNivel] = useState<{
-    id: number;
-    label: string;
-  } | null>(null);
+  const [pendingRemoveNivel, setPendingRemoveNivel] = useState<NivelSelectionCtx | null>(null);
+  const [pendingRemoveDecision, setPendingRemoveDecision] = useState<
+    'item-only' | 'item-and-level' | null
+  >(null);
 
   const [productModalVisible, setProductModalVisible] = useState(false);
   const [productEditModalVisible, setProductEditModalVisible] = useState(false);
   const [editProductPickerVisible, setEditProductPickerVisible] = useState(false);
-  const [selectedNivelCtx, setSelectedNivelCtx] = useState<{
-    fileiraId: number;
-    gradeId: number;
-    nivelId: number;
-    label: string;
-    nivel: Nivel;
-  } | null>(null);
+  const [selectedNivelCtx, setSelectedNivelCtx] = useState<NivelSelectionCtx | null>(null);
+  const [productModalOrigin, setProductModalOrigin] = useState<'details' | 'direct' | null>(null);
+  const [editProductPickerReturnMode, setEditProductPickerReturnMode] = useState<
+    'form' | 'close' | null
+  >(null);
 
   const [itemLoading, setItemLoading] = useState(false);
   const [itemEstoque, setItemEstoque] = useState<ItemEstoque | null>(null);
@@ -1056,6 +1063,22 @@ export default function Warehouse2DView() {
     [shouldUseMobileWarehouseLayout]
   );
 
+  const buildNivelSelectionCtx = useCallback(
+    (fileira: Fileira, grade: Grade, nivel: Nivel): NivelSelectionCtx => ({
+      fileiraId: fileira.id,
+      gradeId: grade.id,
+      nivelId: nivel.id,
+      label: `Fileira ${fileira.identificador} - ${formatGradeLabel(grade.identificador)} - Nível ${nivel.identificador}`,
+      nivel,
+    }),
+    []
+  );
+
+  const nivelHasLinkedItem = useCallback((nivel: Nivel) => {
+    const productName = String(nivel.produto?.nomeModelo ?? nivel.produtoNomeModelo ?? '').trim();
+    return productName !== '';
+  }, []);
+
   const removerUltimoNivel = async (fileiraId: number, grade: Grade) => {
     if (grade.niveis.length <= 1) {
       Alert.alert('Aviso', 'Não é possível remover o último nível da grade.');
@@ -1139,17 +1162,56 @@ export default function Warehouse2DView() {
     }
   };
 
-  const openConfirmRemoveNivel = (nivel: Nivel, fileira: Fileira, grade: Grade) => {
-    const label = `Fileira ${fileira.identificador} - ${formatGradeLabel(grade.identificador)} - Nível ${nivel.identificador}`;
-    setPendingRemoveNivel({ id: nivel.id, label });
+  const removeOnlyItemFromNivelLocal = async (
+    fileiraId: number,
+    gradeId: number,
+    nivelId: number,
+    nivel: Nivel
+  ): Promise<boolean> => {
+    setResequenceNivelId(nivelId);
 
-    setSelectedNivelCtx({
-      fileiraId: fileira.id,
-      gradeId: grade.id,
-      nivelId: nivel.id,
-      label,
-      nivel,
-    });
+    try {
+      const temItem = nivelHasLinkedItem(nivel);
+
+      if (!temItem) {
+        await fetchAllData();
+        focusStructureContextForCurrentLayout(fileiraId, gradeId);
+        showSuccess(`Nível ${nivel.identificador} já estava vazio. Estrutura sincronizada.`);
+        return true;
+      }
+
+      try {
+        await API.delete(`/api/itens-estoque/nivel/${nivelId}`);
+      } catch (errorDelete: any) {
+        const status = errorDelete?.response?.status;
+
+        if (!isItemEstoqueNotFoundError(errorDelete) && status !== 405) {
+          throw errorDelete;
+        }
+      }
+
+      await fetchAllData();
+      focusStructureContextForCurrentLayout(fileiraId, gradeId);
+      showSuccess(`Produto removido do nível ${nivel.identificador}.`);
+      return true;
+    } catch (error: any) {
+      const message = extractErrorMessage(error, 'Não foi possível remover o produto do nível.');
+      showError(message);
+      try {
+        await fetchAllData();
+      } catch (_syncError) {
+        // ignora erro de sincronização secundária
+      }
+      return false;
+    } finally {
+      setResequenceNivelId(null);
+    }
+  };
+
+  const openConfirmRemoveNivel = (nivel: Nivel, fileira: Fileira, grade: Grade) => {
+    const nextCtx = buildNivelSelectionCtx(fileira, grade, nivel);
+    setPendingRemoveNivel(nextCtx);
+    setPendingRemoveDecision(nivelHasLinkedItem(nivel) ? 'item-only' : 'item-and-level');
 
     setConfirmRemoveVisible(true);
   };
@@ -1157,23 +1219,36 @@ export default function Warehouse2DView() {
   const closeConfirmRemoveNivel = () => {
     setConfirmRemoveVisible(false);
     setPendingRemoveNivel(null);
+    setPendingRemoveDecision(null);
   };
 
   const confirmRemoveNivel = async () => {
-    if (!selectedNivelCtx?.nivel) {
+    if (!pendingRemoveNivel?.nivel || pendingRemoveDecision == null) {
       closeConfirmRemoveNivel();
       return;
     }
 
-    const removed = await deleteAndResequenceLocal(
-      selectedNivelCtx.fileiraId,
-      selectedNivelCtx.gradeId,
-      selectedNivelCtx.nivelId,
-      selectedNivelCtx.nivel
-    );
+    const removed =
+      pendingRemoveDecision === 'item-only'
+        ? await removeOnlyItemFromNivelLocal(
+            pendingRemoveNivel.fileiraId,
+            pendingRemoveNivel.gradeId,
+            pendingRemoveNivel.nivelId,
+            pendingRemoveNivel.nivel
+          )
+        : await deleteAndResequenceLocal(
+            pendingRemoveNivel.fileiraId,
+            pendingRemoveNivel.gradeId,
+            pendingRemoveNivel.nivelId,
+            pendingRemoveNivel.nivel
+          );
 
     closeConfirmRemoveNivel();
-    if (removed && (productModalVisible || productEditModalVisible || editProductPickerVisible)) {
+    if (
+      removed &&
+      selectedNivelCtx?.nivelId === pendingRemoveNivel.nivelId &&
+      (productModalVisible || productEditModalVisible || editProductPickerVisible)
+    ) {
       closeProductModal();
     }
   };
@@ -1209,6 +1284,8 @@ export default function Warehouse2DView() {
     setProductEditModalVisible(false);
     setEditProductPickerVisible(false);
     setConfirmSaveVisible(false);
+    setProductModalOrigin(null);
+    setEditProductPickerReturnMode(null);
     setSelectedNivelCtx(null);
     resetProductForm();
   };
@@ -1263,17 +1340,25 @@ export default function Warehouse2DView() {
   }, []);
 
   const handleNivelClick = (fileira: Fileira, grade: Grade, nivel: Nivel) => {
-    const label = `Fileira ${fileira.identificador} - ${formatGradeLabel(grade.identificador)} - Nível ${nivel.identificador}`;
+    const nextCtx = buildNivelSelectionCtx(fileira, grade, nivel);
 
-    setSelectedNivelCtx({
-      fileiraId: fileira.id,
-      gradeId: grade.id,
-      nivelId: nivel.id,
-      label,
-      nivel,
-    });
-
+    setSelectedNivelCtx(nextCtx);
     resetProductForm();
+
+    if (!nivelHasLinkedItem(nivel)) {
+      setProductModalOrigin('direct');
+      setProductModalVisible(false);
+      setProductEditModalVisible(true);
+      setItemLoading(false);
+      setEditProductFilter('');
+      setPendingEditProductId(null);
+      setEditProductPickerVisible(false);
+      setEditProductPickerReturnMode(null);
+      setConfirmSaveVisible(false);
+      return;
+    }
+
+    setProductModalOrigin('details');
     setProductModalVisible(true);
   };
 
@@ -1282,8 +1367,14 @@ export default function Warehouse2DView() {
       return;
     }
 
+    if (!nivelHasLinkedItem(selectedNivelCtx.nivel)) {
+      resetProductForm();
+      setItemLoading(false);
+      return;
+    }
+
     void loadItemEstoque(selectedNivelCtx.nivelId);
-  }, [loadItemEstoque, selectedNivelCtx?.nivelId]);
+  }, [loadItemEstoque, nivelHasLinkedItem, selectedNivelCtx]);
 
   const currentNivelItemDetails = useMemo(() => {
     const fallbackProduto = selectedNivelCtx?.nivel.produto ?? null;
@@ -1295,6 +1386,7 @@ export default function Warehouse2DView() {
     ).trim();
     const cor = String(itemEstoque?.produtoCor ?? fallbackProduto?.cor ?? '').trim();
     const descricao = String(itemEstoque?.produtoDescricao ?? fallbackProduto?.descricao ?? '').trim();
+    const hasLinkedProduct = nomeModelo !== '';
     const quantidadeBase =
       typeof itemEstoque?.quantidade === 'number'
         ? itemEstoque.quantidade
@@ -1303,20 +1395,46 @@ export default function Warehouse2DView() {
           : 0;
 
     return {
-      produtoId: itemEstoque?.produtoId ?? fallbackProduto?.id ?? null,
-      nomeModelo,
-      codigo,
-      cor,
-      descricao,
+      produtoId: hasLinkedProduct ? itemEstoque?.produtoId ?? fallbackProduto?.id ?? null : null,
+      nomeModelo: hasLinkedProduct ? nomeModelo : '',
+      codigo: hasLinkedProduct ? codigo : '',
+      cor: hasLinkedProduct ? cor : '',
+      descricao: hasLinkedProduct ? descricao : '',
       quantidade: quantidadeBase,
     };
   }, [itemEstoque, selectedNivelCtx]);
 
   const nivelHasLinkedProduct = useMemo(
     () =>
-      currentNivelItemDetails.produtoId != null || currentNivelItemDetails.nomeModelo !== '',
-    [currentNivelItemDetails]
+      selectedNivelCtx ? nivelHasLinkedItem(selectedNivelCtx.nivel) : currentNivelItemDetails.nomeModelo !== '',
+    [currentNivelItemDetails.nomeModelo, nivelHasLinkedItem, selectedNivelCtx]
   );
+  const selectedNivelIsEmpty = useMemo(
+    () => (selectedNivelCtx ? !nivelHasLinkedItem(selectedNivelCtx.nivel) : false),
+    [nivelHasLinkedItem, selectedNivelCtx]
+  );
+
+  useEffect(() => {
+    if (!selectedNivelCtx || productModalOrigin !== 'direct' || !selectedNivelIsEmpty) {
+      return;
+    }
+
+    if (productModalVisible) {
+      setProductModalVisible(false);
+    }
+
+    if (!productEditModalVisible) {
+      setProductEditModalVisible(true);
+    }
+
+    setItemLoading(false);
+  }, [
+    productEditModalVisible,
+    productModalOrigin,
+    productModalVisible,
+    selectedNivelCtx,
+    selectedNivelIsEmpty,
+  ]);
 
   const syncEditFormWithCurrentItem = useCallback(() => {
     setEditProductId(currentNivelItemDetails.produtoId ?? null);
@@ -1349,9 +1467,12 @@ export default function Warehouse2DView() {
     setPendingEditProductId(null);
     setProductEditModalVisible(false);
 
-    if (selectedNivelCtx) {
+    if (productModalOrigin === 'details' && selectedNivelCtx) {
       setProductModalVisible(true);
+      return;
     }
+
+    closeProductModal();
   };
 
   const isDirty = useMemo(() => {
@@ -1617,6 +1738,7 @@ export default function Warehouse2DView() {
     setProductEditModalVisible(false);
     setEditProductFilter('');
     setPendingEditProductId(editProductId);
+    setEditProductPickerReturnMode('form');
     await loadActiveProducts();
     setEditProductPickerVisible(true);
   };
@@ -1628,7 +1750,13 @@ export default function Warehouse2DView() {
 
     setEditProductPickerVisible(false);
     setPendingEditProductId(null);
-    setProductEditModalVisible(true);
+    if (editProductPickerReturnMode === 'form') {
+      setEditProductPickerReturnMode(null);
+      setProductEditModalVisible(true);
+      return;
+    }
+
+    closeProductModal();
   };
 
   const confirmEditProductSelection = () => {
@@ -1639,6 +1767,7 @@ export default function Warehouse2DView() {
     applyCatalogProductToEditForm(selectedEditCatalogProduct);
     setEditProductPickerVisible(false);
     setPendingEditProductId(null);
+    setEditProductPickerReturnMode(null);
     setProductEditModalVisible(true);
   };
 
@@ -3638,32 +3767,21 @@ export default function Warehouse2DView() {
                                             shouldDim && styles.nivelDim,
                                           ]}
                                         >
-                                          <Pressable
-                                            onPress={(e) => {
-                                              e.stopPropagation();
+                                          <ActionIconButton
+                                            iconName="minus"
+                                            size="small"
+                                            disabled={resequenceNivelId === nivel.id}
+                                            loading={resequenceNivelId === nivel.id}
+                                            borderColor={colors.outline}
+                                            backgroundColor={colors.surface}
+                                            iconColor={colors.primary}
+                                            primaryColor={colors.primary}
+                                            stopPropagation
+                                            onPress={() => {
                                               openConfirmRemoveNivel(nivel, fileira, grade);
                                             }}
-                                            style={[
-                                              styles.nivelRemoveButton,
-                                              {
-                                                borderColor: colors.outline,
-                                                backgroundColor: colors.surface,
-                                              },
-                                            ]}
-                                          >
-                                            {resequenceNivelId === nivel.id ? (
-                                              <ActivityIndicator
-                                                size="small"
-                                                color={colors.primary}
-                                              />
-                                            ) : (
-                                              <AntDesign
-                                                name="minus"
-                                                size={14}
-                                                color={colors.primary}
-                                              />
-                                            )}
-                                          </Pressable>
+                                            style={styles.nivelRemoveButton}
+                                          />
 
                                           <View style={styles.nivelContent}>
                                             <Text
@@ -3878,24 +3996,24 @@ export default function Warehouse2DView() {
           onSelect={focusOnResult}
         />
 
-        <ConfirmActionModal
+        <RemoveLevelDecisionModal
           visible={confirmRemoveVisible}
-          title="Remover nível?"
-          message={pendingRemoveNivel?.label ?? 'Nível selecionado'}
-          warningText="Esta ação irá remover o nível e resequenciar os demais."
-          confirmText="Remover"
+          targetLabel={pendingRemoveNivel?.label ?? 'Nível selecionado'}
+          selectedDecision={pendingRemoveDecision}
+          onSelectDecision={setPendingRemoveDecision}
+          loading={Boolean(resequenceNivelId)}
+          primaryColor={colors.primary}
           surfaceColor={colors.surface}
+          surfaceVariantColor={colors.surfaceVariant}
           outlineColor={colors.outline}
           textColor={colors.text}
-          confirmColor={colors.primary}
-          confirmLoading={Boolean(resequenceNivelId)}
-          confirmDisabled={Boolean(resequenceNivelId)}
+          secondaryTextColor={colors.onSurfaceVariant}
           onCancel={closeConfirmRemoveNivel}
           onConfirm={confirmRemoveNivel}
         />
 
         <WarehouseItemDetailsModal
-          visible={productModalVisible}
+          visible={productModalVisible && productModalOrigin !== 'direct' && nivelHasLinkedProduct}
           title={selectedNivelCtx?.label ?? 'Produto'}
           details={{
             nomeModelo: currentNivelItemDetails.nomeModelo,
@@ -3917,7 +4035,7 @@ export default function Warehouse2DView() {
         />
 
         <WarehouseItemFormModal
-          visible={productEditModalVisible}
+          visible={productEditModalVisible || (productModalOrigin === 'direct' && selectedNivelIsEmpty)}
           title={selectedNivelCtx?.label ?? 'Editar produto'}
           values={{
             nomeModelo: editNomeModelo,
@@ -3932,7 +4050,7 @@ export default function Warehouse2DView() {
           }}
           onClose={closeProductEditModal}
           onSubmit={openConfirmSave}
-          loading={itemLoading}
+          loading={productModalOrigin === 'details' ? itemLoading : false}
           submitLoading={saving}
           submitDisabled={!isDirty || saving || editProductId == null}
           closeLabel="Voltar"
@@ -4820,6 +4938,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 2,
   },
 
   nivelHover: {
