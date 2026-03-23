@@ -10,7 +10,7 @@ import store from './src/store';
 import { Platform } from 'react-native';
 
 import { PaperProvider } from 'react-native-paper';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { AreaProvider } from './src/areas/AreaContext';
 import { ThemeProvider, useThemeContext } from './src/theme/ThemeContext';
 import { AuthProvider } from './src/auth/AuthContext';
@@ -68,7 +68,7 @@ function AppWithTheme() {
 export default function App() {
   return (
     <Provider store={store}>
-      <SafeAreaProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <ThemeProvider>
           <AuthProvider>
             <AreaProvider>

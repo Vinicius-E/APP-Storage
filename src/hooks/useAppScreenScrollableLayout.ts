@@ -30,9 +30,9 @@ export function useAppScreenScrollableLayout(
 
   const scrollViewProps = useMemo<AppScreenScrollableLayout['scrollViewProps']>(
     () => ({
-      automaticallyAdjustContentInsets: true,
-      automaticallyAdjustsScrollIndicatorInsets: true,
-      contentInsetAdjustmentBehavior: 'automatic',
+      automaticallyAdjustContentInsets: false,
+      automaticallyAdjustsScrollIndicatorInsets: false,
+      contentInsetAdjustmentBehavior: 'never',
       scrollIndicatorInsets: {
         bottom: bottomSpacing,
         left: 0,

@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { NavigationProp, ParamListBase, useNavigation } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AlertDialog from '../../components/AlertDialog';
 import AuthCard from '../../components/AuthCard';
 import AuthInputField from '../../components/AuthInputField';
@@ -22,9 +22,11 @@ import { registerUser } from '../../services/authService';
 import { useThemeContext } from '../../theme/ThemeContext';
 
 const MIN_PASSWORD_LENGTH = 6;
+const HEADER_MIN_HEIGHT = 56;
 
 export default function RegisterScreen() {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -52,6 +54,7 @@ export default function RegisterScreen() {
   const isCompact = width < 420;
   const isShortViewport = height < 760;
   const registerScrollableLayout = useAppScreenScrollableLayout(isShortViewport ? 18 : 28);
+  const contentViewportMinHeight = Math.max(height - HEADER_MIN_HEIGHT - insets.top, 0);
   const nomeValue = nome.trim();
   const emailValue = email.trim();
   const nomeValid = useMemo(() => nomeValue.length >= 2, [nomeValue]);
@@ -103,13 +106,16 @@ export default function RegisterScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
-      edges={['top', 'left', 'right']}
+    <View
+      style={[
+        styles.safeArea,
+        { backgroundColor: theme.colors.background, paddingTop: insets.top },
+      ]}
     >
       <KeyboardAvoidingView
         style={[styles.page, { backgroundColor: theme.colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={HEADER_MIN_HEIGHT}
       >
         <View
           style={[
@@ -140,8 +146,13 @@ export default function RegisterScreen() {
             registerScrollableLayout.contentContainerStyle,
             {
               justifyContent: isShortViewport ? 'flex-start' : 'center',
+              minHeight: contentViewportMinHeight,
               paddingHorizontal: isCompact ? 14 : 20,
               paddingTop: isShortViewport ? 18 : 28,
+              paddingBottom: Math.max(
+                registerScrollableLayout.bottomSpacing,
+                isShortViewport ? 20 : 28
+              ),
             },
           ]}
           {...registerScrollableLayout.scrollViewProps}
@@ -247,7 +258,7 @@ export default function RegisterScreen() {
           type={dialogType}
         />
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

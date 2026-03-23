@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import AntDesignBase from '@expo/vector-icons/AntDesign';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppLoadingState from '../components/AppLoadingState';
 
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -619,6 +619,7 @@ function ScreenFrame({
   children: React.ReactNode;
 }) {
   const { theme } = useThemeContext();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const shellBackground =
     (theme.colors as typeof theme.colors & { appShellBackground?: string }).appShellBackground ??
@@ -631,9 +632,14 @@ function ScreenFrame({
   const showLargeCanvas = IS_WEB && width > 1440;
 
   return (
-    <SafeAreaView
-      style={[styles.screenFrame, { backgroundColor: shellBackground }]}
-      edges={['top', 'left', 'right']}
+    <View
+      style={[
+        styles.screenFrame,
+        {
+          backgroundColor: shellBackground,
+          paddingTop: insets.top,
+        },
+      ]}
     >
       <View
         style={[
@@ -711,13 +717,14 @@ function ScreenFrame({
           {children}
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 export default function DrawerNavigator() {
   const { theme } = useThemeContext();
   const { isAuthenticated, isRestoring } = useAuth();
+  const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const shellBackground =
     (theme.colors as typeof theme.colors & { appShellBackground?: string }).appShellBackground ??
@@ -736,12 +743,17 @@ export default function DrawerNavigator() {
 
   if (isRestoring) {
     return (
-      <SafeAreaView
-        style={{ flex: 1, backgroundColor: shellBackground, paddingHorizontal: 20 }}
-        edges={['top', 'bottom', 'left', 'right']}
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: shellBackground,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          paddingHorizontal: 20,
+        }}
       >
         <AppLoadingState message="Carregando sessão..." style={{ flex: 1 }} />
-      </SafeAreaView>
+      </View>
     );
   }
 

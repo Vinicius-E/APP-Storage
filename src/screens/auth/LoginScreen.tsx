@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { NavigationProp, ParamListBase, useNavigation } from '@react-navigation/native';
 import { AxiosError } from 'axios';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../auth/AuthContext';
 import AlertDialog from '../../components/AlertDialog';
 import AuthCard from '../../components/AuthCard';
@@ -30,6 +30,7 @@ const HEADER_MIN_HEIGHT = 56;
 
 export default function LoginScreen() {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -49,7 +50,7 @@ export default function LoginScreen() {
   const isCompact = width < 420;
   const isShortViewport = height < 760;
   const loginScrollableLayout = useAppScreenScrollableLayout(isShortViewport ? 18 : 28);
-  const contentViewportMinHeight = Math.max(height - HEADER_MIN_HEIGHT, 0);
+  const contentViewportMinHeight = Math.max(height - HEADER_MIN_HEIGHT - insets.top, 0);
 
   const emailValue = email.trim();
   const emailValid = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue), [emailValue]);
@@ -122,9 +123,11 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
-      edges={['top', 'left', 'right']}
+    <View
+      style={[
+        styles.safeArea,
+        { backgroundColor: theme.colors.background, paddingTop: insets.top },
+      ]}
     >
       <KeyboardAvoidingView
         style={[styles.page, { backgroundColor: theme.colors.background }]}
@@ -239,7 +242,7 @@ export default function LoginScreen() {
           type={dialogType}
         />
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

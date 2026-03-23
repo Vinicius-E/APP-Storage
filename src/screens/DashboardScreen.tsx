@@ -16,6 +16,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Text, TextInput } from 'react-native-paper';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppEmptyState from '../components/AppEmptyState';
 import AppLoadingState from '../components/AppLoadingState';
 import AppTextInput from '../components/AppTextInput';
@@ -608,6 +609,7 @@ function buildStockReportHtml(
 
 export default function DashboardScreen() {
   const { theme } = useThemeContext();
+  const insets = useSafeAreaInsets();
   const pageBackground =
     (theme.colors as typeof theme.colors & { pageBackground?: string }).pageBackground ??
     theme.colors.background;
@@ -1029,17 +1031,21 @@ export default function DashboardScreen() {
   ]);
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[
-        styles.container,
-        { backgroundColor: pageBackground },
-        dashboardScrollableLayout.contentContainerStyle,
-      ]}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      {...dashboardScrollableLayout.scrollViewProps}
-    >
+    <View style={[styles.screen, { backgroundColor: pageBackground }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.container,
+          dashboardScrollableLayout.contentContainerStyle,
+          {
+            backgroundColor: pageBackground,
+            paddingBottom: Math.max(dashboardScrollableLayout.bottomSpacing, insets.bottom + 24),
+          },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        {...dashboardScrollableLayout.scrollViewProps}
+      >
       <DashboardQuickActions navigation={navigation} isWide={isTabletOrDesktop} />
 
       <View
@@ -1672,11 +1678,16 @@ export default function DashboardScreen() {
           </Text>
         </Pressable>
       </ModalFrame>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    minHeight: 0,
+  },
   scroll: {
     flex: 1,
     minHeight: 0,
